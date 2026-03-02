@@ -1,0 +1,71 @@
+import { invoke } from '@tauri-apps/api/core';
+import type { InputAction } from '@ai-operator/shared';
+
+export interface ActionResult {
+  ok: boolean;
+  error?: { code: string; message: string };
+}
+
+export async function executeAction(action: InputAction): Promise<ActionResult> {
+  try {
+    switch (action.kind) {
+      case 'click':
+        await invoke('input_click', {
+          xNorm: action.x,
+          yNorm: action.y,
+          button: action.button,
+        });
+        return { ok: true };
+
+      case 'double_click':
+        await invoke('input_double_click', {
+          xNorm: action.x,
+          yNorm: action.y,
+          button: action.button,
+        });
+        return { ok: true };
+
+      case 'scroll':
+        await invoke('input_scroll', {
+          dx: action.dx,
+          dy: action.dy,
+        });
+        return { ok: true };
+
+      case 'type':
+        await invoke('input_type', {
+          text: action.text,
+        });
+        return { ok: true };
+
+      case 'hotkey':
+        await invoke('input_hotkey', {
+          key: action.key,
+          modifiers: action.modifiers || [],
+        });
+        return { ok: true };
+
+      default:
+        return {
+          ok: false,
+          error: { code: 'UNKNOWN_ACTION', message: 'Unknown action kind' },
+        };
+    }
+  } catch (e) {
+    const err = e as { message?: string };
+    const msg = err.message || 'Input injection failed';
+    
+    // Check for permission errors
+    const needsPermission = msg.includes('permission') || 
+                           msg.includes('Accessibility') ||
+                           msg.includes('denied');
+    
+    return {
+      ok: false,
+      error: {
+        code: needsPermission ? 'PERMISSION_DENIED' : 'EXECUTION_FAILED',
+        message: msg,
+      },
+    };
+  }
+}
