@@ -14,7 +14,7 @@
     "check:rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
     "tauri:check": "pnpm run check:rust:fmt && pnpm run check:rust:clippy && pnpm run tauri:build:debug",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'No lint configured'"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-operator/shared": "workspace:*",

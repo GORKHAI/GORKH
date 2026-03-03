@@ -3,6 +3,10 @@ import type { Device, Platform, ScreenStreamState, ControlState, WorkspaceState 
 // In-memory device store
 const devices = new Map<string, Device>();
 
+function toPublicDevice(device: Device): Device {
+  return { ...device, socket: undefined };
+}
+
 export interface DeviceInput {
   deviceId: string;
   deviceName?: string;
@@ -19,11 +23,12 @@ export const deviceStore = {
   },
 
   get(deviceId: string): Device | undefined {
-    return devices.get(deviceId);
+    const device = devices.get(deviceId);
+    return device ? toPublicDevice(device) : undefined;
   },
 
   getAll(): Device[] {
-    return Array.from(devices.values()).map((d) => ({ ...d, socket: undefined }));
+    return Array.from(devices.values()).map((device) => toPublicDevice(device));
   },
 
   upsert(input: DeviceInput & { connected: boolean; socket?: unknown }): Device {
@@ -85,7 +90,7 @@ export const deviceStore = {
     device.pairingExpiresAt = undefined;
     device.lastSeenAt = Date.now();
 
-    return { success: true, device };
+    return { success: true, device: toPublicDevice(device) };
   },
 
   updateLastSeen(deviceId: string): Device | undefined {

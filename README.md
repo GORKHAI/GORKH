@@ -441,13 +441,15 @@ See [docs/protocol.md](docs/protocol.md) for detailed WebSocket message specific
 
 2. **Persistence scope**: Devices, runs, actions, and tool timelines persist in Postgres. Screen frames are still in-memory only.
 
-3. **Cookie auth is still MVP-grade**: Browser auth now uses rotating refresh tokens plus double-submit CSRF protection. Cookies are `Secure` only in production, and `SameSite=Lax` still means this should be deployed from the same site or a tightly controlled allowlist.
+3. **Single-instance API only (for now)**: The API must run as exactly one instance in production right now. Rate limits, WebSocket presence, and some orchestration state are still process-local, so horizontal scaling is not supported yet. Keep `/ws` and authenticated browser traffic pinned consistently through your proxy path.
 
-4. **Stripe billing**: Web billing uses a single recurring Stripe price (`STRIPE_PRICE_ID`). Stripe webhooks must reach the API to activate subscriptions and unlock automation.
+4. **Cookie auth is still MVP-grade**: Browser auth now uses rotating refresh tokens plus double-submit CSRF protection. Cookies are `Secure` only in production, and `SameSite=Lax` still means this should be deployed from the same site or a tightly controlled allowlist.
 
-5. **Deterministic agent**: The current "AI" is a deterministic stub that follows a fixed 4-step plan.
+5. **Stripe billing**: Web billing uses a single recurring Stripe price (`STRIPE_PRICE_ID`). Stripe webhooks must reach the API to activate subscriptions and unlock automation.
 
-6. **Desktop token storage**: The desktop `deviceToken` now lives in the OS keychain. LLM API keys remain local-only and are never sent to the server.
+6. **Deterministic agent**: The current "AI" is a deterministic stub that follows a fixed 4-step plan.
+
+7. **Desktop token storage**: The desktop `deviceToken` now lives in the OS keychain. LLM API keys remain local-only and are never sent to the server.
 
 ## Stripe CLI
 

@@ -1,6 +1,8 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { WebSocket } from '@fastify/websocket';
+import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
+import type { IncomingMessage } from 'node:http';
+import { resolve } from 'node:path';
 import type {
   DeviceMessage,
   ServerMessage,
@@ -50,10 +52,29 @@ interface SocketState {
   ip?: string | null;
   userAgent?: string | null;
 }
-const socketToDevice = new Map<WebSocket, SocketState>();
+type WebSocketLike = {
+  on(event: string, listener: (...args: any[]) => void): void;
+  send(data: string): void;
+  close(): void;
+  terminate?: () => void;
+};
+
+const socketToDevice = new Map<WebSocketLike, SocketState>();
 
 // HELLO timeout in ms
 const HELLO_TIMEOUT_MS = 10_000;
+const require = createRequire(import.meta.url);
+const wsRuntime = require(resolve(process.cwd(), 'node_modules/.pnpm/@fastify+websocket@10.0.1/node_modules/ws')) as {
+  WebSocketServer: new (options: { noServer: boolean }) => {
+    handleUpgrade(
+      request: IncomingMessage,
+      socket: NodeJS.WritableStream,
+      head: Buffer,
+      callback: (socket: WebSocketLike) => void
+    ): void;
+    on(event: 'connection', listener: (socket: WebSocketLike, request: IncomingMessage) => void): void;
+  };
+};
 
 function getHeaderValue(value: unknown): string | null {
   if (Array.isArray(value)) {
@@ -141,7 +162,7 @@ function getToolAuditMeta(toolCall: ToolCall, result?: { ok: boolean; exitCode?:
 }
 
 function enforceSocketRateLimit(
-  socket: WebSocket,
+  socket: WebSocketLike,
   fastify: FastifyInstance,
   state: SocketState | undefined,
   key: string,
@@ -181,10 +202,29 @@ export function generatePairingCode(): string {
 }
 
 export function setupWebSocket(fastify: FastifyInstance) {
-  fastify.get('/ws', { websocket: true }, (socket: WebSocket, req: FastifyRequest) => {
+  const wss = new wsRuntime.WebSocketServer({ noServer: true });
+
+  fastify.server.on('upgrade', (request, rawSocket, head) => {
+    const requestPath = request.url?.split('?')[0] ?? '';
+    if (requestPath !== '/ws') {
+      rawSocket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(request, rawSocket, head, (socket) => {
+      handleSocketConnection(socket, request, fastify);
+    });
+  });
+}
+
+function handleSocketConnection(
+  socket: WebSocketLike,
+  request: IncomingMessage,
+  fastify: FastifyInstance
+) {
     const connectionId = randomUUID();
-    const clientIp = getCoarseIp(req.ip);
-    const userAgent = getHeaderValue(req.headers['user-agent']);
+    const clientIp = getCoarseIp(request.socket.remoteAddress);
+    const userAgent = getHeaderValue(request.headers['user-agent']);
     socketToDevice.set(socket, {
       connectionId,
       deviceId: 'unknown',
@@ -209,7 +249,7 @@ export function setupWebSocket(fastify: FastifyInstance) {
       }
     }, HELLO_TIMEOUT_MS);
 
-    socket.on('message', (raw: Buffer) => {
+  socket.on('message', (raw: Buffer) => {
       try {
         const parsed = JSON.parse(raw.toString());
         const messageType = typeof parsed?.type === 'string' ? parsed.type : 'unknown';
@@ -305,11 +345,10 @@ export function setupWebSocket(fastify: FastifyInstance) {
     socket.on('error', (err: Error) => {
       fastify.log.error({ err, connectionId, clientIp }, 'WebSocket error');
     });
-  });
 }
 
 async function handleDeviceMessage(
-  socket: WebSocket,
+  socket: WebSocketLike,
   message: DeviceMessage,
   fastify: FastifyInstance
 ): Promise<void> {
@@ -1084,7 +1123,7 @@ export function sendToDevice(deviceId: string, message: ServerMessage): boolean 
 }
 
 // Get device socket for sending messages
-export function getDeviceSocket(deviceId: string): WebSocket | undefined {
+export function getDeviceSocket(deviceId: string): WebSocketLike | undefined {
   for (const [socket, state] of socketToDevice) {
     if (state.deviceId === deviceId) {
       return socket;

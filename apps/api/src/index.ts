@@ -2,7 +2,6 @@ import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import fastifyRawBody from 'fastify-raw-body';
-import websocket from '@fastify/websocket';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -16,6 +15,7 @@ import { toolStore } from './store/tools.js';
 import { setRunPersistence, setSSEBroadcast } from './engine/runEngine.js';
 import { createServerMessage, redactActionForLog, DEFAULT_RUN_CONSTRAINTS } from '@ai-operator/shared';
 import type { InputAction, RunMode, ServerEventType } from '@ai-operator/shared';
+import { prisma } from './db/prisma.js';
 import { actionsRepo } from './repos/actions.js';
 import { auditRepo } from './repos/audit.js';
 import { devicesRepo } from './repos/devices.js';
@@ -29,6 +29,8 @@ import { resolveDesktopAssets } from './lib/releases/resolveDesktopAssets.js';
 import { consumeRateLimit, getRateLimitKeyCount } from './lib/ratelimit.js';
 import { stripe, mapStripeSubscriptionStatus } from './lib/stripe.js';
 import { requireActiveSubscription } from './lib/subscription.js';
+import { getDeploymentStatus } from './lib/deployment.js';
+import { evaluateReadiness } from './lib/readiness.js';
 import {
   type AuthenticatedRequest,
   clearAuthCookies,
@@ -75,7 +77,6 @@ const fastify = Fastify({
   },
 });
 
-// Register WebSocket plugin
 await fastify.register(cookie);
 await fastify.register(cors, {
   origin(origin, callback) {
@@ -100,7 +101,6 @@ await fastify.register(fastifyRawBody, {
   encoding: false,
   runFirst: true,
 });
-await fastify.register(websocket);
 
 fastify.addHook('onRequest', async (request, reply) => {
   reply.header('x-request-id', request.id);
@@ -210,6 +210,27 @@ function build429Reply(reply: FastifyReply, retryAfterSeconds: number) {
     code: 'RATE_LIMITED',
     retryAfterSeconds,
   };
+}
+
+async function getReadinessReport() {
+  return evaluateReadiness({
+    deployment: getDeploymentStatus(config.DEPLOYMENT_MODE),
+    stripe: {
+      secretKeyConfigured: Boolean(config.STRIPE_SECRET_KEY),
+      webhookSecretConfigured: Boolean(config.STRIPE_WEBHOOK_SECRET),
+      priceIdConfigured: Boolean(config.STRIPE_PRICE_ID),
+    },
+    desktopRelease: {
+      source: config.DESKTOP_RELEASE_SOURCE,
+      repoConfigured: Boolean(config.GITHUB_REPO_OWNER && config.GITHUB_REPO_NAME),
+      assetUrlsConfigured: Boolean(
+        config.DESKTOP_WIN_URL && config.DESKTOP_MAC_INTEL_URL && config.DESKTOP_MAC_ARM_URL
+      ),
+    },
+    checkDatabase: async () => {
+      await prisma.$queryRaw`SELECT 1`;
+    },
+  });
 }
 
 function enforceHttpRateLimit(reply: FastifyReply, key: string, limit: number, windowMs: number): boolean {
@@ -544,11 +565,30 @@ for (const persisted of persistedTools) {
 // Health Check
 // ============================================================================
 
-fastify.get('/health', async () => {
+fastify.get('/health', async (_request, reply) => {
+  const readiness = await getReadinessReport();
+  if (!readiness.ok) {
+    reply.status(503);
+  }
+
   return {
-    ok: true,
+    ok: readiness.ok,
+    live: true,
     timestamp: Date.now(),
     version: '0.0.6',
+    deployment: readiness.deployment,
+    readiness: {
+      ok: readiness.ok,
+      database: readiness.database,
+      stripe: {
+        configured: readiness.stripe.configured,
+      },
+      desktopRelease: {
+        source: readiness.desktopRelease.source,
+        configured: readiness.desktopRelease.configured,
+      },
+      failures: readiness.failures,
+    },
   };
 });
 
@@ -559,8 +599,16 @@ fastify.get('/admin/health', async (request, reply) => {
     return { error: 'Unauthorized' };
   }
 
+  const readiness = await getReadinessReport();
+  if (!readiness.ok) {
+    reply.status(503);
+  }
+
   return {
-    ok: true,
+    ok: readiness.ok,
+    live: true,
+    deployment: readiness.deployment,
+    readiness,
     wsConnectionsCount: getWsConnectionsCount(),
     sseClientsCount: sseClients.size,
     screenFramesInMemoryCount: screenStore.count(),

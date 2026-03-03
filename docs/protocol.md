@@ -896,7 +896,14 @@ Default constraints when creating an AI Assist run:
 ### GET /health
 Health check.
 
-Response: `{ ok: true, timestamp: number, version: string }`
+Response: `{ ok: boolean, live: true, timestamp: number, version: string, deployment: { mode: "single_instance" | "multi_instance", stickySessionsRequired: boolean, multiInstanceSupported: boolean, status: "supported" | "unsupported", warning?: string }, readiness: { ok: boolean, database: { ok: boolean }, stripe: { configured: boolean }, desktopRelease: { source: "file" | "github", configured: boolean }, failures: string[] } }`
+
+Returns `200` when ready and `503` when required dependencies are unavailable.
+
+### GET /admin/health
+Admin-only runtime diagnostics and readiness details.
+
+Requires header: `x-admin-api-key`
 
 ### GET /devices
 List all devices.

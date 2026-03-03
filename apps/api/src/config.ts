@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { assertSupportedDeploymentMode } from './lib/deployment.js';
 
 const configSchema = z.object({
   PORT: z.string().transform((s) => parseInt(s, 10)).default('3001'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  DEPLOYMENT_MODE: z.enum(['single_instance', 'multi_instance']).default('single_instance'),
   DATABASE_URL: z.string().min(1),
   JWT_SECRET: z.string().min(1),
   ACCESS_TOKEN_EXPIRES_IN: z.string().default('30m'),
@@ -50,6 +52,7 @@ function loadConfig() {
     PORT: process.env.PORT,
     NODE_ENV: process.env.NODE_ENV,
     LOG_LEVEL: process.env.LOG_LEVEL,
+    DEPLOYMENT_MODE: process.env.DEPLOYMENT_MODE,
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
     ACCESS_TOKEN_EXPIRES_IN: process.env.ACCESS_TOKEN_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN,
@@ -96,6 +99,7 @@ function loadConfig() {
     console.error('   PORT (default: 3001)');
     console.error('   NODE_ENV (default: development)');
     console.error('   LOG_LEVEL (default: info)');
+    console.error('   DEPLOYMENT_MODE (default: single_instance)');
     console.error('   DATABASE_URL');
     console.error('   JWT_SECRET');
     console.error('   ACCESS_TOKEN_EXPIRES_IN (default: 30m)');
@@ -131,6 +135,8 @@ function loadConfig() {
     console.error('   SSE_CONNECT_PER_MIN (default: 30)');
     process.exit(1);
   }
+
+  assertSupportedDeploymentMode(result.data.DEPLOYMENT_MODE);
 
   return {
     ...result.data,
