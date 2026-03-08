@@ -6,14 +6,14 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { config } from './config.js';
-import { setupWebSocket, sendToDevice, getDeviceSocket, getWsConnectionsCount } from './lib/ws-handler.js';
+import { setupWebSocket, sendToDevice, getWsConnectionsCount } from './lib/ws-handler.js';
 import { deviceStore } from './store/devices.js';
 import { runStore } from './store/runs.js';
 import { screenStore } from './store/screen.js';
 import { actionStore } from './store/actions.js';
 import { toolStore } from './store/tools.js';
 import { setRunPersistence, setSSEBroadcast } from './engine/runEngine.js';
-import { createServerMessage, redactActionForLog, DEFAULT_RUN_CONSTRAINTS } from '@ai-operator/shared';
+import { redactActionForLog, DEFAULT_RUN_CONSTRAINTS } from '@ai-operator/shared';
 import type { Device, InputAction, RunMode, ServerEventType } from '@ai-operator/shared';
 import { prisma } from './db/prisma.js';
 import { actionsRepo } from './repos/actions.js';
@@ -37,6 +37,7 @@ import { recoverInProgressRunsOnStartup } from './lib/run-recovery.js';
 import { redact } from './lib/redact.js';
 import { startRetentionScheduler } from './lib/retention.js';
 import { createSecurityOnSendHook, DEFAULT_JSON_BODY_LIMIT, WEBHOOK_RAW_BODY_LIMIT } from './lib/security.js';
+import { dispatchDeviceCommand, isDeviceCommandQueueEnabled } from './lib/device-commands.js';
 import {
   counterLabelsFromRateLimitKey,
   incCounter,
@@ -96,6 +97,21 @@ const fastify = Fastify({
     return randomUUID();
   },
 });
+
+async function dispatchDeviceCommandToDevice(
+  deviceId: string,
+  commandType: string,
+  payload: Record<string, unknown>
+) {
+  return dispatchDeviceCommand(
+    config.RATE_LIMIT_BACKEND,
+    config.REDIS_URL,
+    deviceId,
+    commandType,
+    payload,
+    (message) => sendToDevice(deviceId, message)
+  );
+}
 
 const appVersion = getAppVersion();
 const versionDriftWarnings = getVersionDriftWarnings();
@@ -1193,25 +1209,16 @@ fastify.post('/devices/:deviceId/pair', async (request, reply) => {
     eventType: 'device.token_issued',
   });
 
-  // Notify device that pairing is complete and provide device token
-  const socket = getDeviceSocket(deviceId);
-  if (socket) {
-    const tokenMsg = createServerMessage('server.device.token', {
-      deviceId,
-      deviceToken,
-    });
-    socket.send(JSON.stringify(tokenMsg));
-
-    const notification = createServerMessage('server.chat.message', {
-      deviceId,
-      message: {
-        role: 'agent' as const,
-        text: '🎉 Device paired successfully! You can now receive commands.',
-        createdAt: Date.now(),
-      },
-    });
-    socket.send(JSON.stringify(notification));
-  }
+  await dispatchDeviceCommandToDevice(deviceId, 'device.token', {
+    deviceToken,
+  });
+  await dispatchDeviceCommandToDevice(deviceId, 'chat.message', {
+    message: {
+      role: 'agent' as const,
+      text: '🎉 Device paired successfully! You can now receive commands.',
+      createdAt: Date.now(),
+    },
+  });
 
   return { ok: true, device: deviceStore.get(deviceId) };
 });
@@ -1301,8 +1308,10 @@ fastify.post('/devices/:deviceId/actions', async (request, reply) => {
     return { error: 'Device not found' };
   }
 
-  // Check device is connected
-  if (!device.connected) {
+  const queueEnabled = isDeviceCommandQueueEnabled(config.RATE_LIMIT_BACKEND);
+
+  // Without Redis queuing, device commands still require a live connection.
+  if (!queueEnabled && !device.connected) {
     reply.status(400);
     return { error: 'Device is not connected' };
   }
@@ -1339,17 +1348,14 @@ fastify.post('/devices/:deviceId/actions', async (request, reply) => {
     action: redactActionForLog(action),
   }, 'Control action created');
 
-  // Send to device via WebSocket
-  const actionMsg = createServerMessage('server.action.request', {
-    deviceId,
+  const delivery = await dispatchDeviceCommandToDevice(deviceId, 'action.request', {
     actionId: deviceAction.actionId,
     action,
     requestedAt: Date.now(),
   });
 
-  const sent = sendToDevice(deviceId, actionMsg);
-  if (!sent) {
-    // Device disconnected between check and send
+  if (!delivery.queued && !delivery.delivered) {
+    // Device disconnected between check and direct fallback send.
     const failedAction = actionStore.setResult(deviceAction.actionId, false, { code: 'DEVICE_DISCONNECTED', message: 'Device disconnected' });
     if (failedAction) {
       await actionsRepo.save(failedAction, user.id);
@@ -1454,21 +1460,19 @@ fastify.post('/runs', async (request, reply) => {
   
   fastify.log.info({ runId: run.runId, deviceId, mode: runMode }, 'Run created');
 
-  // Send run.start to device if connected
-  if (device.connected) {
-    const startMsg = createServerMessage('server.run.start', {
-      deviceId,
+  const queueEnabled = isDeviceCommandQueueEnabled(config.RATE_LIMIT_BACKEND);
+  if (device.connected || queueEnabled) {
+    const delivery = await dispatchDeviceCommandToDevice(deviceId, 'run.start', {
       runId: run.runId,
       goal,
       mode: runMode,
       constraints,
     });
-    const sent = sendToDevice(deviceId, startMsg);
 
-    if (sent) {
-      fastify.log.info({ runId: run.runId, mode: runMode }, 'Run start sent to device');
+    if (delivery.queued || delivery.delivered) {
+      fastify.log.info({ runId: run.runId, mode: runMode, queued: delivery.queued }, 'Run start dispatched to device');
     } else {
-      fastify.log.warn({ runId: run.runId, deviceId }, 'Failed to send run.start to device');
+      fastify.log.warn({ runId: run.runId, deviceId }, 'Failed to dispatch run.start to device');
     }
   }
 
@@ -1540,15 +1544,9 @@ fastify.post('/runs/:runId/cancel', async (request, reply) => {
     return { error: 'Run cannot be canceled (may already be completed or failed)' };
   }
 
-  // Notify device
-  const socket = getDeviceSocket(run.deviceId);
-  if (socket) {
-    const msg = createServerMessage('server.run.canceled', {
-      deviceId: run.deviceId,
-      runId,
-    });
-    socket.send(JSON.stringify(msg));
-  }
+  await dispatchDeviceCommandToDevice(run.deviceId, 'run.canceled', {
+    runId,
+  });
 
   await runsRepo.save(canceled, user.id);
   await createAuditEvent(request, {

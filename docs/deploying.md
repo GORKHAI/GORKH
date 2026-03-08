@@ -15,11 +15,11 @@ Recommended MVP topology:
 - Shared Redis
 
 Why:
-- WS device sockets are instance-local.
-- Redis presence/rate limits are cross-instance, but do not make WS stateless.
-- Single API instance avoids WS/SSE routing complexity during MVP.
+- WS device sockets terminate on one API instance, but device-bound commands now flow through a Redis-backed gateway queue.
+- Redis presence/rate limits/command delivery are cross-instance.
+- Single API instance is still the simplest deployment shape, but multi-instance API is now safe if every node shares the same Redis.
 
-If you scale API horizontally later, use sticky routing (or a dedicated WS gateway) so `/ws` and related device traffic stays pinned.
+If you scale API horizontally, Redis is required and every API node must be able to read/write the shared command streams for `/ws` traffic.
 
 ## Files Added in Iteration 21
 
@@ -147,6 +147,27 @@ Only use that on private internal networks.
 
 For MVP, still run one API instance unless you add explicit sticky routing and validate behavior under reconnect/restarts.
 
+## WS Gateway + Device Queue
+
+Device-bound commands use Redis Streams with this shape:
+- stream key: `device:cmd:<deviceId>`
+- consumer group: `ws-gateway`
+- payload: `{ commandId, commandType, ts, payload }`
+
+Delivery semantics:
+- API/HTTP writers enqueue commands in Redis instead of assuming the target socket is local.
+- The connected WS gateway loop for that device reads pending commands and sends `server.command` to the desktop.
+- The desktop responds with `device.command.ack`.
+- `ok: true` is terminal success and removes the command from the queue.
+- `ok: false` is terminal for semantic failures such as `UNKNOWN_COMMAND`, `INVALID_PAYLOAD`, `POLICY_DENIED`, `APPROVAL_EXPIRED`, `DENIED_BY_USER`, `CANCELED`, and `UNSUPPORTED`.
+- `ok: false` with a retryable error such as `TEMP_UNAVAILABLE`, `DEVICE_BUSY`, `RATE_LIMITED_LOCAL`, `EXECUTION_FAILED_TRANSIENT`, `NETWORK_ERROR`, or `INTERNAL_ERROR` stays queued and is retried with backoff.
+- Commands are delivered with at-least-once semantics, so desktop handlers must be idempotent by `commandId`.
+
+Operational notes:
+- Redis is required for reliable multi-instance device command delivery.
+- If `RATE_LIMIT_BACKEND=memory`, the API falls back to direct in-process WebSocket delivery and offline queue durability is disabled.
+- Stable SSE/dashboard behavior still depends on shared Redis plus healthy reconnect handling; sticky routing is no longer required for device commands themselves.
+
 ## Cloud-Friendly Option (Render/Fly/Hetzner)
 
 This stack maps cleanly to common providers:
@@ -160,7 +181,7 @@ Provider-agnostic checklist:
 1. Run migrate job before API rollout.
 2. Route readiness probes to `/ready`.
 3. Keep `/metrics` private (admin header or private network).
-4. Use shared Redis for rate limits/presence.
+4. Use shared Redis for rate limits, presence, and device command delivery.
 5. Back up Postgres and test restore.
 
 ## Backups (Minimum)

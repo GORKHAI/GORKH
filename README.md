@@ -6,8 +6,10 @@ A TeamViewer-style AI operator product with desktop overlay UI, web portal, and 
 
 - `apps/desktop` - Tauri + Vite + React overlay UI (runs locally for system permissions)
 - `apps/web` - Next.js web portal
-- `apps/api` - Fastify API + WebSocket server
+- `apps/api` - Fastify API + WebSocket gateway/API
 - `packages/shared` - Shared TypeScript types and protocol definitions
+
+Device commands now use a Redis-backed queue with at-least-once delivery and `commandId` acks. A connected desktop receives `server.command`, applies it idempotently, and replies with `device.command.ack`.
 
 ## Prerequisites
 
@@ -62,6 +64,7 @@ pnpm --filter api dev
 ```
 
 REST endpoints:
+
 - `POST /auth/register` - Create an account
 - `POST /auth/login` - Set `access_token`, `refresh_token`, and `csrf_token` cookies (still returns JWT token for API compatibility)
 - `POST /auth/refresh` - Rotate the refresh token and issue a new access token
@@ -99,13 +102,14 @@ pnpm --filter web dev
 Register at `/register`, then log in at `/login`. The web app now uses an HttpOnly access-token cookie, an HttpOnly refresh-token cookie, and a double-submit CSRF cookie for browser mutations. The API still accepts `Authorization: Bearer` for API clients.
 
 Navigate to `/dashboard` to:
+
 - See connected devices
 - Pair devices using pairing codes
 - Create and monitor runs in real-time (via SSE)
 - Cancel active runs
 - **View screen preview** (Iteration 4) - click "View Screen" on a device with streaming enabled
 
-The `/download` page is subscription-gated. It reads release metadata from the API. In `DESKTOP_RELEASE_SOURCE=file` mode, the API serves the Iteration 13 env-based URLs. In `DESKTOP_RELEASE_SOURCE=github` mode, it derives the latest version and installer links from GitHub Release assets.
+The `/download` page is subscription-gated. It reads release metadata from the API. In `DESKTOP_RELEASE_SOURCE=file` mode, the API serves the Iteration 13 env-based URLs. In `DESKTOP_RELEASE_SOURCE=github` mode, it derives the latest stable version and installer links from GitHub Release assets by default. Beta releases stay on GitHub pre-release tags unless you explicitly pin `DESKTOP_RELEASE_TAG` to a beta tag.
 
 ### Desktop App
 
@@ -127,23 +131,26 @@ pnpm --filter desktop tauri:dev
 
 Packaged production desktop builds must use `https://` for `VITE_API_HTTP_BASE` and `wss://` for `VITE_API_WS_URL`. `VITE_DESKTOP_ALLOW_INSECURE_LOCALHOST=true` exists only for local debug packaging and should not be used for real production distribution.
 
-Desktop auto-update is configured through the API updater feed at `/updates/desktop/...`. In `DESKTOP_RELEASE_SOURCE=file` mode, the API serves stub manifests from `apps/api/updates`. In `DESKTOP_RELEASE_SOURCE=github` mode, it builds the updater response dynamically from GitHub Release assets and `.sig` files.
+Desktop auto-update is configured through the API updater feed at `/updates/desktop/...`. In `DESKTOP_RELEASE_SOURCE=file` mode, the API serves stub manifests from `apps/api/updates`. In `DESKTOP_RELEASE_SOURCE=github` mode, it builds the updater response dynamically from GitHub Release assets and `.sig` files. Stable auto-updates only promote signed releases; unsigned beta releases are kept off the default updater path.
 
 The desktop app now runs as an always-on tray agent. Closing the window hides it to the system tray instead of exiting. Use the tray menu to show the app again or choose `Quit` to fully exit. Screen preview and remote control remain opt-in and can be toggled from the tray or the desktop UI.
 
 Desktop privileged work is approval-gated locally:
+
 - every control action, tool call, and AI proposal enters an explicit approval state machine
 - pending approvals expire after 60 seconds by default
 - `Stop All` cancels pending approvals, pauses AI assist, and turns off the local control/screen-preview toggles
 - local diagnostics export is redacted and excludes typed text, terminal args, file contents, tokens, and raw LLM keys
 
 macOS operator onboarding:
+
 - grant **Screen Recording** if you want live screen preview/capture
 - grant **Accessibility** if you want input injection for remote control
 - use the in-app Settings > Permissions buttons to open the relevant System Settings panels
 - if the desktop reports `unknown`, reproduce the failing action once and follow the permission guidance banner shown in-app
 
 The Settings panel includes:
+
 - `Start minimized to tray`
 - `Launch at startup` (best-effort in dev, supported on macOS and Windows packaged builds)
 - `Permissions` status for Screen Recording and Accessibility, with direct settings shortcuts
@@ -158,6 +165,7 @@ pnpm --filter @ai-operator/desktop tauri:check
 ```
 
 That command runs:
+
 - `cargo fmt --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `tauri build --debug`
@@ -169,12 +177,13 @@ Desktop security config is also checked with `pnpm check:desktop:security`, whic
 
 - Set `WEB_ORIGIN` and `APP_BASE_URL` so cookie auth and Stripe redirects match your local or Codespace URLs.
 - Use `stripe listen --forward-to localhost:3001/billing/webhook` and `stripe trigger customer.subscription.updated` to exercise billing webhooks.
-- Use `DESKTOP_RELEASE_SOURCE=file` for local stubbed downloads, or `DESKTOP_RELEASE_SOURCE=github` with `GITHUB_REPO_OWNER` and `GITHUB_REPO_NAME` to make GitHub Releases the source of truth.
+- Use `DESKTOP_RELEASE_SOURCE=file` for local stubbed downloads, or `DESKTOP_RELEASE_SOURCE=github` with `GITHUB_REPO_OWNER` and `GITHUB_REPO_NAME` to make GitHub Releases the source of truth for stable signed releases.
 - Set `ADMIN_API_KEY` if you want to use `/admin/health` for aggregate runtime diagnostics.
 - Set `ADMIN_API_KEY` if you want to use `/metrics` for Prometheus scraping (send as `x-admin-api-key`).
 - Rate limits and device presence support `RATE_LIMIT_BACKEND=memory|redis` with `REDIS_URL=redis://localhost:6379`. If Redis is unavailable, the API logs a warning and falls back to in-memory behavior.
+- Multi-instance-safe device command delivery also depends on `RATE_LIMIT_BACKEND=redis` plus shared `REDIS_URL`. In `memory` mode, the API falls back to direct in-process WS delivery and offline command durability is disabled.
 - In-progress run recovery on API restart is controlled by `RUN_RECOVERY_POLICY=fail|cancel` (default: `fail`), marking stale in-progress runs with reason `server_restart`.
-- See [docs/releasing.md](/workspaces/GM7/docs/releasing.md) for the GitHub Actions desktop release flow and required CI secrets.
+- See [docs/releasing.md](/workspaces/GM7/docs/releasing.md) for the beta vs stable desktop release flow, required CI secrets, and signing/notarization rotation guidance.
 
 ## Production Deployment
 
@@ -199,9 +208,9 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod --profile edge --
 ### Topology and Scaling
 
 - Single-instance deployment works out of the box.
-- Multi-instance deployment requires shared Postgres plus shared Redis for cross-instance rate limits and device presence.
-- WebSocket device connections are still instance-local. Use sticky routing (device/session affinity) or a dedicated WS gateway so control traffic stays pinned to the owning API instance.
-- Redis-backed presence improves dashboard connection accuracy across instances, but it does not replace WS affinity requirements.
+- Multi-instance deployment requires shared Postgres plus shared Redis for cross-instance rate limits, presence, and device command delivery.
+- Device-bound commands are queued in Redis Streams and drained by the connected WS gateway loop, so run starts and action requests survive node boundaries and reconnects with at-least-once delivery.
+- Desktop command handlers must remain idempotent by `commandId`.
 
 ### Required Production Environment
 
@@ -407,11 +416,22 @@ On macOS, screen capture requires **Screen Recording** permission:
 
 ### Setup AI Assist
 
+**Option 1: OpenAI (Cloud)**
 1. Open Desktop → Settings
-2. Configure LLM Provider (currently OpenAI only)
+2. Select Provider: "OpenAI (cloud, requires API key)"
 3. Enter API Key (stored securely in OS keychain)
 4. Click "Test Connection" to verify
 5. From web dashboard, create run with Mode = "AI Assist"
+
+**Option 2: Local Model (Qwen, etc.)**
+1. Set up a local OpenAI-compatible server (see [docs/local-llm.md](/workspaces/GM7/docs/local-llm.md))
+2. Open Desktop → Settings
+3. Select Provider: "Local (OpenAI-compatible)"
+4. Configure Base URL (default: http://127.0.0.1:8000) and Model name
+5. Click "Test Connection" to verify
+6. From web dashboard, create run with Mode = "AI Assist"
+
+Local models run entirely on your machine—screenshots never leave your computer.
 
 ### Security
 
@@ -476,6 +496,7 @@ On macOS, screen capture requires **Screen Recording** permission:
 Copy `.env.example` to `.env.local` in each app directory:
 
 ### apps/api/.env.example
+
 ```
 PORT=3001
 NODE_ENV=development
@@ -495,12 +516,14 @@ APP_BASE_URL=http://localhost:3000
 ```
 
 ### apps/web/.env.example
+
 ```
 NEXT_PUBLIC_API_BASE=http://localhost:3001
 # Browser requests use credentials: "include"
 ```
 
 ### apps/desktop/.env.example
+
 ```
 VITE_API_WS_URL=ws://localhost:3001/ws
 ```

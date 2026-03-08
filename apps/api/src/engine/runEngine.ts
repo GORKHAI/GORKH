@@ -1,8 +1,10 @@
 import type { RunWithSteps, RunStep, StepStatus, ApprovalDecision, LogLine, ToolSummary } from '@ai-operator/shared';
-import { RunStatus, createServerMessage } from '@ai-operator/shared';
+import { RunStatus } from '@ai-operator/shared';
 import { runStore, type RunEngine } from '../store/runs.js';
 import { sendToDevice } from '../lib/ws-handler.js';
 import type { FastifyInstance } from 'fastify';
+import { config } from '../config.js';
+import { dispatchDeviceCommand } from '../lib/device-commands.js';
 
 const APPROVAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const STEP_DELAY_MS = 500; // Base delay between steps
@@ -20,16 +22,20 @@ export function createRunEngine(runId: string, fastify: FastifyInstance): RunEng
     runStore.addLog(runId, stepId, log);
     persistRun(runId);
 
-    // Send to device
-    const msg = createServerMessage('server.run.log', {
-      deviceId: run.deviceId,
-      runId,
-      stepId,
-      line,
-      level,
-      at: log.at,
-    });
-    sendToDevice(run.deviceId, msg);
+    void dispatchDeviceCommand(
+      config.RATE_LIMIT_BACKEND,
+      config.REDIS_URL,
+      run.deviceId,
+      'run.log',
+      {
+        runId,
+        stepId,
+        line,
+        level,
+        at: log.at,
+      },
+      (message) => sendToDevice(run.deviceId, message)
+    );
 
     // Also send to SSE subscribers
     sseBroadcast({ type: 'log_line', runId, stepId, log });
@@ -58,13 +64,17 @@ export function createRunEngine(runId: string, fastify: FastifyInstance): RunEng
     runStore.updateStep(runId, stepId, stepUpdate);
     persistRun(runId);
 
-    // Send to device
-    const msg = createServerMessage('server.run.step_update', {
-      deviceId: run.deviceId,
-      runId,
-      step: { ...step, ...stepUpdate },
-    });
-    sendToDevice(run.deviceId, msg);
+    void dispatchDeviceCommand(
+      config.RATE_LIMIT_BACKEND,
+      config.REDIS_URL,
+      run.deviceId,
+      'run.step_update',
+      {
+        runId,
+        step: { ...step, ...stepUpdate },
+      },
+      (message) => sendToDevice(run.deviceId, message)
+    );
 
     // Broadcast to SSE
     sseBroadcast({ type: 'step_update', runId, step: { ...step, ...stepUpdate } });
@@ -74,13 +84,17 @@ export function createRunEngine(runId: string, fastify: FastifyInstance): RunEng
     const run = runStore.updateStatus(runId, status, reason);
     if (run) {
       persistRun(runId);
-      // Send to device
-      const msg = createServerMessage('server.run.status', {
-        deviceId: run.deviceId,
-        runId,
-        status,
-      });
-      sendToDevice(run.deviceId, msg);
+      void dispatchDeviceCommand(
+        config.RATE_LIMIT_BACKEND,
+        config.REDIS_URL,
+        run.deviceId,
+        'run.status',
+        {
+          runId,
+          status,
+        },
+        (message) => sendToDevice(run.deviceId, message)
+      );
 
       // Broadcast to SSE
       sseBroadcast({ type: 'run_update', run });
@@ -148,13 +162,17 @@ export function createRunEngine(runId: string, fastify: FastifyInstance): RunEng
           updateRunStatus('waiting_for_user');
           updateStep(step.stepId, 'blocked');
 
-          // Send approval request to device
-          const approvalMsg = createServerMessage('server.approval.request', {
-            deviceId: run.deviceId,
-            runId,
-            approval: run.pendingApproval!,
-          });
-          sendToDevice(run.deviceId, approvalMsg);
+          await dispatchDeviceCommand(
+            config.RATE_LIMIT_BACKEND,
+            config.REDIS_URL,
+            run.deviceId,
+            'approval.request',
+            {
+              runId,
+              approval: run.pendingApproval!,
+            },
+            (message) => sendToDevice(run.deviceId, message)
+          );
 
           // Broadcast to SSE
           sseBroadcast({ type: 'run_update', run: runStore.get(runId)! });
@@ -200,12 +218,16 @@ export function createRunEngine(runId: string, fastify: FastifyInstance): RunEng
       return;
     }
 
-    // Send full run details to device
-    const detailsMsg = createServerMessage('server.run.details', {
-      deviceId: runData.deviceId,
-      run: runData,
-    });
-    sendToDevice(runData.deviceId, detailsMsg);
+    await dispatchDeviceCommand(
+      config.RATE_LIMIT_BACKEND,
+      config.REDIS_URL,
+      runData.deviceId,
+      'run.details',
+      {
+        run: runData,
+      },
+      (message) => sendToDevice(runData.deviceId, message)
+    );
 
     updateRunStatus('running');
 

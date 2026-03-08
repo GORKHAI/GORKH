@@ -30,6 +30,7 @@ let pingTimer = null;
 let hasConnected = false;
 let attemptedFallback = false;
 const acceptedRuns = new Set();
+const handledCommandAcks = new Map();
 
 function persistState() {
   writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
@@ -55,6 +56,17 @@ function send(type, payload, requestId = randomUUID()) {
     payload,
   };
   ws.send(JSON.stringify(message));
+}
+
+function rememberCommandAck(payload) {
+  handledCommandAcks.set(payload.commandId, payload);
+  if (handledCommandAcks.size > 200) {
+    const oldest = handledCommandAcks.keys().next().value;
+    if (oldest) {
+      handledCommandAcks.delete(oldest);
+    }
+  }
+  send('device.command.ack', payload);
 }
 
 function sendHello() {
@@ -205,6 +217,62 @@ function handleMessage(message) {
   const type = typeof message?.type === 'string' ? message.type : 'unknown';
   log(`WS_RX=${type}`);
 
+  if (type === 'server.command') {
+    const commandId = message?.payload?.commandId;
+    const commandType = message?.payload?.commandType;
+
+    if (commandId && handledCommandAcks.has(commandId)) {
+      send('device.command.ack', handledCommandAcks.get(commandId));
+      return;
+    }
+
+    if (!commandId || !commandType) {
+      return;
+    }
+
+    const legacyType = `server.${commandType}`;
+    const supportedTypes = new Set([
+      'server.action.request',
+      'server.approval.request',
+      'server.chat.message',
+      'server.device.token',
+      'server.run.canceled',
+      'server.run.details',
+      'server.run.log',
+      'server.run.start',
+      'server.run.status',
+      'server.run.step_update',
+    ]);
+
+    if (!supportedTypes.has(legacyType)) {
+      rememberCommandAck({
+        deviceId: DEVICE_ID,
+        commandId,
+        ok: false,
+        errorCode: 'UNKNOWN_COMMAND',
+        retryable: false,
+      });
+      return;
+    }
+
+    handleMessage({
+      v: 1,
+      type: legacyType,
+      ts: Date.now(),
+      payload: {
+        deviceId: message?.payload?.deviceId,
+        ...(message?.payload?.payload || {}),
+      },
+    });
+
+    rememberCommandAck({
+      deviceId: DEVICE_ID,
+      commandId,
+      ok: true,
+    });
+    return;
+  }
+
   switch (type) {
     case 'server.hello_ack':
       sendInitialState();
@@ -323,6 +391,13 @@ function handleMessage(message) {
       }, 100);
       return;
     }
+
+    case 'server.chat.message':
+    case 'server.run.status':
+    case 'server.run.log':
+    case 'server.run.step_update':
+    case 'server.run.canceled':
+      return;
 
     default:
       return;

@@ -24,6 +24,7 @@ import {
   parseDeviceMessage,
   createServerMessage,
   ErrorCode,
+  isRetryableDeviceCommandAckErrorCode,
   redactActionForLog,
 } from '@ai-operator/shared';
 import { deviceStore } from '../store/devices.js';
@@ -44,6 +45,15 @@ import { ownership } from './ownership.js';
 import { consumeRateLimit } from './ratelimit.js';
 import { clearPresence, setPresence, touchPresence } from './presence.js';
 import { counterLabelsFromRateLimitKey, incCounter, setGauge } from './metrics.js';
+import {
+  ackDeviceCommand,
+  createServerCommandMessage,
+  isDeviceCommandQueueEnabled,
+  readNewDeviceCommands,
+  readPendingDeviceCommands,
+  recordDeviceCommandSendFailure,
+  type DeviceCommandRecord,
+} from './device-commands.js';
 
 // Track connected sockets and their device IDs
 interface SocketState {
@@ -62,9 +72,14 @@ type WebSocketLike = {
 };
 
 const socketToDevice = new Map<WebSocketLike, SocketState>();
+const deviceGatewayLoops = new Map<string, { loopId: string; socket: WebSocketLike }>();
+const deviceInFlightCommands = new Map<string, { commandId: string; sentAt: number }>();
 
 // HELLO timeout in ms
 const HELLO_TIMEOUT_MS = 10_000;
+const DEVICE_GATEWAY_BLOCK_MS = 1_000;
+const DEVICE_GATEWAY_IDLE_MS = 250;
+const DEVICE_COMMAND_ACK_TIMEOUT_MS = 15_000;
 const require = createRequire(import.meta.url);
 const wsRuntime = (() => {
   try {
@@ -168,6 +183,276 @@ function getToolAuditMeta(toolCall: ToolCall, result?: { ok: boolean; exitCode?:
     ok: result?.ok,
     errorCode: result?.error?.code,
   };
+}
+
+function sendToSocket(socket: WebSocketLike, message: ServerMessage): boolean {
+  try {
+    socket.send(JSON.stringify(message));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isCurrentGatewayLoop(deviceId: string, loopId: string, socket: WebSocketLike): boolean {
+  const current = deviceGatewayLoops.get(deviceId);
+  return current?.loopId === loopId && current.socket === socket;
+}
+
+function clearDeviceInFlightCommand(deviceId: string, commandId?: string) {
+  const current = deviceInFlightCommands.get(deviceId);
+  if (!current) {
+    return;
+  }
+
+  if (!commandId || current.commandId === commandId) {
+    deviceInFlightCommands.delete(deviceId);
+  }
+}
+
+function getCommandIdentifiers(command: DeviceCommandRecord): {
+  runId?: string;
+  actionId?: string;
+} {
+  return {
+    runId: typeof command.payload.runId === 'string' ? command.payload.runId : undefined,
+    actionId: typeof command.payload.actionId === 'string' ? command.payload.actionId : undefined,
+  };
+}
+
+function getCommandOwnerUserId(command: DeviceCommandRecord): string | undefined {
+  const identifiers = getCommandIdentifiers(command);
+  if (identifiers.actionId) {
+    return ownership.getActionOwner(identifiers.actionId) ?? undefined;
+  }
+  if (identifiers.runId) {
+    return ownership.getRunOwner(identifiers.runId) ?? undefined;
+  }
+  return ownership.getDeviceOwner(command.deviceId) ?? undefined;
+}
+
+async function createDeviceCommandAuditEvent(
+  state: SocketState | undefined,
+  command: DeviceCommandRecord,
+  eventType: string,
+  meta?: Record<string, unknown>
+) {
+  const identifiers = getCommandIdentifiers(command);
+  await createSocketAuditEvent(state, {
+    userId: getCommandOwnerUserId(command),
+    deviceId: command.deviceId,
+    runId: identifiers.runId,
+    actionId: identifiers.actionId,
+    eventType,
+    meta: {
+      commandId: command.commandId,
+      commandType: command.commandType,
+      ...meta,
+    },
+  });
+}
+
+async function applyTerminalDeviceCommandOutcome(
+  command: DeviceCommandRecord,
+  ack: Extract<DeviceMessage, { type: 'device.command.ack' }>['payload'],
+  state: SocketState | undefined
+) {
+  if (ack.ok) {
+    await createDeviceCommandAuditEvent(state, command, 'device.command.delivered', {
+      ok: true,
+    });
+    return;
+  }
+
+  const identifiers = getCommandIdentifiers(command);
+  await createDeviceCommandAuditEvent(state, command, 'device.command.rejected', {
+    ok: false,
+    errorCode: ack.errorCode,
+    retryable: false,
+  });
+
+  switch (command.commandType) {
+    case 'action.request': {
+      if (!identifiers.actionId) {
+        return;
+      }
+
+      const action = actionStore.setResult(identifiers.actionId, false, {
+        code: ack.errorCode,
+        message: `Device rejected action.request (${ack.errorCode})`,
+      });
+      const ownerUserId = ownership.getActionOwner(identifiers.actionId);
+      if (action && ownerUserId) {
+        await actionsRepo.save(action, ownerUserId);
+        await createSocketAuditEvent(state, {
+          userId: ownerUserId,
+          deviceId: command.deviceId,
+          actionId: identifiers.actionId,
+          eventType: 'control.failed',
+          meta: getActionAuditMeta(action.action),
+        });
+        sseBroadcast({ type: 'action_update', action });
+      }
+      return;
+    }
+
+    case 'run.start': {
+      if (!identifiers.runId) {
+        return;
+      }
+
+      const existing = runStore.get(identifiers.runId);
+      if (!existing || existing.status !== 'queued') {
+        return;
+      }
+
+      const failedRun = runStore.updateStatus(
+        identifiers.runId,
+        'failed',
+        `Device rejected run.start (${ack.errorCode})`
+      );
+      if (!failedRun) {
+        return;
+      }
+
+      await persistRun(identifiers.runId);
+      await createSocketAuditEvent(state, {
+        userId: ownership.getRunOwner(identifiers.runId) ?? undefined,
+        deviceId: command.deviceId,
+        runId: identifiers.runId,
+        eventType: 'run.failed',
+        meta: { reason: ack.errorCode },
+      });
+      sseBroadcast({ type: 'run_update', run: failedRun });
+      return;
+    }
+
+    case 'approval.request': {
+      if (!identifiers.runId) {
+        return;
+      }
+
+      const engine = runStore.getEngine(identifiers.runId);
+      if (engine) {
+        engine.handleApproval('denied', ack.errorCode);
+      } else {
+        const run = runStore.resolveApproval(identifiers.runId, 'denied', ack.errorCode);
+        if (run) {
+          await persistRun(identifiers.runId);
+          sseBroadcast({ type: 'run_update', run });
+        }
+      }
+      return;
+    }
+
+    default:
+      return;
+  }
+}
+
+async function startDeviceGatewayLoop(
+  deviceId: string,
+  socket: WebSocketLike,
+  fastify: FastifyInstance
+) {
+  if (!isDeviceCommandQueueEnabled(config.RATE_LIMIT_BACKEND)) {
+    return;
+  }
+
+  const loopId = randomUUID();
+  deviceGatewayLoops.set(deviceId, { loopId, socket });
+  clearDeviceInFlightCommand(deviceId);
+
+  fastify.log.info({ deviceId, loopId }, 'Starting device command gateway loop');
+
+  while (isCurrentGatewayLoop(deviceId, loopId, socket)) {
+    try {
+      const inFlight = deviceInFlightCommands.get(deviceId);
+      if (inFlight) {
+        if (Date.now() - inFlight.sentAt >= DEVICE_COMMAND_ACK_TIMEOUT_MS) {
+          await recordDeviceCommandSendFailure(
+            config.RATE_LIMIT_BACKEND,
+            config.REDIS_URL,
+            deviceId,
+            inFlight.commandId,
+            'TEMP_UNAVAILABLE'
+          );
+          clearDeviceInFlightCommand(deviceId, inFlight.commandId);
+        } else {
+          await delay(DEVICE_GATEWAY_IDLE_MS);
+          continue;
+        }
+      }
+
+      const pending = await readPendingDeviceCommands(
+        config.RATE_LIMIT_BACKEND,
+        config.REDIS_URL,
+        deviceId,
+        deviceId
+      );
+      const commands = pending.length > 0
+        ? pending
+        : await readNewDeviceCommands(
+          config.RATE_LIMIT_BACKEND,
+          config.REDIS_URL,
+          deviceId,
+          deviceId,
+          DEVICE_GATEWAY_BLOCK_MS
+        );
+
+      if (commands.length === 0) {
+        continue;
+      }
+
+      for (const queuedCommand of commands) {
+        if (!isCurrentGatewayLoop(deviceId, loopId, socket)) {
+          return;
+        }
+
+        const sent = sendToSocket(socket, createServerCommandMessage(queuedCommand.command));
+        if (!sent) {
+          await recordDeviceCommandSendFailure(
+            config.RATE_LIMIT_BACKEND,
+            config.REDIS_URL,
+            deviceId,
+            queuedCommand.command.commandId,
+            'NETWORK_ERROR'
+          );
+          await delay(DEVICE_GATEWAY_IDLE_MS);
+          return;
+        }
+
+        deviceInFlightCommands.set(deviceId, {
+          commandId: queuedCommand.command.commandId,
+          sentAt: Date.now(),
+        });
+
+        fastify.log.info(
+          {
+            deviceId,
+            commandId: queuedCommand.command.commandId,
+            commandType: queuedCommand.command.commandType,
+          },
+          'Device command delivered to socket'
+        );
+      }
+    } catch (error) {
+      fastify.log.error({ err: redact(error), deviceId, loopId }, 'Device gateway loop failed');
+      await delay(DEVICE_GATEWAY_IDLE_MS);
+    }
+  }
+}
+
+function stopDeviceGatewayLoop(deviceId: string, socket: WebSocketLike) {
+  const current = deviceGatewayLoops.get(deviceId);
+  if (current?.socket === socket) {
+    deviceGatewayLoops.delete(deviceId);
+  }
+  clearDeviceInFlightCommand(deviceId);
 }
 
 async function enforceSocketRateLimit(
@@ -348,6 +633,7 @@ function handleSocketConnection(
         socketToDevice.delete(socket);
         setGauge('ws_connections_current', socketToDevice.size);
         if (state.helloReceived) {
+          stopDeviceGatewayLoop(state.deviceId, socket);
           deviceStore.setConnected(state.deviceId, false);
           void clearPresence(config.RATE_LIMIT_BACKEND, config.REDIS_URL, state.deviceId);
           fastify.log.info({ connectionId: state.connectionId, deviceId: state.deviceId, count: socketToDevice.size }, 'Device disconnected');
@@ -455,6 +741,7 @@ async function handleDeviceMessage(
         requestId
       );
       socket.send(JSON.stringify(response));
+      void startDeviceGatewayLoop(deviceId, socket, fastify);
       break;
     }
 
@@ -980,6 +1267,50 @@ async function handleDeviceMessage(
       break;
     }
 
+    case 'device.command.ack': {
+      const { deviceId, commandId } = payload;
+      const state = socketToDevice.get(socket);
+      clearDeviceInFlightCommand(deviceId, commandId);
+
+      const outcome = await ackDeviceCommand(
+        config.RATE_LIMIT_BACKEND,
+        config.REDIS_URL,
+        payload
+      );
+
+      if (!payload.ok && outcome.status === 'retry' && outcome.command) {
+        await createDeviceCommandAuditEvent(state, outcome.command, 'device.command.retry_scheduled', {
+          ok: false,
+          errorCode: payload.errorCode,
+          retryable: payload.retryable ?? isRetryableDeviceCommandAckErrorCode(payload.errorCode),
+          retryAt: outcome.retryAt,
+        });
+        fastify.log.warn(
+          { deviceId, commandId, commandType: outcome.command.commandType, retryAt: outcome.retryAt },
+          'Retryable device command nack received'
+        );
+        break;
+      }
+
+      if (outcome.status === 'acked' && outcome.command) {
+        await applyTerminalDeviceCommandOutcome(outcome.command, payload, state);
+        fastify.log.info(
+          {
+            deviceId,
+            commandId,
+            commandType: outcome.command.commandType,
+            ok: payload.ok,
+            errorCode: payload.ok ? undefined : payload.errorCode,
+          },
+          'Terminal device command ack processed'
+        );
+        break;
+      }
+
+      fastify.log.debug({ deviceId, commandId, status: outcome.status }, 'Device command ack ignored');
+      break;
+    }
+
     // Iteration 8: Workspace Tools - with tool lifecycle
     case 'device.tool.request': {
       const { deviceId, runId, toolEventId, toolCallId, toolCall, at } = payload;
@@ -1137,8 +1468,7 @@ async function persistRun(runId: string): Promise<void> {
 export function sendToDevice(deviceId: string, message: ServerMessage): boolean {
   for (const [socket, state] of socketToDevice) {
     if (state.deviceId === deviceId) {
-      socket.send(JSON.stringify(message));
-      return true;
+      return sendToSocket(socket, message);
     }
   }
   return false;

@@ -13,13 +13,17 @@
     "lint:ci": "pnpm --filter @ai-operator/web lint && pnpm --filter @ai-operator/api typecheck && pnpm --filter @ai-operator/shared typecheck && pnpm --filter @ai-operator/desktop typecheck",
     "smoke:from-zero": "bash scripts/smoke/httpSmoke.sh",
     "smoke:ws": "bash scripts/smoke/wsSmoke.sh",
+    "smoke:final": "bash scripts/final-smoke.sh",
     "test": "pnpm --filter @ai-operator/shared test && pnpm --filter @ai-operator/api test && node --import tsx --test --test-force-exit tests/**/*.test.mjs tests/**/*.test.ts",
     "typecheck": "turbo run typecheck",
     "version:check": "node scripts/version-check.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "check:desktop:csp": "node scripts/check-desktop-csp.mjs",
-    "check:desktop:security": "node scripts/check-desktop-security.mjs"
+    "check:desktop:security": "node scripts/check-desktop-security.mjs",
+    "release:verify:github": "node scripts/release/verify-github-release.mjs",
+    "release:verify:api": "node scripts/release/verify-api-feed.mjs",
+    "release:verify": "pnpm release:verify:github && pnpm release:verify:api"
   },
   "devDependencies": {
     "@types/node": "^20",

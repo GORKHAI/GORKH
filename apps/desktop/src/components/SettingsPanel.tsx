@@ -15,8 +15,10 @@ import {
   type PermissionTarget,
 } from '../lib/permissions.js';
 
+export type LlmProvider = 'openai' | 'openai_compat';
+
 export interface LlmSettings {
-  provider: 'openai';
+  provider: LlmProvider;
   baseUrl: string;
   model: string;
 }
@@ -77,6 +79,18 @@ export function SettingsPanel({
     baseUrl: 'https://api.openai.com',
     model: 'gpt-4.1-mini',
   });
+  
+  // Provider-specific defaults
+  const providerDefaults: Record<LlmProvider, Partial<LlmSettings>> = {
+    openai: {
+      baseUrl: 'https://api.openai.com',
+      model: 'gpt-4.1-mini',
+    },
+    openai_compat: {
+      baseUrl: 'http://127.0.0.1:8000',
+      model: 'qwen2.5-7b-instruct',
+    },
+  };
   const [apiKey, setApiKey] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -94,10 +108,12 @@ export function SettingsPanel({
     const saved = localStorage.getItem('ai-operator-settings');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        setSettings((s) => ({ ...s, ...parsed }));
+        const parsed = JSON.parse(saved) as LlmSettings;
+        // Merge with defaults for the saved provider
+        const defaults = providerDefaults[parsed.provider] || providerDefaults.openai;
+        setSettings((s) => ({ ...s, ...defaults, ...parsed }));
       } catch {
-        // Ignore parse errors
+        // Ignore parse errors, use defaults
       }
     }
 
@@ -150,10 +166,18 @@ export function SettingsPanel({
     }
   };
 
-  const checkApiKey = async () => {
+  const checkApiKey = async (provider?: LlmProvider) => {
+    const providerToCheck = provider || settings.provider;
     try {
-      const has = await invoke<boolean>('has_llm_api_key', { provider: 'openai' });
-      setHasKey(has);
+      // For openai_compat, we don't require a key by default
+      if (providerToCheck === 'openai_compat') {
+        // Check if user has explicitly set a key (optional for local)
+        const has = await invoke<boolean>('has_llm_api_key', { provider: providerToCheck });
+        setHasKey(has);
+      } else {
+        const has = await invoke<boolean>('has_llm_api_key', { provider: providerToCheck });
+        setHasKey(has);
+      }
     } catch (e) {
       console.error('Failed to check API key:', e);
       setHasKey(false);
@@ -187,6 +211,8 @@ export function SettingsPanel({
       setIsLoading(false);
     }
   };
+  
+
 
   const handleClearKey = async () => {
     setIsLoading(true);
@@ -206,11 +232,13 @@ export function SettingsPanel({
     setTestResult(null);
 
     try {
-      // Check if key exists first
-      const has = await invoke<boolean>('has_llm_api_key', { provider: settings.provider });
-      if (!has) {
-        setTestResult({ success: false, message: 'No API key configured. Please enter and save your key first.' });
-        return;
+      // For cloud providers, check if key exists
+      if (settings.provider !== 'openai_compat') {
+        const has = await invoke<boolean>('has_llm_api_key', { provider: settings.provider });
+        if (!has) {
+          setTestResult({ success: false, message: 'No API key configured. Please enter and save your key first.' });
+          return;
+        }
       }
 
       // Test the connection with a simple ask_user request (no screenshot needed)
@@ -238,6 +266,18 @@ export function SettingsPanel({
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('NO_API_KEY')) {
         setTestResult({ success: false, message: 'No API key configured. Please enter and save your key first.' });
+      } else if (msg.includes('CONNECTION_FAILED') || msg.includes('Connection refused') || msg.includes('Failed to connect')) {
+        setTestResult({ 
+          success: false, 
+          message: settings.provider === 'openai_compat' 
+            ? 'Local server not reachable. Ensure your local LLM server is running at ' + settings.baseUrl + ' and try again.'
+            : `Connection failed: ${msg}`
+        });
+      } else if (msg.includes('TIMEOUT')) {
+        setTestResult({ 
+          success: false, 
+          message: 'Request timed out. The local server may be overloaded or not responding.'
+        });
       } else {
         setTestResult({ success: false, message: `Test failed: ${msg}` });
       }
@@ -367,7 +407,18 @@ export function SettingsPanel({
             </label>
             <select
               value={settings.provider}
-              onChange={(e) => setSettings((s) => ({ ...s, provider: e.target.value as 'openai' }))}
+              onChange={(e) => {
+                const newProvider = e.target.value as LlmProvider;
+                // Apply defaults for the selected provider
+                const defaults = providerDefaults[newProvider];
+                setSettings((s) => ({ 
+                  ...s, 
+                  provider: newProvider,
+                  ...defaults,
+                }));
+                // Check API key status for new provider
+                void checkApiKey(newProvider);
+              }}
               style={{
                 width: '100%',
                 padding: '0.5rem',
@@ -376,9 +427,8 @@ export function SettingsPanel({
                 fontSize: '0.875rem',
               }}
             >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic" disabled>Anthropic (coming soon)</option>
-              <option value="google" disabled>Google (coming soon)</option>
+              <option value="openai">OpenAI (cloud, requires API key)</option>
+              <option value="openai_compat">Local (OpenAI-compatible) — Qwen, etc.</option>
             </select>
           </div>
 
@@ -421,11 +471,14 @@ export function SettingsPanel({
               }}
             />
             <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#666' }}>
-              Examples: gpt-4.1-mini, gpt-4.1, gpt-4o
+              {settings.provider === 'openai' 
+                ? 'Examples: gpt-4.1-mini, gpt-4.1, gpt-4o'
+                : 'Examples: qwen2.5-7b-instruct, llama-3.2-8b-instruct'}
             </p>
           </div>
 
-          {/* API Key */}
+          {/* API Key - only show for cloud providers */}
+          {settings.provider !== 'openai_compat' && (
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', color: '#333' }}>
               API Key {hasKey && <span style={{ color: '#10b981' }}>✓ Saved</span>}
@@ -481,19 +534,39 @@ export function SettingsPanel({
               Stored securely in your OS keychain. Never sent to the server.
             </p>
           </div>
+          )}
+          
+          {/* Local server note */}
+          {settings.provider === 'openai_compat' && (
+            <div style={{ 
+              marginBottom: '1rem', 
+              padding: '0.75rem', 
+              backgroundColor: '#f0f9ff', 
+              border: '1px solid #bae6fd',
+              borderRadius: '4px',
+              fontSize: '0.875rem',
+              color: '#0369a1',
+            }}>
+              <strong>Local Model Setup Required</strong>
+              <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
+                You need to run a local OpenAI-compatible server (e.g., vLLM, llama.cpp server) 
+                on your machine. See documentation for setup instructions.
+              </p>
+            </div>
+          )}
 
           {/* Test Button */}
           <button
             onClick={handleTest}
-            disabled={isLoading || !hasKey}
+            disabled={isLoading || (settings.provider !== 'openai_compat' && !hasKey)}
             style={{
               width: '100%',
               padding: '0.75rem',
-              backgroundColor: hasKey ? '#10b981' : '#ccc',
+              backgroundColor: (settings.provider === 'openai_compat' || hasKey) ? '#10b981' : '#ccc',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: hasKey ? 'pointer' : 'not-allowed',
+              cursor: (settings.provider === 'openai_compat' || hasKey) ? 'pointer' : 'not-allowed',
               fontSize: '0.875rem',
               fontWeight: 500,
             }}

@@ -78,6 +78,37 @@ export const ErrorCode = {
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
+export const DeviceCommandAckErrorCode = {
+  UNKNOWN_COMMAND: 'UNKNOWN_COMMAND',
+  INVALID_PAYLOAD: 'INVALID_PAYLOAD',
+  POLICY_DENIED: 'POLICY_DENIED',
+  APPROVAL_EXPIRED: 'APPROVAL_EXPIRED',
+  DENIED_BY_USER: 'DENIED_BY_USER',
+  CANCELED: 'CANCELED',
+  UNSUPPORTED: 'UNSUPPORTED',
+  TEMP_UNAVAILABLE: 'TEMP_UNAVAILABLE',
+  DEVICE_BUSY: 'DEVICE_BUSY',
+  RATE_LIMITED_LOCAL: 'RATE_LIMITED_LOCAL',
+  EXECUTION_FAILED_TRANSIENT: 'EXECUTION_FAILED_TRANSIENT',
+  NETWORK_ERROR: 'NETWORK_ERROR',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+} as const;
+export type DeviceCommandAckErrorCode =
+  (typeof DeviceCommandAckErrorCode)[keyof typeof DeviceCommandAckErrorCode];
+
+const retryableDeviceCommandAckErrorCodes = new Set<DeviceCommandAckErrorCode>([
+  DeviceCommandAckErrorCode.TEMP_UNAVAILABLE,
+  DeviceCommandAckErrorCode.DEVICE_BUSY,
+  DeviceCommandAckErrorCode.RATE_LIMITED_LOCAL,
+  DeviceCommandAckErrorCode.EXECUTION_FAILED_TRANSIENT,
+  DeviceCommandAckErrorCode.NETWORK_ERROR,
+  DeviceCommandAckErrorCode.INTERNAL_ERROR,
+]);
+
+export function isRetryableDeviceCommandAckErrorCode(errorCode: DeviceCommandAckErrorCode): boolean {
+  return retryableDeviceCommandAckErrorCodes.has(errorCode);
+}
+
 // ============================================================================
 // Remote Control Types (Iteration 5)
 // ============================================================================
@@ -904,6 +935,43 @@ export const deviceDeviceTokenAckSchema = z.object({
   }),
 });
 
+const deviceCommandAckErrorCodeSchema = z.enum([
+  DeviceCommandAckErrorCode.UNKNOWN_COMMAND,
+  DeviceCommandAckErrorCode.INVALID_PAYLOAD,
+  DeviceCommandAckErrorCode.POLICY_DENIED,
+  DeviceCommandAckErrorCode.APPROVAL_EXPIRED,
+  DeviceCommandAckErrorCode.DENIED_BY_USER,
+  DeviceCommandAckErrorCode.CANCELED,
+  DeviceCommandAckErrorCode.UNSUPPORTED,
+  DeviceCommandAckErrorCode.TEMP_UNAVAILABLE,
+  DeviceCommandAckErrorCode.DEVICE_BUSY,
+  DeviceCommandAckErrorCode.RATE_LIMITED_LOCAL,
+  DeviceCommandAckErrorCode.EXECUTION_FAILED_TRANSIENT,
+  DeviceCommandAckErrorCode.NETWORK_ERROR,
+  DeviceCommandAckErrorCode.INTERNAL_ERROR,
+]);
+
+export const deviceCommandAckSchema = z.object({
+  v: z.literal(PROTOCOL_VERSION),
+  type: z.literal('device.command.ack'),
+  requestId: z.string().optional(),
+  ts: z.number(),
+  payload: z.union([
+    z.object({
+      deviceId: z.string(),
+      commandId: z.string(),
+      ok: z.literal(true),
+    }),
+    z.object({
+      deviceId: z.string(),
+      commandId: z.string(),
+      ok: z.literal(false),
+      errorCode: deviceCommandAckErrorCodeSchema,
+      retryable: z.boolean().optional(),
+    }),
+  ]),
+});
+
 export const deviceToolRequestSchema = z.object({
   v: z.literal(PROTOCOL_VERSION),
   type: z.literal('device.tool.request'),
@@ -966,6 +1034,7 @@ export const deviceMessageSchema = z.union([
   // Iteration 7
   deviceWorkspaceStateSchema,
   deviceDeviceTokenAckSchema,
+  deviceCommandAckSchema,
   deviceToolRequestSchema,
   deviceToolResultSchema,
 ]);
@@ -992,6 +1061,7 @@ export type DeviceActionCreate = z.infer<typeof deviceActionCreateSchema>;
 // Iteration 7
 export type DeviceWorkspaceState = z.infer<typeof deviceWorkspaceStateSchema>;
 export type DeviceDeviceTokenAck = z.infer<typeof deviceDeviceTokenAckSchema>;
+export type DeviceCommandAck = z.infer<typeof deviceCommandAckSchema>;
 export type DeviceToolRequest = z.infer<typeof deviceToolRequestSchema>;
 export type DeviceToolResult = z.infer<typeof deviceToolResultSchema>;
 export type DeviceMessage = z.infer<typeof deviceMessageSchema>;
@@ -1271,6 +1341,22 @@ export const serverDeviceTokenSchema = z.object({
   }),
 });
 
+const commandPayloadSchema = z.record(z.string(), z.unknown());
+
+export const serverCommandSchema = z.object({
+  v: z.literal(PROTOCOL_VERSION),
+  type: z.literal('server.command'),
+  requestId: z.string().optional(),
+  ts: z.number(),
+  payload: z.object({
+    deviceId: z.string(),
+    commandId: z.string(),
+    commandType: z.string().min(1),
+    payload: commandPayloadSchema,
+    ts: z.number(),
+  }),
+});
+
 export const serverMessageSchema = z.union([
   serverHelloAckSchema,
   serverPairingCodeSchema,
@@ -1287,6 +1373,7 @@ export const serverMessageSchema = z.union([
   serverScreenAckSchema,
   serverActionRequestSchema,
   serverDeviceTokenSchema,
+  serverCommandSchema,
 ]);
 
 export type ServerHelloAck = z.infer<typeof serverHelloAckSchema>;
@@ -1304,6 +1391,7 @@ export type ServerRunCanceled = z.infer<typeof serverRunCanceledSchema>;
 export type ServerScreenAck = z.infer<typeof serverScreenAckSchema>;
 export type ServerActionRequest = z.infer<typeof serverActionRequestSchema>;
 export type ServerDeviceToken = z.infer<typeof serverDeviceTokenSchema>;
+export type ServerCommand = z.infer<typeof serverCommandSchema>;
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
 
 // ============================================================================
@@ -1385,3 +1473,9 @@ export type ServerEventType =
   | { type: 'screen_update'; deviceId: string; meta: ScreenFrameMeta }
   | { type: 'action_update'; action: DeviceAction }
   | { type: 'tool_update'; tool: ToolSummary };
+
+// ============================================================================
+// AI Engineering System (Iteration 30)
+// ============================================================================
+
+export * from './agent/index.js';

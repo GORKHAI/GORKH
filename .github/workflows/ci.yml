@@ -11,6 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CI: true
+      REDIS_URL: redis://127.0.0.1:6379
+      RATE_LIMIT_BACKEND: redis
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,6 +44,17 @@ jobs:
       - name: Install dependencies
         run: pnpm -w install --frozen-lockfile
 
+      - name: Wait for Redis
+        run: |
+          for i in {1..30}; do
+            if (echo > /dev/tcp/127.0.0.1/6379) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Redis did not become ready in time" >&2
+          exit 1
+
       - name: Typecheck
         run: pnpm -w typecheck
 
@@ -51,6 +74,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CI: true
+      REDIS_URL: redis://127.0.0.1:6379
+      RATE_LIMIT_BACKEND: redis
       DATABASE_URL_VALUE: postgresql://postgres:postgres@127.0.0.1:5432/ai_operator_test
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/ai_operator_test
       SMOKE_MANAGE_INFRA: "0"
@@ -67,6 +92,15 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U postgres -d ai_operator_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -100,6 +134,17 @@ jobs:
             sleep 1
           done
           echo "Postgres did not become ready in time" >&2
+          exit 1
+
+      - name: Wait for Redis
+        run: |
+          for i in {1..30}; do
+            if (echo > /dev/tcp/127.0.0.1/6379) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Redis did not become ready in time" >&2
           exit 1
 
       - name: Run HTTP smoke

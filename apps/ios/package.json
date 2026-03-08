@@ -1,0 +1,11 @@
+{
+  "name": "@ai-operator/ios",
+  "version": "0.0.1",
+  "private": true,
+  "description": "iOS Companion App (Swift/Xcode project - not built by pnpm)",
+  "scripts": {
+    "build": "echo 'iOS app built separately in Xcode. See README.md'",
+    "typecheck": "echo 'iOS app uses Swift type checking in Xcode'",
+    "dev": "echo 'iOS app runs in iOS Simulator from Xcode'"
+  }
+}

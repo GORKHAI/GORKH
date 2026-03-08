@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const { PROTOCOL_VERSION, parseDeviceMessage } = await import('../dist/index.js');
+const { PROTOCOL_VERSION, parseDeviceMessage, parseServerMessage } = await import('../dist/index.js');
 
 function createBaseEnvelope(type, payload) {
   return {
@@ -71,6 +71,58 @@ test('parseDeviceMessage rejects oversized type-action text payloads', () => {
       },
       source: 'agent',
       createdAt: Date.now(),
+    })
+  );
+
+  assert.equal(parsed.success, false);
+});
+
+test('parseServerMessage accepts a valid server.command message', () => {
+  const parsed = parseServerMessage(
+    createBaseEnvelope('server.command', {
+      deviceId: 'device-1',
+      commandId: 'cmd-1',
+      commandType: 'action.request',
+      payload: {
+        actionId: 'action-1',
+      },
+      ts: Date.now(),
+    })
+  );
+
+  assert.equal(parsed.success, true);
+  if (parsed.success) {
+    assert.equal(parsed.data.type, 'server.command');
+    assert.equal(parsed.data.payload.commandId, 'cmd-1');
+  }
+});
+
+test('parseDeviceMessage accepts a retryable device.command.ack payload', () => {
+  const parsed = parseDeviceMessage(
+    createBaseEnvelope('device.command.ack', {
+      deviceId: 'device-1',
+      commandId: 'cmd-1',
+      ok: false,
+      errorCode: 'DEVICE_BUSY',
+      retryable: true,
+    })
+  );
+
+  assert.equal(parsed.success, true);
+  if (parsed.success) {
+    assert.equal(parsed.data.type, 'device.command.ack');
+    assert.equal(parsed.data.payload.retryable, true);
+  }
+});
+
+test('parseDeviceMessage rejects malformed device.command.ack payloads', () => {
+  const parsed = parseDeviceMessage(
+    createBaseEnvelope('device.command.ack', {
+      deviceId: 'device-1',
+      commandId: 'cmd-1',
+      ok: false,
+      errorCode: 'DEVICE_BUSY',
+      retryable: 'yes',
     })
   );
 

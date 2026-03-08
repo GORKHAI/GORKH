@@ -5,6 +5,7 @@ import {
   createDeviceMessage,
   PROTOCOL_VERSION,
   type ErrorCode,
+  type DeviceCommandAckErrorCode,
   type ServerRunDetails,
   type ServerRunStepUpdate,
   type ServerRunLog,
@@ -12,6 +13,7 @@ import {
   type ServerRunCanceled,
   type ServerActionRequest,
   type ServerDeviceToken,
+  type ServerCommand,
   type RunWithSteps,
   type RunStep,
   type LogLine,
@@ -23,6 +25,24 @@ import {
 } from '@ai-operator/shared';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
+
+type CommandHandlingResult =
+  | void
+  | { ok: true }
+  | { ok: false; errorCode: DeviceCommandAckErrorCode; retryable?: boolean };
+
+const supportedCommandTypes = new Set([
+  'action.request',
+  'approval.request',
+  'chat.message',
+  'device.token',
+  'run.canceled',
+  'run.details',
+  'run.log',
+  'run.start',
+  'run.status',
+  'run.step_update',
+]);
 
 export interface WsClientOptions {
   deviceId: string;
@@ -38,10 +58,10 @@ export interface WsClientOptions {
   onRunLog?: (runId: string, stepId: string | undefined, log: LogLine) => void;
   onApprovalRequest?: (runId: string, approval: ApprovalRequest) => void;
   onRunCanceled?: (runId: string) => void;
-  onDeviceToken?: (deviceToken: string) => void;
-  onActionRequest?: (actionId: string, action: InputAction) => void;
+  onDeviceToken?: (deviceToken: string) => CommandHandlingResult;
+  onActionRequest?: (actionId: string, action: InputAction) => CommandHandlingResult;
   onAgentProposal?: (runId: string, proposal: AgentProposal) => void;
-  onRunStart?: (runId: string, goal: string, mode?: 'manual' | 'ai_assist') => void;
+  onRunStart?: (runId: string, goal: string, mode?: 'manual' | 'ai_assist') => CommandHandlingResult;
 }
 
 export class WsClient {
@@ -53,6 +73,8 @@ export class WsClient {
   private helloTimeout: ReturnType<typeof setTimeout> | null = null;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private pingIntervalMs = 30000;
+  private handledCommandAcks = new Map<string, Extract<DeviceMessage, { type: 'device.command.ack' }>['payload']>();
+  private readonly maxHandledCommandAcks = 200;
 
   constructor(private options: WsClientOptions) {}
 
@@ -112,6 +134,17 @@ export class WsClient {
   sendRunUpdate(runId: string, status: 'queued' | 'running' | 'waiting_for_user' | 'done' | 'failed' | 'canceled', note?: string): boolean { return this.send(createDeviceMessage('device.run.update', { deviceId: this.options.deviceId, runId, status, note })); }
   sendWorkspaceState(workspaceState: WorkspaceState): boolean { return this.send(createDeviceMessage('device.workspace.state', { deviceId: this.options.deviceId, workspaceState })); }
   sendDeviceTokenAck(): boolean { return this.send(createDeviceMessage('device.device_token.ack', { deviceId: this.options.deviceId })); }
+  sendCommandAck(
+    commandId: string,
+    ok: boolean,
+    errorCode?: DeviceCommandAckErrorCode,
+    retryable?: boolean
+  ): boolean {
+    const payload = ok
+      ? { deviceId: this.options.deviceId, commandId, ok: true as const }
+      : { deviceId: this.options.deviceId, commandId, ok: false as const, errorCode: errorCode!, retryable };
+    return this.send(createDeviceMessage('device.command.ack', payload));
+  }
 
   sendToolRequest(runId: string, toolCallId: string, toolCall: ToolCall): string {
     const toolEventId = crypto.randomUUID();
@@ -169,20 +202,121 @@ export class WsClient {
     const result = parseServerMessage(raw);
     if (!result.success) { console.error('[WsClient] Invalid message:', result.error); return; }
     const message = result.data;
+    if (message.type === 'server.command') {
+      this.handleServerCommand(message as ServerCommand);
+      return;
+    }
+
+    this.routeServerMessage(message);
+  }
+
+  private routeServerMessage(message: ServerMessage): CommandHandlingResult {
     switch (message.type) {
       case 'server.hello_ack': if (this.helloTimeout) { clearTimeout(this.helloTimeout); this.helloTimeout = null; } this.setStatus('connected'); this.startPingInterval(); break;
       case 'server.error': this.options.onError?.(message.payload); break;
       case 'server.pong': break;
-      case 'server.run.start': this.sendRunAccept(message.payload.runId); this.options.onRunStart?.(message.payload.runId, message.payload.goal, message.payload.mode); break;
+      case 'server.run.start': this.sendRunAccept(message.payload.runId); return this.options.onRunStart?.(message.payload.runId, message.payload.goal, message.payload.mode);
       case 'server.run.details': this.options.onRunDetails?.((message as ServerRunDetails).payload.run); break;
       case 'server.run.step_update': { const p = (message as ServerRunStepUpdate).payload; this.options.onStepUpdate?.(p.runId, p.step); break; }
       case 'server.run.log': { const p = (message as ServerRunLog).payload; this.options.onRunLog?.(p.runId, p.stepId, { line: p.line, level: p.level, at: p.at }); break; }
       case 'server.approval.request': { const p = (message as ServerApprovalRequest).payload; this.options.onApprovalRequest?.(p.runId, p.approval); break; }
       case 'server.run.canceled': this.options.onRunCanceled?.((message as ServerRunCanceled).payload.runId); break;
-      case 'server.device.token': this.options.onDeviceToken?.((message as ServerDeviceToken).payload.deviceToken); break;
-      case 'server.action.request': { const p = (message as ServerActionRequest).payload; this.options.onActionRequest?.(p.actionId, p.action); break; }
+      case 'server.device.token': return this.options.onDeviceToken?.((message as ServerDeviceToken).payload.deviceToken);
+      case 'server.action.request': { const p = (message as ServerActionRequest).payload; return this.options.onActionRequest?.(p.actionId, p.action); }
       default: this.options.onMessage?.(message);
     }
+  }
+
+  private handleServerCommand(message: ServerCommand): void {
+    const existingAck = this.handledCommandAcks.get(message.payload.commandId);
+    if (existingAck) {
+      this.send(createDeviceMessage('device.command.ack', existingAck));
+      return;
+    }
+
+    const legacyMessage = this.parseLegacyServerMessage(message);
+    if (legacyMessage.status === 'unknown') {
+      this.rememberAndSendCommandAck({
+        deviceId: this.options.deviceId,
+        commandId: message.payload.commandId,
+        ok: false,
+        errorCode: 'UNKNOWN_COMMAND',
+        retryable: false,
+      });
+      return;
+    }
+    if (legacyMessage.status === 'invalid') {
+      this.rememberAndSendCommandAck({
+        deviceId: this.options.deviceId,
+        commandId: message.payload.commandId,
+        ok: false,
+        errorCode: 'INVALID_PAYLOAD',
+        retryable: false,
+      });
+      return;
+    }
+
+    try {
+      const result = this.routeServerMessage(legacyMessage.message);
+      if (result && result.ok === false) {
+        this.rememberAndSendCommandAck({
+          deviceId: this.options.deviceId,
+          commandId: message.payload.commandId,
+          ok: false,
+          errorCode: result.errorCode,
+          retryable: result.retryable,
+        });
+        return;
+      }
+
+      this.rememberAndSendCommandAck({
+        deviceId: this.options.deviceId,
+        commandId: message.payload.commandId,
+        ok: true,
+      });
+    } catch (error) {
+      console.error('[WsClient] Failed to handle server.command:', error);
+      this.rememberAndSendCommandAck({
+        deviceId: this.options.deviceId,
+        commandId: message.payload.commandId,
+        ok: false,
+        errorCode: 'INTERNAL_ERROR',
+        retryable: true,
+      });
+    }
+  }
+
+  private parseLegacyServerMessage(message: ServerCommand):
+    | { status: 'unknown' }
+    | { status: 'invalid' }
+    | { status: 'ok'; message: ServerMessage } {
+    if (!supportedCommandTypes.has(message.payload.commandType)) {
+      return { status: 'unknown' };
+    }
+
+    const raw = {
+      v: PROTOCOL_VERSION,
+      type: `server.${message.payload.commandType}`,
+      ts: message.ts,
+      payload: {
+        deviceId: message.payload.deviceId,
+        ...message.payload.payload,
+      },
+    };
+
+    const parsed = parseServerMessage(raw);
+    return parsed.success ? { status: 'ok', message: parsed.data } : { status: 'invalid' };
+  }
+
+  private rememberAndSendCommandAck(payload: Extract<DeviceMessage, { type: 'device.command.ack' }>['payload']): void {
+    this.handledCommandAcks.set(payload.commandId, payload);
+    if (this.handledCommandAcks.size > this.maxHandledCommandAcks) {
+      const oldest = this.handledCommandAcks.keys().next().value;
+      if (oldest) {
+        this.handledCommandAcks.delete(oldest);
+      }
+    }
+    this.send(createDeviceMessage('device.command.ack', payload));
   }
 
   private setStatus(status: ConnectionStatus): void { if (this.status !== status) { this.status = status; this.options.onStatusChange?.(status); } }

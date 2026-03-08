@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod openai;
+pub mod openai_compat;
 
 /// Available tools for the AI agent
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +136,7 @@ pub trait LlmProvider: Send + Sync {
 pub fn create_provider(provider: &str) -> Result<Box<dyn LlmProvider>, LlmError> {
     match provider {
         "openai" => Ok(Box::new(openai::OpenAiProvider)),
+        "openai_compat" => Ok(Box::new(openai_compat::OpenAiCompatProvider)),
         _ => Err(LlmError {
             code: "UNSUPPORTED_PROVIDER".to_string(),
             message: format!("Provider '{}' is not supported", provider),

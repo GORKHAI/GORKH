@@ -31,6 +31,7 @@ import { ScreenPanel } from './components/ScreenPanel.js';
 import { ControlPanel } from './components/ControlPanel.js';
 import { ActionApprovalModal } from './components/ActionApprovalModal.js';
 import { SettingsPanel } from './components/SettingsPanel.js';
+import { AgentWorkflow } from './components/AgentWorkflow.js';
 import { ToolApprovalModal } from './components/ToolApprovalModal.js';
 
 // Get or create a stable device ID
@@ -155,6 +156,7 @@ function App() {
     model: 'gpt-4.1-mini',
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [agentWorkflowOpen, setAgentWorkflowOpen] = useState(false);
   const [primaryDisplayId, setPrimaryDisplayId] = useState<string>('display-0');
   const [workspaceState, setWorkspaceState] = useState<LocalWorkspaceState>({ configured: false });
   const [toolHistoryByRun, setToolHistoryByRun] = useState<Record<string, LocalToolEvent[]>>({});
@@ -543,6 +545,7 @@ function App() {
           });
           wsClient?.setDeviceToken(nextDeviceToken);
           wsClient?.sendDeviceTokenAck();
+          return { ok: true as const };
         },
         // Control callbacks
         onActionRequest: (actionId, action) => {
@@ -565,10 +568,15 @@ function App() {
 
           if (!controlEnabledRef.current) {
             approvalController.cancel(approvalId, 'Allow Control disabled');
-            return;
+            return {
+              ok: false as const,
+              errorCode: 'POLICY_DENIED' as const,
+              retryable: false,
+            };
           }
 
           wsClient?.sendActionAck(actionId, 'awaiting_user');
+          return { ok: true as const };
         },
         // Iteration 6: AI Assist callbacks
         onRunStart: (runId, goal, mode) => {
@@ -577,6 +585,7 @@ function App() {
             // Start AI Assist controller
             startAiAssist(runId, goal);
           }
+          return { ok: true as const };
         },
       });
 
@@ -1075,6 +1084,20 @@ function App() {
               Stop All
             </button>
             <button
+              onClick={() => setAgentWorkflowOpen(true)}
+              style={{
+                padding: '0.5rem 1rem',
+                background: '#dbeafe',
+                border: '1px solid #3b82f6',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                color: '#1e40af',
+              }}
+            >
+              🚀 AI Engineer
+            </button>
+            <button
               onClick={() => setSettingsOpen(true)}
               style={{
                 padding: '0.5rem 1rem',
@@ -1371,6 +1394,15 @@ function App() {
           rationale={pendingToolProposal.rationale}
           onApprove={handleAiApproveTool}
           onDeny={handleAiRejectTool}
+        />
+      )}
+
+      {/* AI Engineering System - Agent Workflow */}
+      {agentWorkflowOpen && (
+        <AgentWorkflow
+          isOpen={agentWorkflowOpen}
+          onClose={() => setAgentWorkflowOpen(false)}
+          workspaceName={workspaceState.rootName || 'workspace'}
         />
       )}
 
