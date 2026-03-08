@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -6,12 +6,14 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, State, WindowEvent,
 };
+use tokio::sync::RwLock;
 use enigo::{Enigo, MouseControllable, KeyboardControllable, Key as EnigoKey, MouseButton as EnigoMouseButton};
 use tauri::webview::{NewWindowResponse, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
 mod llm;
 mod workspace;
+mod agent;
 
 // Display info structure
 #[derive(Serialize)]
@@ -944,10 +946,172 @@ mod base64 {
     }
 }
 
+// ============================================================================
+// Iteration 31: Advanced Agent System - State and Commands
+// ============================================================================
+
+use agent::providers::{ProviderRouter, ProviderType, ProviderConfig};
+use agent::{AdvancedAgent, AgentConfig, AgentEvent, SafetyLevel};
+
+/// State for the advanced agent
+pub struct AgentState {
+    router: Arc<ProviderRouter>,
+    agent: Arc<RwLock<Option<AdvancedAgent>>>,
+}
+
+impl AgentState {
+    pub fn new() -> Self {
+        let router = Arc::new(ProviderRouter::new());
+        Self {
+            router,
+            agent: Arc::new(RwLock::new(None)),
+        }
+    }
+    
+    pub fn router(&self) -> Arc<ProviderRouter> {
+        self.router.clone()
+    }
+}
+
+/// Provider info for UI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderInfo {
+    pub provider_type: String,
+    pub name: String,
+    pub available: bool,
+    pub is_free: bool,
+    pub supports_vision: bool,
+}
+
+/// List available providers
+#[tauri::command]
+async fn list_agent_providers(state: State<'_, AgentState>) -> Result<Vec<ProviderInfo>, String> {
+    let infos = state.router.list_providers().await;
+    
+    Ok(infos.into_iter().map(|p| ProviderInfo {
+        provider_type: format!("{:?}", p.provider_type).to_lowercase(),
+        name: p.name,
+        available: p.available,
+        is_free: p.is_free,
+        supports_vision: p.capabilities.supports_vision,
+    }).collect())
+}
+
+/// Test a provider connection
+#[tauri::command]
+async fn test_provider(provider_type: String) -> Result<bool, String> {
+    let ptype = match provider_type.as_str() {
+        "native_qwen_ollama" => ProviderType::NativeQwenOllama,
+        "local_openai_compat" => ProviderType::LocalOpenAiCompat,
+        "openai" => ProviderType::OpenAi,
+        "claude" => ProviderType::Claude,
+        _ => return Err(format!("Unknown provider: {}", provider_type)),
+    };
+    
+    // Check availability based on provider type
+    match ptype {
+        ProviderType::NativeQwenOllama => {
+            let provider = agent::providers::NativeOllamaProvider::new(None, None);
+            Ok(provider.is_available().await)
+        }
+        ProviderType::LocalOpenAiCompat => {
+            let provider = agent::providers::LocalCompatProvider::new(None, None);
+            Ok(provider.is_available().await)
+        }
+        ProviderType::OpenAi | ProviderType::Claude => {
+            // These require API keys, check if key exists
+            let key_entry = keyring::Entry::new("ai-operator", &format!("llm_api_key:{}", provider_type));
+            Ok(key_entry.get_password().is_ok())
+        }
+    }
+}
+
+/// Set provider API key (stored in keychain)
+#[tauri::command]
+fn set_provider_api_key(provider_type: String, api_key: String) -> Result<(), String> {
+    let entry = keyring::Entry::new("ai-operator", &format!("llm_api_key:{}", provider_type));
+    entry.set_password(&api_key)
+        .map_err(|e| format!("Failed to store API key: {}", e))
+}
+
+/// Check if provider API key exists
+#[tauri::command]
+fn has_provider_api_key(provider_type: String) -> bool {
+    let entry = keyring::Entry::new("ai-operator", &format!("llm_api_key:{}", provider_type));
+    entry.get_password().is_ok()
+}
+
+/// Start a new agent task
+#[tauri::command]
+async fn start_agent_task(
+    app: AppHandle,
+    state: State<'_, AgentState>,
+    goal: String,
+    preferred_provider: Option<String>,
+) -> Result<String, String> {
+    // Create agent config
+    let config = AgentConfig {
+        primary_provider: match preferred_provider.as_deref() {
+            Some("native_qwen_ollama") => ProviderType::NativeQwenOllama,
+            Some("local_openai_compat") => ProviderType::LocalOpenAiCompat,
+            Some("openai") => ProviderType::OpenAi,
+            Some("claude") => ProviderType::Claude,
+            _ => ProviderType::NativeQwenOllama,
+        },
+        ..Default::default()
+    };
+
+    // Create event callback
+    let app_handle = app.clone();
+    let callback = Box::new(move |event: AgentEvent| {
+        let _ = app_handle.emit("agent:event", event);
+    });
+
+    let agent = AdvancedAgent::new(config, state.router.clone(), callback);
+    let task_id = agent.start_task(goal).await.map_err(|e| e.to_string())?;
+    
+    // Store agent
+    let mut guard = state.agent.write().await;
+    *guard = Some(agent);
+    
+    Ok(task_id)
+}
+
+/// Get current task status
+#[tauri::command]
+async fn get_agent_task_status(state: State<'_, AgentState>) -> Result<Option<agent::AgentTask>, String> {
+    let guard = state.agent.read().await;
+    if let Some(agent) = guard.as_ref() {
+        if let Some(task) = agent.get_current_task().await {
+            return Ok(Some(task));
+        }
+    }
+    Ok(None)
+}
+
+/// Cancel current task
+#[tauri::command]
+async fn cancel_agent_task(state: State<'_, AgentState>) -> Result<(), String> {
+    let guard = state.agent.read().await;
+    if let Some(agent) = guard.as_ref() {
+        agent.cancel().await;
+    }
+    Ok(())
+}
+
+/// Start recording a demonstration
+#[tauri::command]
+fn start_recording(goal: String, description: String) -> Result<String, String> {
+    // This would be implemented with a recorder instance
+    Ok(format!("demo_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(TrayRuntimeState::default())
+        .manage(AgentState::new())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -982,6 +1146,15 @@ pub fn run() {
             workspace::workspace_select_directory,
             workspace::workspace_clear,
             workspace::tool_execute,
+            // Iteration 31: Advanced Agent System
+            list_agent_providers,
+            test_provider,
+            set_provider_api_key,
+            has_provider_api_key,
+            start_agent_task,
+            get_agent_task_status,
+            cancel_agent_task,
+            start_recording,
         ])
         .setup(|app| {
             let app_handle = app.app_handle();

@@ -29,3 +29,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 # Iteration 7: Workspace Tools
 regex = "1"
 auto-launch = "0.5"
+# Iteration 31: Advanced Agent System
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"

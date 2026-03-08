@@ -33,6 +33,7 @@ import { ActionApprovalModal } from './components/ActionApprovalModal.js';
 import { SettingsPanel } from './components/SettingsPanel.js';
 import { AgentWorkflow } from './components/AgentWorkflow.js';
 import { ToolApprovalModal } from './components/ToolApprovalModal.js';
+import { AgentTaskDialog } from './components/agent/index.js';
 
 // Get or create a stable device ID
 function getOrCreateDeviceId(): string {
@@ -1083,6 +1084,23 @@ function App() {
             >
               Stop All
             </button>
+            <AgentTaskDialog
+              trigger={
+                <button
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: '#f3e8ff',
+                    border: '1px solid #a855f7',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem',
+                    color: '#6b21a8',
+                  }}
+                >
+                  ✨ Advanced Agent
+                </button>
+              }
+            />
             <button
               onClick={() => setAgentWorkflowOpen(true)}
               style={{
