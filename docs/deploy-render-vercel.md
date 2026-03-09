@@ -19,6 +19,7 @@ Provider-specific details are split across:
 - `api.<domain>` -> Render Docker web service using `apps/api/Dockerfile`
 - Neon Postgres -> `DATABASE_URL`
 - Upstash Redis -> `REDIS_URL`
+  - Use the raw Redis connection string only, typically `rediss://...` for Upstash
 
 Keep the monorepo intact. Do not split the API and web apps into separate repositories.
 

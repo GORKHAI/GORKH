@@ -59,6 +59,7 @@ pnpm --filter @ai-operator/api prisma:generate && pnpm --filter @ai-operator/api
   - Managed Postgres connection string
 - `REDIS_URL`
   - Shared Redis connection string
+  - `rediss://...` is supported and recommended for managed TLS providers such as Upstash
 - `JWT_SECRET`
   - Strong random secret
 - `ADMIN_API_KEY`

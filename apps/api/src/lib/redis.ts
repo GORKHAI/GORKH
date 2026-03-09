@@ -1,11 +1,15 @@
 import { Socket } from 'node:net';
+import { connect as connectTls, type TLSSocket } from 'node:tls';
 import { URL } from 'node:url';
 
 interface RedisConnectionOptions {
   host: string;
   port: number;
+  username?: string;
   password?: string;
   database?: number;
+  tls: boolean;
+  rejectUnauthorized: boolean;
 }
 
 export type RedisResponse = string | number | null | RedisResponse[];
@@ -62,12 +66,23 @@ function warnOnce(message: string) {
 
 function parseRedisUrl(redisUrl: string): RedisConnectionOptions {
   const parsed = new URL(redisUrl);
+  const rejectUnauthorized = parsed.searchParams.get('rejectUnauthorized');
+
   return {
     host: parsed.hostname,
     port: parsed.port ? Number.parseInt(parsed.port, 10) : 6379,
-    password: parsed.password || undefined,
+    username: parsed.username ? decodeURIComponent(parsed.username) : undefined,
+    password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
     database: parsed.pathname && parsed.pathname !== '/' ? Number.parseInt(parsed.pathname.slice(1), 10) : undefined,
+    tls: parsed.protocol === 'rediss:',
+    rejectUnauthorized: rejectUnauthorized == null
+      ? true
+      : !(rejectUnauthorized === 'false' || rejectUnauthorized === '0'),
   };
+}
+
+export function __parseRedisUrlForTests(redisUrl: string): RedisConnectionOptions {
+  return parseRedisUrl(redisUrl);
 }
 
 function encodeCommand(parts: string[]): string {
@@ -162,12 +177,23 @@ function parseRespValue(buffer: string, offset = 0): { value: RedisResponse; nex
 
 async function runRawCommand(redisUrl: string, parts: string[]): Promise<RedisResponse> {
   const options = parseRedisUrl(redisUrl);
-  const socket = new Socket();
+  const socket: Socket | TLSSocket = options.tls
+    ? connectTls({
+        host: options.host,
+        port: options.port,
+        servername: options.host,
+        rejectUnauthorized: options.rejectUnauthorized,
+      })
+    : new Socket();
 
   return new Promise<RedisResponse>((resolve, reject) => {
     const commands: string[][] = [];
     if (options.password) {
-      commands.push(['AUTH', options.password]);
+      commands.push(
+        options.username
+          ? ['AUTH', options.username, options.password]
+          : ['AUTH', options.password]
+      );
     }
     if (typeof options.database === 'number' && !Number.isNaN(options.database)) {
       commands.push(['SELECT', String(options.database)]);
@@ -218,11 +244,17 @@ async function runRawCommand(redisUrl: string, parts: string[]): Promise<RedisRe
       }
     });
 
-    socket.connect(options.port, options.host, () => {
+    const sendCommands = () => {
       for (const command of commands) {
         socket.write(encodeCommand(command));
       }
-    });
+    };
+
+    if (options.tls) {
+      socket.once('secureConnect', sendCommands);
+    } else {
+      socket.connect(options.port, options.host, sendCommands);
+    }
   });
 }
 
