@@ -36,6 +36,7 @@ import { getPresence } from './lib/presence.js';
 import { recoverInProgressRunsOnStartup } from './lib/run-recovery.js';
 import { redact } from './lib/redact.js';
 import { registerRootRoute } from './lib/root-route.js';
+import { buildSseHeaders } from './lib/sse.js';
 import { startRetentionScheduler } from './lib/retention.js';
 import { createSecurityOnSendHook, DEFAULT_JSON_BODY_LIMIT, WEBHOOK_RAW_BODY_LIMIT } from './lib/security.js';
 import { dispatchDeviceCommand, isDeviceCommandQueueEnabled } from './lib/device-commands.js';
@@ -1631,11 +1632,7 @@ fastify.get('/events', async (request, reply) => {
     return { error: 'Unauthorized' };
   }
 
-  reply.raw.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
+  reply.raw.writeHead(200, buildSseHeaders(request.headers.origin, config.WEB_ORIGINS));
 
   const clientId = randomUUID();
   sseClients.set(clientId, { id: clientId, userId: user.id, reply });
