@@ -8,6 +8,7 @@ const cargoTomlPath = path.join(repoRoot, 'apps/desktop/src-tauri/Cargo.toml');
 const tauriConfigPath = path.join(repoRoot, 'apps/desktop/src-tauri/tauri.conf.json');
 const libRsPath = path.join(repoRoot, 'apps/desktop/src-tauri/src/lib.rs');
 const agentModPath = path.join(repoRoot, 'apps/desktop/src-tauri/src/agent/mod.rs');
+const turboConfigPath = path.join(repoRoot, 'turbo.json');
 const iconPath = path.join(repoRoot, 'apps/desktop/src-tauri/icons/icon.png');
 const windowsIconPath = path.join(repoRoot, 'apps/desktop/src-tauri/icons/icon.ico');
 
@@ -52,6 +53,30 @@ test('desktop base Tauri config keeps updater disabled until release workflow in
     undefined,
     'desktop base Tauri config should not define updater settings; release workflows must inject concrete updater config only for builds that need it',
   );
+
+  assert.equal(
+    tauriConfig.build?.beforeBuildCommand,
+    'pnpm --dir .. build',
+    'desktop Tauri release builds should invoke the desktop package build directly so Vite sees the intended desktop environment variables',
+  );
+});
+
+test('turbo forwards desktop Vite environment variables used in release builds', () => {
+  const turboConfig = JSON.parse(fs.readFileSync(turboConfigPath, 'utf8'));
+  const globalEnv = new Set(turboConfig.globalEnv || []);
+
+  for (const requiredEnv of [
+    'VITE_API_HTTP_BASE',
+    'VITE_API_WS_URL',
+    'VITE_DESKTOP_ALLOW_INSECURE_LOCALHOST',
+    'VITE_DESKTOP_UPDATER_ENABLED',
+    'VITE_DESKTOP_UPDATER_PUBLIC_KEY',
+  ]) {
+    assert.ok(
+      globalEnv.has(requiredEnv),
+      `turbo globalEnv should include ${requiredEnv} so desktop production builds do not fall back to localhost defaults`,
+    );
+  }
 });
 
 test('desktop rust sources avoid the broken API usage that blocked CI', () => {
