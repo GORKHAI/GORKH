@@ -46,22 +46,11 @@ test('desktop release config includes a tracked icon asset', () => {
 
 test('desktop base Tauri config keeps updater disabled until release workflow injects concrete values', () => {
   const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf8'));
-  const updaterConfig = tauriConfig.plugins?.updater;
 
   assert.equal(
-    updaterConfig?.active,
-    false,
-    'desktop base Tauri config should keep updater inactive so beta builds cannot crash on unresolved release endpoints',
-  );
-
-  assert.ok(
-    !('pubkey' in (updaterConfig || {})),
-    'desktop base Tauri config should not embed an unresolved updater public key placeholder',
-  );
-
-  assert.ok(
-    !('endpoints' in (updaterConfig || {})),
-    'desktop base Tauri config should not embed unresolved updater endpoint placeholders',
+    tauriConfig.plugins?.updater,
+    undefined,
+    'desktop base Tauri config should not define updater settings; release workflows must inject concrete updater config only for builds that need it',
   );
 });
 
@@ -86,6 +75,17 @@ test('desktop rust sources avoid the broken API usage that blocked CI', () => {
   assert.ok(
     libRs.includes('delete_credential()'),
     'desktop keyring integration should delete stored credentials through delete_credential()',
+  );
+
+  assert.ok(
+    !libRs.includes('.plugin(tauri_plugin_dialog::init())\n        .plugin(tauri_plugin_updater::Builder::new().build())'),
+    'desktop beta builds must not initialize the updater plugin as part of the unconditional base builder chain',
+  );
+
+  assert.match(
+    libRs,
+    /option_env!\("VITE_DESKTOP_UPDATER_ENABLED"\)/,
+    'desktop runtime should gate updater plugin initialization on the build-time VITE_DESKTOP_UPDATER_ENABLED flag',
   );
 });
 

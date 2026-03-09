@@ -37,11 +37,5 @@
       "icons/icon.png",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "updater": {
-      "active": false,
-      "dialog": true
-    }
   }
 }

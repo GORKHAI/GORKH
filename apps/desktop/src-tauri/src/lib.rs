@@ -1141,12 +1141,19 @@ fn start_recording(goal: String, description: String) -> Result<String, String> 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .manage(TrayRuntimeState::default())
         .manage(AgentState::new())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init());
+
+    let builder = if option_env!("VITE_DESKTOP_UPDATER_ENABLED") == Some("true") {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder
+    };
+
+    builder
         .invoke_handler(tauri::generate_handler![
             list_displays, 
             capture_display_png,
