@@ -31,3 +31,19 @@ test('desktop release workflow invokes Tauri through the desktop package script'
     'Release workflow must not rely on recursive pnpm exec for the Tauri CLI'
   );
 });
+
+test('desktop release workflow passes desktop runtime API variables into bundle builds', () => {
+  const source = readFileSync(workflowPath, 'utf8');
+
+  assert.match(
+    source,
+    /VITE_API_HTTP_BASE:\s*\$\{\{\s*vars\.VITE_API_HTTP_BASE\s*\}\}/,
+    'Desktop release workflow must pass VITE_API_HTTP_BASE from GitHub Actions variables'
+  );
+
+  assert.match(
+    source,
+    /VITE_API_WS_URL:\s*\$\{\{\s*vars\.VITE_API_WS_URL\s*\}\}/,
+    'Desktop release workflow must pass VITE_API_WS_URL from GitHub Actions variables'
+  );
+});
