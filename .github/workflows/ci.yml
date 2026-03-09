@@ -42,7 +42,7 @@ jobs:
           version: 9.15.0
 
       - name: Install dependencies
-        run: pnpm -w install --frozen-lockfile
+        run: pnpm -r install --frozen-lockfile
 
       - name: Wait for Redis
         run: |
@@ -123,7 +123,7 @@ jobs:
           version: 9.15.0
 
       - name: Install dependencies
-        run: pnpm -w install --frozen-lockfile
+        run: pnpm -r install --frozen-lockfile
 
       - name: Wait for Postgres
         run: |
