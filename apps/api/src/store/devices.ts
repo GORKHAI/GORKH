@@ -93,6 +93,18 @@ export const deviceStore = {
     return { success: true, device: toPublicDevice(device) };
   },
 
+  claimDevice(deviceId: string): Device | undefined {
+    const device = devices.get(deviceId);
+    if (!device) return undefined;
+
+    device.paired = true;
+    device.pairingCode = undefined;
+    device.pairingExpiresAt = undefined;
+    device.lastSeenAt = Date.now();
+
+    return toPublicDevice(device);
+  },
+
   updateLastSeen(deviceId: string): Device | undefined {
     const device = devices.get(deviceId);
     if (device) {

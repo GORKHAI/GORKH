@@ -539,8 +539,25 @@ async function getDesktopUpdateManifest(platform: string, arch: string, currentV
 }
 
 async function getOwnedDevices(userId: string) {
-  const owned = deviceStore.getAll().filter((device) => ownership.getDeviceOwner(device.deviceId) === userId);
+  const owned = await devicesRepo.listOwned(userId);
   return Promise.all(owned.map((device) => withPresenceState(device)));
+}
+
+async function getOwnedDevice(userId: string, deviceId: string) {
+  const device = await devicesRepo.getOwned(deviceId, userId);
+  return device ? withPresenceState(device) : null;
+}
+
+async function getPairableDevice(deviceId: string) {
+  const persisted = await devicesRepo.findByDeviceId(deviceId);
+  if (!persisted) {
+    return null;
+  }
+
+  return {
+    ...persisted,
+    device: await withPresenceState(persisted.device),
+  };
 }
 
 async function withPresenceState(device: Device) {
@@ -1165,14 +1182,14 @@ fastify.get('/devices/:deviceId', async (request, reply) => {
   }
 
   const { deviceId } = request.params as { deviceId: string };
-  const device = deviceStore.get(deviceId);
+  const device = await getOwnedDevice(user.id, deviceId);
 
-  if (!device || ownership.getDeviceOwner(deviceId) !== user.id) {
+  if (!device) {
     reply.status(404);
     return { error: 'Device not found' };
   }
 
-  return { device: await withPresenceState(device) };
+  return { device };
 });
 
 fastify.post('/devices/:deviceId/pair', async (request, reply) => {
@@ -1189,26 +1206,26 @@ fastify.post('/devices/:deviceId/pair', async (request, reply) => {
     return { error: 'pairingCode is required' };
   }
 
-  const device = deviceStore.get(deviceId);
-  if (!device || !device.connected) {
+  const pairable = await getPairableDevice(deviceId);
+  if (!pairable || !pairable.device.connected) {
     reply.status(400);
     return { error: 'Device must be connected before pairing' };
   }
 
-  const result = deviceStore.confirmPairing(deviceId, pairingCode.toUpperCase().trim());
-
-  if (!result.success) {
+  const normalizedCode = pairingCode.toUpperCase().trim();
+  if (!pairable.device.pairingCode || pairable.device.pairingCode !== normalizedCode) {
     reply.status(400);
-    const messages = {
-      not_found: 'Device not found',
-      invalid_code: 'Invalid pairing code',
-      expired: 'Pairing code expired',
-    };
-    return { error: messages[result.reason] };
+    return { error: 'Invalid pairing code' };
+  }
+
+  if (pairable.device.pairingExpiresAt && Date.now() > pairable.device.pairingExpiresAt) {
+    reply.status(400);
+    return { error: 'Pairing code expired' };
   }
 
   const deviceToken = randomBytes(36).toString('base64url');
   await devicesRepo.claimDevice(deviceId, user.id, deviceToken);
+  deviceStore.claimDevice(deviceId);
   ownership.setDeviceOwner(deviceId, user.id);
   await createAuditEvent(request, {
     userId: user.id,
@@ -1232,7 +1249,7 @@ fastify.post('/devices/:deviceId/pair', async (request, reply) => {
     },
   });
 
-  return { ok: true, device: deviceStore.get(deviceId) };
+  return { ok: true, device: await getOwnedDevice(user.id, deviceId) };
 });
 
 // ============================================================================
