@@ -176,6 +176,9 @@ export default function Dashboard() {
   const [sseConnected, setSseConnected] = useState(false);
   const [pairingInputs, setPairingInputs] = useState<Record<string, string>>({});
   const [pairingLoading, setPairingLoading] = useState<Record<string, boolean>>({});
+  const [manualPairDeviceId, setManualPairDeviceId] = useState('');
+  const [manualPairCode, setManualPairCode] = useState('');
+  const [manualPairLoading, setManualPairLoading] = useState(false);
   const [newRunGoal, setNewRunGoal] = useState('');
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [selectedRunMode, setSelectedRunMode] = useState<'manual' | 'ai_assist'>('manual');
@@ -409,34 +412,55 @@ export default function Dashboard() {
     };
   }, [authReady, fetchInitialData]);
 
+  const submitPairing = async (deviceId: string, pairingCode: string) => {
+    const res = await apiFetch(`/devices/${deviceId}/pair`, {
+      method: 'POST',
+      body: JSON.stringify({ pairingCode }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Pairing failed');
+    }
+
+    const devicesRes = await apiFetch('/devices');
+    if (devicesRes.ok) {
+      const data = await devicesRes.json();
+      setDevices(data.devices || []);
+    }
+  };
+
   const handlePairSubmit = async (deviceId: string) => {
     const code = pairingInputs[deviceId]?.trim().toUpperCase();
     if (!code) return;
 
     setPairingLoading((prev) => ({ ...prev, [deviceId]: true }));
-    
+
     try {
-      const res = await apiFetch(`/devices/${deviceId}/pair`, {
-        method: 'POST',
-        body: JSON.stringify({ pairingCode: code }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Pairing failed');
-      }
-
+      await submitPairing(deviceId, code);
       setPairingInputs((prev) => ({ ...prev, [deviceId]: '' }));
-      
-      const devicesRes = await apiFetch('/devices');
-      if (devicesRes.ok) {
-        const data = await devicesRes.json();
-        setDevices(data.devices || []);
-      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Pairing failed');
     } finally {
       setPairingLoading((prev) => ({ ...prev, [deviceId]: false }));
+    }
+  };
+
+  const handleManualPairSubmit = async () => {
+    const deviceId = manualPairDeviceId.trim();
+    const code = manualPairCode.trim().toUpperCase();
+    if (!deviceId || !code) return;
+
+    setManualPairLoading(true);
+
+    try {
+      await submitPairing(deviceId, code);
+      setManualPairDeviceId('');
+      setManualPairCode('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Pairing failed');
+    } finally {
+      setManualPairLoading(false);
     }
   };
 
@@ -687,6 +711,68 @@ export default function Dashboard() {
           Subscription required to start runs and use remote control. <Link href="/billing">Go to Billing</Link>.
         </div>
       )}
+
+      <section
+        style={{
+          marginTop: '1rem',
+          padding: '1rem',
+          background: 'white',
+          borderRadius: '8px',
+          border: '1px solid #e5e7eb',
+        }}
+      >
+        <h2 style={{ marginTop: 0, fontSize: '1.1rem' }}>Pair a desktop device</h2>
+        <p style={{ margin: '0.25rem 0 1rem', color: '#6b7280', fontSize: '0.875rem' }}>
+          If the desktop app shows a pairing code but does not appear in the device list yet, enter its
+          device ID and pairing code here.
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            placeholder="Enter device ID"
+            value={manualPairDeviceId}
+            onChange={(e) => setManualPairDeviceId(e.target.value)}
+            style={{
+              flex: '1 1 280px',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '4px',
+              border: '1px solid #ddd',
+              fontSize: '0.875rem',
+            }}
+          />
+          <input
+            type="text"
+            placeholder="Enter pairing code"
+            value={manualPairCode}
+            onChange={(e) => setManualPairCode(e.target.value.toUpperCase())}
+            style={{
+              flex: '0 1 220px',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '4px',
+              border: '1px solid #ddd',
+              fontSize: '0.875rem',
+              textTransform: 'uppercase',
+            }}
+          />
+          <button
+            onClick={() => {
+              void handleManualPairSubmit();
+            }}
+            disabled={manualPairLoading || !manualPairDeviceId.trim() || !manualPairCode.trim()}
+            style={{
+              padding: '0.5rem 1rem',
+              backgroundColor: manualPairLoading || !manualPairDeviceId.trim() || !manualPairCode.trim() ? '#ccc' : '#0070f3',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: manualPairLoading || !manualPairDeviceId.trim() || !manualPairCode.trim() ? 'not-allowed' : 'pointer',
+              fontSize: '0.875rem',
+            }}
+          >
+            {manualPairLoading ? 'Pairing...' : 'Pair Device'}
+          </button>
+        </div>
+      </section>
 
       <section
         style={{
