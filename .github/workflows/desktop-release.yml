@@ -92,6 +92,64 @@ jobs:
           printf 'release_label=%s\n' "$RELEASE_LABEL" >> "$GITHUB_OUTPUT"
           printf 'trust_status=%s\n' "$TRUST_STATUS" >> "$GITHUB_OUTPUT"
 
+      - name: Validate desktop API runtime variables
+        shell: bash
+        env:
+          VITE_API_HTTP_BASE: ${{ vars.VITE_API_HTTP_BASE }}
+          VITE_API_WS_URL: ${{ vars.VITE_API_WS_URL }}
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const httpBase = process.env.VITE_API_HTTP_BASE?.trim() ?? '';
+          const wsUrl = process.env.VITE_API_WS_URL?.trim() ?? '';
+
+          const fail = (message) => {
+            console.error(`::error::${message}`);
+            process.exit(1);
+          };
+
+          if (!httpBase) {
+            fail('Desktop packaged builds require the VITE_API_HTTP_BASE GitHub Actions variable.');
+          }
+
+          if (!wsUrl) {
+            fail('Desktop packaged builds require the VITE_API_WS_URL GitHub Actions variable.');
+          }
+
+          let http;
+          let ws;
+
+          try {
+            http = new URL(httpBase);
+          } catch {
+            fail(`Desktop packaged builds require VITE_API_HTTP_BASE to be an absolute URL. Received: ${httpBase}`);
+          }
+
+          try {
+            ws = new URL(wsUrl);
+          } catch {
+            fail(`Desktop packaged builds require VITE_API_WS_URL to be an absolute URL. Received: ${wsUrl}`);
+          }
+
+          if (http.protocol !== 'https:') {
+            fail(`Desktop packaged builds require VITE_API_HTTP_BASE to use https://. Received: ${httpBase}`);
+          }
+
+          if (ws.protocol !== 'wss:') {
+            fail(`Desktop packaged builds require VITE_API_WS_URL to use wss://. Received: ${wsUrl}`);
+          }
+
+          const effectivePort = (url) =>
+            url.port || (url.protocol === 'https:' || url.protocol === 'wss:' ? '443' : '80');
+
+          if (http.hostname !== ws.hostname || effectivePort(http) !== effectivePort(ws)) {
+            fail(`Desktop packaged builds require VITE_API_HTTP_BASE and VITE_API_WS_URL to target the same host and port. Received: ${httpBase} / ${wsUrl}`);
+          }
+
+          console.log(`Validated packaged desktop API host ${http.host}`);
+          NODE
+
       - name: Validate stable signing and notarization secrets
         if: steps.context.outputs.channel == 'stable'
         shell: bash

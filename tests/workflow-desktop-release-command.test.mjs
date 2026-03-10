@@ -69,3 +69,31 @@ test('desktop release workflow generates concrete updater config for release bui
     'Desktop release workflow should generate the concrete updater endpoint path used by packaged clients'
   );
 });
+
+test('desktop release workflow validates packaged desktop API variables before building', () => {
+  const source = readFileSync(workflowPath, 'utf8');
+
+  assert.match(
+    source,
+    /Desktop packaged builds require the VITE_API_HTTP_BASE GitHub Actions variable\./,
+    'Desktop release workflow must fail fast when VITE_API_HTTP_BASE is missing'
+  );
+
+  assert.match(
+    source,
+    /Desktop packaged builds require the VITE_API_WS_URL GitHub Actions variable\./,
+    'Desktop release workflow must fail fast when VITE_API_WS_URL is missing'
+  );
+
+  assert.match(
+    source,
+    /Desktop packaged builds require VITE_API_HTTP_BASE to use https:\/\//,
+    'Desktop release workflow must reject non-https API HTTP base values for packaged builds'
+  );
+
+  assert.match(
+    source,
+    /Desktop packaged builds require VITE_API_WS_URL to use wss:\/\//,
+    'Desktop release workflow must reject non-wss API websocket values for packaged builds'
+  );
+});
