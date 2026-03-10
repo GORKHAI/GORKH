@@ -34,7 +34,7 @@ export interface AiAssistState {
 }
 
 export interface LlmSettings {
-  provider: 'openai';
+  provider: 'openai' | 'openai_compat';
   baseUrl: string;
   model: string;
 }
@@ -60,6 +60,10 @@ interface ExecutionResult {
 
 // Helper function to check if LLM provider is configured
 export async function hasLlMProviderConfigured(provider: string): Promise<boolean> {
+  if (provider === 'openai_compat') {
+    return true;
+  }
+
   try {
     return await invoke<boolean>('has_llm_api_key', { provider });
   } catch {

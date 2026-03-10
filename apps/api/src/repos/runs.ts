@@ -115,6 +115,16 @@ export const runsRepo = {
     return rows.map((row) => mapRun(row));
   },
 
+  async listOwnedByDevice(ownerUserId: string, deviceId: string, limit = 10) {
+    const rows = await prisma.run.findMany({
+      where: { ownerUserId, deviceId },
+      include: { steps: { orderBy: { stepId: 'asc' } } },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return rows.map((row) => mapRun(row));
+  },
+
   async getOwned(runId: string, ownerUserId: string) {
     const row = await prisma.run.findFirst({
       where: { id: runId, ownerUserId },

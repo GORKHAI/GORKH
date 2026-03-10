@@ -48,7 +48,7 @@ export function RunPanel({
   if (!run) {
     return (
       <div style={{ padding: '1rem', background: '#f9fafb', borderRadius: '8px', color: '#666' }}>
-        No active run. Create a run from the web dashboard.
+        No active task. Start one from the desktop task composer.
       </div>
     );
   }

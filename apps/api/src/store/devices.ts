@@ -105,6 +105,16 @@ export const deviceStore = {
     return toPublicDevice(device);
   },
 
+  revokeSession(deviceId: string): Device | undefined {
+    const device = devices.get(deviceId);
+    if (!device) return undefined;
+
+    device.paired = false;
+    device.lastSeenAt = Date.now();
+
+    return toPublicDevice(device);
+  },
+
   updateLastSeen(deviceId: string): Device | undefined {
     const device = devices.get(deviceId);
     if (device) {

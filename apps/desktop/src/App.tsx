@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { ServerMessage, ServerPairingCode, ServerChatMessage, RunWithSteps, ApprovalRequest, InputAction, AgentProposal } from '@ai-operator/shared';
+import type { ServerMessage, ServerChatMessage, RunWithSteps, ApprovalRequest, InputAction, AgentProposal, RunMode } from '@ai-operator/shared';
 import { WsClient, type ConnectionStatus } from './lib/wsClient.js';
 import { executeAction } from './lib/actionExecutor.js';
 import {
@@ -14,8 +14,10 @@ import {
   type ApprovalChangeEvent,
   type ApprovalItem,
 } from './lib/approvals.js';
-import { AiAssistController, type LlmSettings, type LocalToolEvent } from './lib/aiAssist.js';
+import { AiAssistController, hasLlMProviderConfigured, type LlmSettings, type LocalToolEvent } from './lib/aiAssist.js';
 import { desktopRuntimeConfig } from './lib/desktopRuntimeConfig.js';
+import { logoutDesktopSession, startDesktopSignIn } from './lib/desktopAuth.js';
+import { createDesktopRun, getDesktopTaskBootstrap, type DesktopTaskBootstrap } from './lib/desktopTasks.js';
 import {
   getPermissionStatus,
   openPermissionSettings,
@@ -24,6 +26,7 @@ import {
 } from './lib/permissions.js';
 import { getWorkspaceState, type LocalWorkspaceState } from './lib/workspace.js';
 import { getSettings, setSetting, subscribe, updateSettings, type LocalSettingsState } from './lib/localSettings.js';
+import { evaluateDesktopTaskReadiness } from './lib/taskReadiness.js';
 import { ChatOverlay } from './components/ChatOverlay.js';
 import { RunPanel } from './components/RunPanel.js';
 import { ApprovalModal } from './components/ApprovalModal.js';
@@ -47,6 +50,7 @@ function getOrCreateDeviceId(): string {
 }
 
 const LEGACY_DEVICE_TOKEN_KEY = 'ai-operator-device-token';
+const LLM_SETTINGS_STORAGE_KEY = 'ai-operator-settings';
 
 async function getStoredDeviceToken(deviceId: string): Promise<string | undefined> {
   const token = await invoke<string | null>('device_token_get', { deviceId });
@@ -57,6 +61,13 @@ async function setStoredDeviceToken(deviceId: string, token: string): Promise<vo
   const result = await invoke<{ ok: boolean; error?: string }>('device_token_set', { deviceId, token });
   if (!result.ok) {
     throw new Error(result.error || 'Failed to store device token');
+  }
+}
+
+async function clearStoredDeviceToken(deviceId: string): Promise<void> {
+  const result = await invoke<{ ok: boolean; error?: string }>('device_token_clear', { deviceId });
+  if (!result.ok) {
+    throw new Error(result.error || 'Failed to clear device token');
   }
 }
 
@@ -112,6 +123,42 @@ const DEFAULT_PERMISSION_STATUS: NativePermissionStatus = {
   accessibility: 'unknown',
 };
 
+function getLlmDefaults(provider: LlmSettings['provider']): LlmSettings {
+  if (provider === 'openai_compat') {
+    return {
+      provider,
+      baseUrl: 'http://127.0.0.1:8000',
+      model: 'qwen2.5-7b-instruct',
+    };
+  }
+
+  return {
+    provider: 'openai',
+    baseUrl: 'https://api.openai.com',
+    model: 'gpt-4.1-mini',
+  };
+}
+
+function mergeLlmSettings(input?: Partial<LlmSettings>): LlmSettings {
+  const provider = input?.provider === 'openai_compat' ? 'openai_compat' : 'openai';
+  return {
+    ...getLlmDefaults(provider),
+    ...input,
+    provider,
+  };
+}
+
+function persistLlmSettings(settings: LlmSettings): void {
+  localStorage.setItem(LLM_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+}
+
+function upsertRunHistory(runs: RunWithSteps[], run: RunWithSteps): RunWithSteps[] {
+  const withoutCurrent = runs.filter((candidate) => candidate.runId !== run.runId);
+  return [run, ...withoutCurrent]
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, 12);
+}
+
 function getNextPendingApproval(items: ApprovalItem[], kind: ApprovalItem['kind']): ApprovalItem | null {
   const pending = items
     .filter((item) => item.kind === kind && item.state === 'pending')
@@ -123,9 +170,18 @@ function App() {
   const [client, setClient] = useState<WsClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>(desktopRuntimeConfig.ok ? 'disconnected' : 'error');
   const [messages, setMessages] = useState<ChatItem[]>([]);
-  const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [pairingExpiresAt, setPairingExpiresAt] = useState<number | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
+  const [authState, setAuthState] = useState<'checking' | 'signed_out' | 'signing_in' | 'signed_in' | 'signing_out'>('checking');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [sessionDeviceToken, setSessionDeviceToken] = useState<string | null>(null);
+  const [desktopBootstrap, setDesktopBootstrap] = useState<DesktopTaskBootstrap | null>(null);
+  const [desktopBootstrapBusy, setDesktopBootstrapBusy] = useState(false);
+  const [desktopBootstrapError, setDesktopBootstrapError] = useState<string | null>(null);
+  const [taskGoal, setTaskGoal] = useState('');
+  const [taskMode, setTaskMode] = useState<RunMode>('ai_assist');
+  const [taskCreateBusy, setTaskCreateBusy] = useState(false);
+  const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
+  const [recentRuns, setRecentRuns] = useState<RunWithSteps[]>([]);
   const [localSettings, setLocalSettingsState] = useState<LocalSettingsState>(() => getSettings());
   const [autostartSupported, setAutostartSupported] = useState(false);
   const [autostartBusy, setAutostartBusy] = useState(false);
@@ -151,11 +207,9 @@ function App() {
   const aiControllerRef = useRef<AiAssistController | null>(null);
   const [aiState, setAiState] = useState<AiAssistController['state'] | null>(null);
   const [currentProposal, setCurrentProposal] = useState<AgentProposal | undefined>(undefined);
-  const [llmSettings, setLlmSettings] = useState<LlmSettings>({
-    provider: 'openai',
-    baseUrl: 'https://api.openai.com',
-    model: 'gpt-4.1-mini',
-  });
+  const [llmSettings, setLlmSettings] = useState<LlmSettings>(() => getLlmDefaults('openai'));
+  const [providerConfigured, setProviderConfigured] = useState(false);
+  const [providerCheckBusy, setProviderCheckBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentWorkflowOpen, setAgentWorkflowOpen] = useState(false);
   const [primaryDisplayId, setPrimaryDisplayId] = useState<string>('display-0');
@@ -168,6 +222,7 @@ function App() {
   const proposalApprovalPayloadsRef = useRef(new Map<string, PendingProposalPayload>());
   const runtimeConfig = desktopRuntimeConfig.ok ? desktopRuntimeConfig.config : null;
   const runtimeConfigError = desktopRuntimeConfig.ok ? null : desktopRuntimeConfig.message;
+  const isSignedIn = Boolean(sessionDeviceToken);
 
   const refreshPermissionStatus = useCallback(async () => {
     setPermissionStatusBusy(true);
@@ -291,6 +346,42 @@ function App() {
   useEffect(() => {
     workspaceConfiguredRef.current = workspaceState.configured;
   }, [workspaceState.configured]);
+
+  useEffect(() => {
+    persistLlmSettings(llmSettings);
+  }, [llmSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (llmSettings.provider === 'openai_compat') {
+      setProviderConfigured(true);
+      setProviderCheckBusy(false);
+      return;
+    }
+
+    setProviderCheckBusy(true);
+    void hasLlMProviderConfigured(llmSettings.provider)
+      .then((configured) => {
+        if (!cancelled) {
+          setProviderConfigured(configured);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProviderConfigured(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setProviderCheckBusy(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [llmSettings.provider]);
 
   useEffect(() => {
     setLocalSettingsState(getSettings());
@@ -434,11 +525,11 @@ function App() {
     setDeviceId(id);
 
     // Load LLM settings
-    const saved = localStorage.getItem('ai-operator-settings');
+    const saved = localStorage.getItem(LLM_SETTINGS_STORAGE_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        setLlmSettings((s) => ({ ...s, ...parsed }));
+        const parsed = JSON.parse(saved) as Partial<LlmSettings>;
+        setLlmSettings(mergeLlmSettings(parsed));
       } catch {
         // Ignore parse errors
       }
@@ -458,6 +549,7 @@ function App() {
       if (!runtimeConfig) {
         console.error('[App] Desktop API configuration invalid:', runtimeConfigError || 'unknown error');
         setStatus('error');
+        setAuthState('signed_out');
         return;
       }
 
@@ -476,6 +568,9 @@ function App() {
       if (disposed) {
         return;
       }
+
+      setSessionDeviceToken(deviceToken || null);
+      setAuthState(deviceToken ? 'signed_in' : 'signed_out');
 
       wsClient = new WsClient({
         deviceId: id,
@@ -544,6 +639,8 @@ function App() {
           void setStoredDeviceToken(id, nextDeviceToken).catch((err) => {
             console.error('[App] Failed to store device token:', err);
           });
+          setSessionDeviceToken(nextDeviceToken);
+          setAuthState('signed_in');
           wsClient?.setDeviceToken(nextDeviceToken);
           wsClient?.sendDeviceTokenAck();
           return { ok: true as const };
@@ -591,7 +688,9 @@ function App() {
       });
 
       setClient(wsClient);
-      wsClient.connect(runtimeConfig.wsUrl);
+      if (deviceToken) {
+        wsClient.connect(runtimeConfig.wsUrl);
+      }
 
       if (getSettings().startMinimizedToTray) {
         setTimeout(() => {
@@ -628,6 +727,53 @@ function App() {
 
     client.setPingIntervalMs(windowVisible ? 30000 : 15000);
   }, [client, windowVisible]);
+
+  useEffect(() => {
+    if (!runtimeConfig || !sessionDeviceToken || authState !== 'signed_in') {
+      setDesktopBootstrap(null);
+      setDesktopBootstrapBusy(false);
+      setDesktopBootstrapError(null);
+      setRecentRuns([]);
+      return;
+    }
+
+    let cancelled = false;
+    setDesktopBootstrapBusy(true);
+    setDesktopBootstrapError(null);
+
+    void getDesktopTaskBootstrap(runtimeConfig, sessionDeviceToken)
+      .then((bootstrap) => {
+        if (cancelled) {
+          return;
+        }
+
+        setDesktopBootstrap(bootstrap);
+        setRecentRuns(bootstrap.runs);
+        setActiveRun((current) => current ?? bootstrap.activeRun ?? bootstrap.runs[0] ?? null);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setDesktopBootstrapError(err instanceof Error ? err.message : 'Failed to load desktop task state');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDesktopBootstrapBusy(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authState, runtimeConfig, sessionDeviceToken]);
+
+  useEffect(() => {
+    if (!activeRun) {
+      return;
+    }
+
+    setRecentRuns((currentRuns) => upsertRunHistory(currentRuns, activeRun));
+  }, [activeRun]);
 
   useEffect(() => {
     void invoke('tray_update_state', {
@@ -728,8 +874,6 @@ function App() {
   const startAiAssist = async (runId: string, goal: string) => {
     if (!client) return;
 
-    // Check if API key is configured
-    const { hasLlMProviderConfigured } = await import('./lib/aiAssist.js');
     const hasKey = await hasLlMProviderConfigured(llmSettings.provider);
 
     if (!hasKey) {
@@ -782,13 +926,6 @@ function App() {
   // Handle server messages
   const handleServerMessage = useCallback((message: ServerMessage) => {
     switch (message.type) {
-      case 'server.pairing.code': {
-        const payload = (message as ServerPairingCode).payload;
-        setPairingCode(payload.pairingCode);
-        setPairingExpiresAt(payload.expiresAt);
-        break;
-      }
-
       case 'server.chat.message': {
         const payload = (message as ServerChatMessage).payload;
         const msg = payload.message;
@@ -836,10 +973,170 @@ function App() {
     [client, activeRun, aiController, aiState]
   );
 
-  // Handle requesting a pairing code
-  const handleRequestPairingCode = useCallback(() => {
-    client?.requestPairingCode();
-  }, [client]);
+  const handleDesktopSignIn = useCallback(async () => {
+    if (!runtimeConfig) {
+      setAuthError(runtimeConfigError || 'Desktop API configuration is invalid');
+      return;
+    }
+
+    if (!deviceId || !client) {
+      setAuthError('Desktop sign-in is still initializing. Try again in a moment.');
+      return;
+    }
+
+    setAuthError(null);
+    setAuthState('signing_in');
+
+    try {
+      const result = await startDesktopSignIn({
+        runtimeConfig,
+        deviceId,
+      });
+
+      await setStoredDeviceToken(deviceId, result.deviceToken);
+      setSessionDeviceToken(result.deviceToken);
+      setAuthState('signed_in');
+      client.setDeviceToken(result.deviceToken);
+      client.connect(runtimeConfig.wsUrl);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Desktop sign-in failed');
+      setAuthState(sessionDeviceToken ? 'signed_in' : 'signed_out');
+    }
+  }, [client, deviceId, runtimeConfig, runtimeConfigError, sessionDeviceToken]);
+
+  const handleDesktopSignOut = useCallback(async () => {
+    const currentToken = sessionDeviceToken;
+    if (!deviceId || !client || !currentToken) {
+      setAuthState('signed_out');
+      setSessionDeviceToken(null);
+      return;
+    }
+
+    setAuthError(null);
+    setAuthState('signing_out');
+
+    try {
+      await clearStoredDeviceToken(deviceId);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Desktop sign-out failed');
+      setAuthState('signed_in');
+      return;
+    }
+
+    let revokeError: string | null = null;
+    if (runtimeConfig) {
+      try {
+        await logoutDesktopSession({
+          runtimeConfig,
+          deviceToken: currentToken,
+        });
+      } catch (err) {
+        revokeError = err instanceof Error ? err.message : 'Desktop sign-out completed locally, but remote revoke failed';
+      }
+    }
+
+    client.setDeviceToken(undefined);
+    client.disconnect();
+    setSessionDeviceToken(null);
+    setAuthState('signed_out');
+    setDesktopBootstrap(null);
+    setDesktopBootstrapError(null);
+    setTaskCreateError(null);
+    setTaskGoal('');
+    setRecentRuns([]);
+    setActiveRun(null);
+    setPendingApproval(null);
+    setMessages([]);
+    setCurrentProposal(undefined);
+    setToolHistoryByRun({});
+    setInputPermissionError(null);
+    approvalController.cancelAllPending('Desktop signed out');
+    controlApprovalPayloadsRef.current.clear();
+    proposalApprovalPayloadsRef.current.clear();
+    aiControllerRef.current?.stop('Desktop signed out');
+    setAiController(null);
+    setAiState(null);
+    setAuthError(revokeError);
+  }, [client, deviceId, runtimeConfig, sessionDeviceToken]);
+
+  const handleTaskModeChange = useCallback((nextMode: RunMode) => {
+    setTaskMode(nextMode);
+  }, []);
+
+  const handleLlmProviderChange = useCallback((provider: LlmSettings['provider']) => {
+    setLlmSettings((current) => mergeLlmSettings({
+      ...current,
+      provider,
+    }));
+  }, []);
+
+  const handleLlmModelChange = useCallback((model: string) => {
+    setLlmSettings((current) => ({
+      ...current,
+      model,
+    }));
+  }, []);
+
+  const handleCreateTask = useCallback(async () => {
+    if (!runtimeConfig || !sessionDeviceToken) {
+      setTaskCreateError('Desktop sign-in is required before starting a task.');
+      return;
+    }
+
+    const nextReadiness = evaluateDesktopTaskReadiness({
+      mode: taskMode,
+      subscriptionStatus: desktopBootstrap?.billing.subscriptionStatus ?? 'inactive',
+      permissionStatus,
+      localSettings,
+      workspaceConfigured: workspaceState.configured,
+      providerConfigured,
+    });
+
+    if (!taskGoal.trim()) {
+      setTaskCreateError('Enter a task goal before starting.');
+      return;
+    }
+
+    if (!nextReadiness.ready) {
+      setTaskCreateError(nextReadiness.blockers[0]?.detail || 'Desktop is not ready to start a task.');
+      return;
+    }
+
+    setTaskCreateBusy(true);
+    setTaskCreateError(null);
+
+    try {
+      const run = await createDesktopRun(runtimeConfig, sessionDeviceToken, {
+        goal: taskGoal.trim(),
+        mode: taskMode,
+      });
+
+      setTaskGoal('');
+      setActiveRun(run);
+      setRecentRuns((currentRuns) => upsertRunHistory(currentRuns, run));
+    } catch (err) {
+      setTaskCreateError(err instanceof Error ? err.message : 'Failed to start task');
+    } finally {
+      setTaskCreateBusy(false);
+    }
+  }, [
+    desktopBootstrap?.billing.subscriptionStatus,
+    localSettings,
+    permissionStatus,
+    providerConfigured,
+    runtimeConfig,
+    sessionDeviceToken,
+    taskGoal,
+    taskMode,
+    workspaceState.configured,
+  ]);
+
+  const handleSelectRecentRun = useCallback((runId: string) => {
+    const selected = recentRuns.find((run) => run.runId === runId);
+    if (selected) {
+      setActiveRun(selected);
+    }
+  }, [recentRuns]);
 
   // Handle approval decision
   const handleApprovalDecision = useCallback((decision: 'approved' | 'denied', comment?: string) => {
@@ -1039,15 +1336,6 @@ function App() {
     setWorkspaceState(state);
   }, []);
 
-  // Format time remaining for pairing code
-  const getTimeRemaining = (): string => {
-    if (!pairingExpiresAt) return '';
-    const remaining = Math.max(0, pairingExpiresAt - Date.now());
-    const minutes = Math.floor(remaining / 60000);
-    const seconds = Math.floor((remaining % 60000) / 1000);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
   const pendingControlApproval = getNextPendingApproval(approvalItems, 'control_action');
   const pendingControlPayload = pendingControlApproval
     ? controlApprovalPayloadsRef.current.get(pendingControlApproval.id) || null
@@ -1060,6 +1348,18 @@ function App() {
       : null;
   const isAiAssist = activeRun?.mode === 'ai_assist';
   const activeToolHistory = activeRun ? toolHistoryByRun[activeRun.runId] || [] : [];
+  const pendingApprovals = approvalItems
+    .filter((item) => item.state === 'pending')
+    .sort((left, right) => left.createdAt - right.createdAt);
+  const subscriptionStatus = desktopBootstrap?.billing.subscriptionStatus ?? 'inactive';
+  const taskReadiness = evaluateDesktopTaskReadiness({
+    mode: taskMode,
+    subscriptionStatus,
+    permissionStatus,
+    localSettings,
+    workspaceConfigured: workspaceState.configured,
+    providerConfigured,
+  });
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#f5f5f5', display: 'flex' }}>
@@ -1084,37 +1384,41 @@ function App() {
             >
               Stop All
             </button>
-            <AgentTaskDialog
-              trigger={
-                <button
-                  style={{
-                    padding: '0.5rem 1rem',
-                    background: '#f3e8ff',
-                    border: '1px solid #a855f7',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '0.875rem',
-                    color: '#6b21a8',
-                  }}
-                >
-                  ✨ Advanced Agent
-                </button>
-              }
-            />
-            <button
-              onClick={() => setAgentWorkflowOpen(true)}
-              style={{
-                padding: '0.5rem 1rem',
-                background: '#dbeafe',
-                border: '1px solid #3b82f6',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-                color: '#1e40af',
-              }}
-            >
-              🚀 AI Engineer
-            </button>
+            {isSignedIn && (
+              <AgentTaskDialog
+                trigger={
+                  <button
+                    style={{
+                      padding: '0.5rem 1rem',
+                      background: '#f3e8ff',
+                      border: '1px solid #a855f7',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      color: '#6b21a8',
+                    }}
+                  >
+                    ✨ Advanced Agent
+                  </button>
+                }
+              />
+            )}
+            {isSignedIn && (
+              <button
+                onClick={() => setAgentWorkflowOpen(true)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: '#dbeafe',
+                  border: '1px solid #3b82f6',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  color: '#1e40af',
+                }}
+              >
+                🚀 AI Engineer
+              </button>
+            )}
             <button
               onClick={() => setSettingsOpen(true)}
               style={{
@@ -1165,8 +1469,30 @@ function App() {
           >
             Workspace: {workspaceState.configured ? workspaceState.rootName || 'Configured' : 'Not set'}
           </span>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '0.25rem 0.75rem',
+              borderRadius: '9999px',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              background: authState === 'signed_in' ? '#dcfce7' : authState === 'signing_in' || authState === 'signing_out' ? '#fef3c7' : '#f3f4f6',
+              color: authState === 'signed_in' ? '#166534' : authState === 'signing_in' || authState === 'signing_out' ? '#92400e' : '#6b7280',
+            }}
+          >
+            Session: {authState === 'signed_in'
+              ? 'Signed in'
+              : authState === 'signing_in'
+                ? 'Signing in'
+                : authState === 'signing_out'
+                  ? 'Signing out'
+                  : authState === 'checking'
+                    ? 'Checking'
+                    : 'Signed out'}
+          </span>
           
-          {status === 'disconnected' && runtimeConfig && (
+          {status === 'disconnected' && runtimeConfig && authState === 'signed_in' && (
             <button onClick={() => client?.connect(runtimeConfig.wsUrl)}>
               Reconnect
             </button>
@@ -1205,72 +1531,422 @@ function App() {
           </div>
         )}
 
-        {/* Pairing Section */}
+        {/* Desktop Sign-In */}
         <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'white', borderRadius: '8px', maxWidth: '400px' }}>
-          <h3 style={{ marginTop: 0 }}>Device Pairing</h3>
-          
-          {!pairingCode ? (
-            <button
-              onClick={handleRequestPairingCode}
-              disabled={status !== 'connected'}
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: status === 'connected' ? '#0070f3' : '#ccc',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: status === 'connected' ? 'pointer' : 'not-allowed',
-              }}
-            >
-              Request Pairing Code
-            </button>
-          ) : (
-            <div>
-              <div
-                style={{
-                  padding: '1rem',
-                  background: '#f0f0f0',
-                  borderRadius: '6px',
-                  fontFamily: 'monospace',
-                  fontSize: '1.5rem',
-                  letterSpacing: '0.2em',
-                  textAlign: 'center',
-                  marginBottom: '0.5rem',
-                }}
-              >
-                {pairingCode}
-              </div>
-              <p style={{ margin: 0, color: '#666', fontSize: '0.875rem' }}>
-                Expires in: {getTimeRemaining()}
+          <h3 style={{ marginTop: 0 }}>Desktop Sign In</h3>
+
+          {!isSignedIn ? (
+            <>
+              <p style={{ marginTop: 0, color: '#4b5563', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                Sign in with your browser to connect this desktop directly to your account.
               </p>
               <button
                 onClick={() => {
-                  setPairingCode(null);
-                  setPairingExpiresAt(null);
+                  void handleDesktopSignIn();
                 }}
+                disabled={!runtimeConfig || !deviceId || !client || authState === 'checking' || authState === 'signing_in'}
                 style={{
-                  marginTop: '0.5rem',
-                  padding: '0.5rem 1rem',
-                  background: 'transparent',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: !runtimeConfig || !deviceId || !client || authState === 'checking' || authState === 'signing_in' ? '#ccc' : '#0070f3',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: !runtimeConfig || !deviceId || !client || authState === 'checking' || authState === 'signing_in' ? 'not-allowed' : 'pointer',
                 }}
               >
-                Dismiss
+                {authState === 'signing_in' ? 'Opening Browser...' : 'Sign in'}
+              </button>
+            </>
+          ) : (
+            <div>
+              <p style={{ marginTop: 0, color: '#166534', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                This desktop has an active local session and will reconnect automatically with its stored device token.
+              </p>
+              <button
+                onClick={() => {
+                  void handleDesktopSignOut();
+                }}
+                disabled={authState === 'signing_out'}
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '0.5rem 0.85rem',
+                  background: authState === 'signing_out' ? '#e5e7eb' : '#fff7ed',
+                  color: authState === 'signing_out' ? '#6b7280' : '#9a3412',
+                  border: '1px solid #fdba74',
+                  borderRadius: '6px',
+                  cursor: authState === 'signing_out' ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {authState === 'signing_out' ? 'Signing out...' : 'Sign out'}
               </button>
             </div>
           )}
-          
-          {status !== 'connected' && (
-            <p style={{ color: '#666', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-              Connect to server to request pairing code
+
+          {authError && (
+            <p style={{ color: '#b91c1c', fontSize: '0.875rem', marginTop: '0.75rem', marginBottom: 0 }}>
+              {authError}
             </p>
           )}
         </div>
 
+        {isSignedIn && (
+          <>
+            <div
+              style={{
+                marginTop: '1.5rem',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: '1rem',
+              }}
+            >
+              <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1rem' }}>Create Task</h2>
+                    <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
+                      Start a run directly from this desktop without using the dashboard.
+                    </p>
+                  </div>
+                  {desktopBootstrap?.user.email && (
+                    <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                      {desktopBootstrap.user.email}
+                    </span>
+                  )}
+                </div>
+
+                <label style={{ display: 'block', marginTop: '1rem', fontSize: '0.875rem', fontWeight: 600 }}>
+                  Task goal
+                </label>
+                <textarea
+                  value={taskGoal}
+                  onChange={(event) => setTaskGoal(event.target.value)}
+                  placeholder="Example: Inspect the deployment failure, find the root cause, and prepare the fix."
+                  style={{
+                    width: '100%',
+                    minHeight: '96px',
+                    marginTop: '0.5rem',
+                    padding: '0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid #d1d5db',
+                    fontSize: '0.875rem',
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                  }}
+                />
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginTop: '1rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem' }}>
+                    <span style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>Mode</span>
+                    <select
+                      value={taskMode}
+                      onChange={(event) => handleTaskModeChange(event.target.value as RunMode)}
+                      style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                    >
+                      <option value="ai_assist">AI Assist</option>
+                      <option value="manual">Manual</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'block', fontSize: '0.875rem' }}>
+                    <span style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>Provider</span>
+                    <select
+                      value={llmSettings.provider}
+                      onChange={(event) => handleLlmProviderChange(event.target.value as LlmSettings['provider'])}
+                      disabled={taskMode !== 'ai_assist'}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '6px',
+                        border: '1px solid #d1d5db',
+                        background: taskMode === 'ai_assist' ? 'white' : '#f3f4f6',
+                      }}
+                    >
+                      <option value="openai">OpenAI</option>
+                      <option value="openai_compat">OpenAI-compatible local</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'block', fontSize: '0.875rem' }}>
+                    <span style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>Model</span>
+                    <input
+                      value={llmSettings.model}
+                      onChange={(event) => handleLlmModelChange(event.target.value)}
+                      disabled={taskMode !== 'ai_assist'}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '6px',
+                        border: '1px solid #d1d5db',
+                        background: taskMode === 'ai_assist' ? 'white' : '#f3f4f6',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#6b7280' }}>
+                  {taskMode === 'ai_assist'
+                    ? providerCheckBusy
+                      ? 'Checking provider configuration...'
+                      : providerConfigured
+                        ? 'Provider configured for AI Assist.'
+                        : 'Provider setup still required for AI Assist.'
+                    : 'Manual mode ignores provider and workspace blockers.'}
+                </div>
+
+                {taskCreateError && (
+                  <div
+                    style={{
+                      marginTop: '0.75rem',
+                      padding: '0.75rem',
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '6px',
+                      fontSize: '0.875rem',
+                      color: '#991b1b',
+                    }}
+                  >
+                    {taskCreateError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                  <button
+                    onClick={() => {
+                      void handleCreateTask();
+                    }}
+                    disabled={taskCreateBusy || desktopBootstrapBusy || !taskGoal.trim() || !taskReadiness.ready}
+                    style={{
+                      padding: '0.75rem 1rem',
+                      background: taskCreateBusy || desktopBootstrapBusy || !taskGoal.trim() || !taskReadiness.ready ? '#9ca3af' : '#111827',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: taskCreateBusy || desktopBootstrapBusy || !taskGoal.trim() || !taskReadiness.ready ? 'not-allowed' : 'pointer',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {taskCreateBusy ? 'Starting...' : 'Start Task'}
+                  </button>
+                  <button
+                    onClick={() => setSettingsOpen(true)}
+                    style={{
+                      padding: '0.75rem 1rem',
+                      background: 'white',
+                      color: '#111827',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Open Settings
+                  </button>
+                </div>
+              </section>
+
+              <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                <h2 style={{ margin: 0, fontSize: '1rem' }}>Readiness</h2>
+                <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
+                  Subscription, permissions, workspace, and provider state for this desktop.
+                </p>
+
+                {desktopBootstrapBusy && (
+                  <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#6b7280' }}>
+                    Loading account and task state...
+                  </p>
+                )}
+
+                {desktopBootstrapError && (
+                  <div
+                    style={{
+                      marginTop: '0.75rem',
+                      padding: '0.75rem',
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '6px',
+                      fontSize: '0.875rem',
+                      color: '#991b1b',
+                    }}
+                  >
+                    {desktopBootstrapError}
+                  </div>
+                )}
+
+                <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem' }}>
+                  <div style={{ fontSize: '0.875rem' }}>
+                    <strong>Subscription:</strong> {subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
+                  </div>
+                  <div style={{ fontSize: '0.875rem' }}>
+                    <strong>Screen Preview:</strong> {localSettings.screenPreviewEnabled ? 'Enabled' : 'Disabled'}
+                  </div>
+                  <div style={{ fontSize: '0.875rem' }}>
+                    <strong>Screen Recording Permission:</strong> {permissionStatus.screenRecording}
+                  </div>
+                  <div style={{ fontSize: '0.875rem' }}>
+                    <strong>Allow Control:</strong> {localSettings.allowControlEnabled ? 'Enabled' : 'Disabled'}
+                  </div>
+                  <div style={{ fontSize: '0.875rem' }}>
+                    <strong>Accessibility Permission:</strong> {permissionStatus.accessibility}
+                  </div>
+                  <div style={{ fontSize: '0.875rem' }}>
+                    <strong>Workspace:</strong> {workspaceState.configured ? workspaceState.rootName || 'Configured' : 'Not configured'}
+                  </div>
+                  <div style={{ fontSize: '0.875rem' }}>
+                    <strong>Provider:</strong> {providerCheckBusy ? 'Checking...' : providerConfigured ? 'Configured' : 'Not configured'}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: '1rem',
+                    padding: '0.75rem',
+                    background: taskReadiness.ready ? '#ecfdf5' : '#fff7ed',
+                    border: `1px solid ${taskReadiness.ready ? '#86efac' : '#fdba74'}`,
+                    borderRadius: '6px',
+                    fontSize: '0.875rem',
+                    color: taskReadiness.ready ? '#166534' : '#9a3412',
+                  }}
+                >
+                  {taskReadiness.ready
+                    ? 'This desktop is ready to start tasks directly.'
+                    : `Task start is blocked by ${taskReadiness.blockers.length} readiness item${taskReadiness.blockers.length === 1 ? '' : 's'}.`}
+                </div>
+
+                {taskReadiness.blockers.length > 0 && (
+                  <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.5rem' }}>
+                    {taskReadiness.blockers.map((blocker) => (
+                      <div
+                        key={blocker.id}
+                        style={{
+                          padding: '0.75rem',
+                          background: '#f9fafb',
+                          borderRadius: '6px',
+                          border: '1px solid #e5e7eb',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{blocker.label}</div>
+                        <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: '#6b7280' }}>{blocker.detail}</div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                          {blocker.id === 'screen-preview' && (
+                            <button
+                              onClick={() => handleScreenPreviewToggle(true)}
+                              style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                            >
+                              Enable Screen Preview
+                            </button>
+                          )}
+                          {blocker.id === 'control-toggle' && (
+                            <button
+                              onClick={() => handleControlToggle(true)}
+                              style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                            >
+                              Enable Allow Control
+                            </button>
+                          )}
+                          {(blocker.id === 'screen-permission' || blocker.id === 'accessibility-permission') && (
+                            <button
+                              onClick={() => void handleOpenPermissionSettings(blocker.id === 'screen-permission' ? 'screenRecording' : 'accessibility')}
+                              style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                            >
+                              Open Permission Settings
+                            </button>
+                          )}
+                          {(blocker.id === 'workspace' || blocker.id === 'provider') && (
+                            <button
+                              onClick={() => setSettingsOpen(true)}
+                              style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                            >
+                              Open Settings
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div
+              style={{
+                marginTop: '1rem',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: '1rem',
+              }}
+            >
+              <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                <h2 style={{ margin: 0, fontSize: '1rem' }}>Pending Approvals</h2>
+                <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
+                  Local approvals remain mandatory and are shown here before execution.
+                </p>
+
+                {pendingApprovals.length === 0 ? (
+                  <p style={{ marginTop: '1rem', fontSize: '0.875rem', color: '#6b7280' }}>
+                    No pending approvals.
+                  </p>
+                ) : (
+                  <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem' }}>
+                    {pendingApprovals.map((item) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: '0.75rem',
+                          background: '#f9fafb',
+                          borderRadius: '6px',
+                          border: '1px solid #e5e7eb',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{item.summary}</div>
+                        <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
+                          {item.source} • {item.kind} • expires {new Date(item.expiresAt).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                <h2 style={{ margin: 0, fontSize: '1rem' }}>Recent Tasks</h2>
+                <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
+                  Recent runs for this desktop reuse the existing backend run model and stay visible in the web dashboard.
+                </p>
+
+                {recentRuns.length === 0 ? (
+                  <p style={{ marginTop: '1rem', fontSize: '0.875rem', color: '#6b7280' }}>
+                    No recent tasks yet.
+                  </p>
+                ) : (
+                  <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem' }}>
+                    {recentRuns.map((run) => (
+                      <button
+                        key={run.runId}
+                        onClick={() => handleSelectRecentRun(run.runId)}
+                        style={{
+                          textAlign: 'left',
+                          padding: '0.75rem',
+                          background: activeRun?.runId === run.runId ? '#eff6ff' : '#f9fafb',
+                          border: activeRun?.runId === run.runId ? '1px solid #93c5fd' : '1px solid #e5e7eb',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{run.goal}</div>
+                        <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
+                          {run.mode || 'manual'} • {run.status} • {new Date(run.createdAt).toLocaleString()}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </>
+        )}
+
         {/* Screen Panel */}
-        {client && (
+        {client && isSignedIn && (
           <ScreenPanel 
             wsClient={client} 
             deviceId={deviceId} 
@@ -1284,7 +1960,7 @@ function App() {
         )}
 
         {/* Control Panel */}
-        {client && (
+        {client && isSignedIn && (
           <ControlPanel 
             wsClient={client} 
             deviceId={deviceId} 
@@ -1329,49 +2005,52 @@ function App() {
         )}
 
         {/* Run Panel */}
-        <div style={{ marginTop: '1.5rem' }}>
-          {pendingToolProposal && !workspaceState.configured && (
-            <div
-              style={{
-                marginBottom: '1rem',
-                padding: '0.75rem',
-                background: '#fef3c7',
-                border: '1px solid #f59e0b',
-                borderRadius: '6px',
-                fontSize: '0.875rem',
-                color: '#92400e',
-              }}
-            >
-              Workspace not configured. Choose a folder in Settings.
-            </div>
-          )}
-          <RunPanel 
-            run={activeRun} 
-            onCancel={handleCancelRun}
-            // AI Assist props
-            isAiAssist={isAiAssist}
-            aiState={aiState?.status}
-            currentProposal={currentProposal}
-            currentApproval={pendingAiProposalApproval}
-            actionCount={activeRun?.actionCount}
-            maxActions={activeRun?.constraints?.maxActions}
-            onApproveAction={handleAiApproveAction}
-            onRejectAction={handleAiRejectAction}
-            onApproveTool={handleAiApproveTool}
-            onRejectTool={handleAiRejectTool}
-            onUserResponse={handleAiUserResponse}
-            onStopAi={handleStopAi}
-            toolHistory={activeToolHistory}
-            workspaceConfigured={workspaceState.configured}
-          />
-        </div>
+        {isSignedIn && (
+          <div style={{ marginTop: '1.5rem' }}>
+            {pendingToolProposal && !workspaceState.configured && (
+              <div
+                style={{
+                  marginBottom: '1rem',
+                  padding: '0.75rem',
+                  background: '#fef3c7',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  color: '#92400e',
+                }}
+              >
+                Workspace not configured. Choose a folder in Settings.
+              </div>
+            )}
+            <RunPanel 
+              run={activeRun} 
+              onCancel={handleCancelRun}
+              // AI Assist props
+              isAiAssist={isAiAssist}
+              aiState={aiState?.status}
+              currentProposal={currentProposal}
+              currentApproval={pendingAiProposalApproval}
+              actionCount={activeRun?.actionCount}
+              maxActions={activeRun?.constraints?.maxActions}
+              onApproveAction={handleAiApproveAction}
+              onRejectAction={handleAiRejectAction}
+              onApproveTool={handleAiApproveTool}
+              onRejectTool={handleAiRejectTool}
+              onUserResponse={handleAiUserResponse}
+              onStopAi={handleStopAi}
+              toolHistory={activeToolHistory}
+              workspaceConfigured={workspaceState.configured}
+            />
+          </div>
+        )}
 
         <p style={{ marginTop: '2rem', color: '#666', maxWidth: '600px' }}>
-          This window shows the AI Operator desktop interface. When a run is started from the web dashboard,
-          it will appear above with live steps, logs, and approval requests.
+          {isSignedIn
+            ? 'This desktop is connected directly to your account. Live runs, approvals, and device controls appear here.'
+            : 'Sign in from this desktop to connect it to your account and unlock local runs, approvals, and device controls.'}
         </p>
         
-        {isAiAssist && (
+        {isSignedIn && isAiAssist && (
           <p style={{ color: '#8b5cf6', maxWidth: '600px' }}>
             🤖 <strong>AI Assist Mode:</strong> The AI will analyze your screen and propose actions one at a time.
             Every action requires your explicit approval before execution.
@@ -1380,11 +2059,13 @@ function App() {
       </div>
 
       {/* Chat Overlay */}
-      <ChatOverlay
-        messages={messages}
-        status={status}
-        onSendMessage={handleSendMessage}
-      />
+      {isSignedIn && (
+        <ChatOverlay
+          messages={messages}
+          status={status}
+          onSendMessage={handleSendMessage}
+        />
+      )}
 
       {/* Approval Modal */}
       {pendingApproval && (

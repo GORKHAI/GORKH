@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { login } from '../../lib/auth';
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +20,8 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      router.push('/dashboard');
+      const next = searchParams.get('next');
+      router.push(next && next.startsWith('/') ? next : '/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -42,5 +44,18 @@ export default function LoginPage() {
         Need an account? <Link href="/register">Register</Link>
       </p>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <main style={{ padding: '2rem', maxWidth: '420px', margin: '0 auto' }}>
+        <h1>Login</h1>
+        <p>Loading sign-in...</p>
+      </main>
+    }>
+      <LoginPageContent />
+    </Suspense>
   );
 }

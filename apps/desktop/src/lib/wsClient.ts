@@ -70,6 +70,7 @@ export class WsClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private readonly maxReconnectDelay = 10000;
+  private manualDisconnect = false;
   private helloTimeout: ReturnType<typeof setTimeout> | null = null;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private pingIntervalMs = 30000;
@@ -80,7 +81,7 @@ export class WsClient {
 
   getDeviceId(): string { return this.options.deviceId; }
   getStatus(): ConnectionStatus { return this.status; }
-  setDeviceToken(deviceToken: string): void { this.options.deviceToken = deviceToken; }
+  setDeviceToken(deviceToken?: string): void { this.options.deviceToken = deviceToken; }
   setPingIntervalMs(intervalMs: number): void {
     this.pingIntervalMs = intervalMs;
     if (this.status === 'connected') {
@@ -90,6 +91,7 @@ export class WsClient {
 
   connect(url: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
+    this.manualDisconnect = false;
     this.setStatus('connecting');
     try {
       this.ws = new WebSocket(url);
@@ -105,12 +107,24 @@ export class WsClient {
         try { this.handleMessage(JSON.parse(event.data as string)); }
         catch (err) { console.error('[WsClient] Parse error:', err); }
       };
-      this.ws.onclose = () => { this.cleanup(); this.setStatus('disconnected'); this.scheduleReconnect(url); };
+      this.ws.onclose = () => {
+        this.cleanup();
+        this.setStatus('disconnected');
+        if (!this.manualDisconnect) {
+          this.scheduleReconnect(url);
+        }
+      };
       this.ws.onerror = () => { this.setStatus('error'); };
     } catch (err) { this.setStatus('error'); this.scheduleReconnect(url); }
   }
 
-  disconnect(): void { this.cleanup(); this.ws?.close(); this.ws = null; this.setStatus('disconnected'); }
+  disconnect(): void {
+    this.manualDisconnect = true;
+    this.cleanup();
+    this.ws?.close();
+    this.ws = null;
+    this.setStatus('disconnected');
+  }
 
   send(message: DeviceMessage): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;

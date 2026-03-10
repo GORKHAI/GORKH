@@ -6,7 +6,12 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, State, WindowEvent,
 };
-use tokio::sync::RwLock;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    sync::{oneshot, Mutex as AsyncMutex, RwLock},
+    time::{timeout, Duration},
+};
 use enigo::{Enigo, MouseControllable, KeyboardControllable, Key as EnigoKey, MouseButton as EnigoMouseButton};
 use tauri::webview::{NewWindowResponse, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
@@ -435,6 +440,38 @@ struct TrayStatePayload {
     ai_assist_paused: bool,
 }
 
+const DESKTOP_AUTH_CALLBACK_PATH: &str = "/desktop-auth/callback";
+const DESKTOP_AUTH_MAX_WAIT_MS: u64 = 125_000;
+
+#[derive(Default)]
+struct DesktopAuthRuntimeState {
+    pending: AsyncMutex<Option<PendingDesktopAuthListener>>,
+}
+
+struct PendingDesktopAuthListener {
+    result_rx: Option<oneshot::Receiver<Result<DesktopAuthLoopbackPayload, String>>>,
+    shutdown_tx: Option<oneshot::Sender<()>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopAuthLoopbackStartPayload {
+    callback_url: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopAuthLoopbackPayload {
+    handoff_token: String,
+    state: String,
+}
+
+fn normalized_timeout_ms(requested_timeout_ms: Option<u64>) -> u64 {
+    requested_timeout_ms
+        .unwrap_or(DESKTOP_AUTH_MAX_WAIT_MS)
+        .clamp(1, DESKTOP_AUTH_MAX_WAIT_MS)
+}
+
 fn device_token_account(device_id: &str) -> String {
     format!("device_token::{}", device_id)
 }
@@ -460,33 +497,201 @@ fn is_allowed_webview_url(url: &tauri::Url) -> bool {
     cfg!(dev) && matches!(url.scheme(), "http" | "https") && is_local_dev_host(url.host_str())
 }
 
-fn app_base_host() -> Option<String> {
+fn app_base_origin() -> Option<(String, String, u16)> {
     std::env::var("APP_BASE_URL")
         .ok()
         .and_then(|value| tauri::Url::parse(&value).ok())
-        .and_then(|url| url.host_str().map(|host| host.to_ascii_lowercase()))
+        .and_then(|url| {
+            Some((
+                url.scheme().to_string(),
+                url.host_str()?.to_ascii_lowercase(),
+                url.port_or_known_default()?,
+            ))
+        })
 }
 
 fn is_allowed_external_url(url: &tauri::Url) -> bool {
-    if url.scheme() != "https" {
-        return false;
-    }
-
     let Some(host) = url.host_str().map(|value| value.to_ascii_lowercase()) else {
         return false;
     };
 
-    if host == "stripe.com" || host.ends_with(".stripe.com") {
+    if url.scheme() == "https" && (host == "stripe.com" || host.ends_with(".stripe.com")) {
         return true;
     }
 
-    if host == "github.com" || host.ends_with(".github.com") {
+    if url.scheme() == "https" && (host == "github.com" || host.ends_with(".github.com")) {
         return true;
     }
 
-    app_base_host()
-        .map(|allowed_host| host == allowed_host)
+    let Some(port) = url.port_or_known_default() else {
+        return false;
+    };
+
+    app_base_origin()
+        .map(|(allowed_scheme, allowed_host, allowed_port)| {
+            url.scheme() == allowed_scheme && host == allowed_host && port == allowed_port
+        })
         .unwrap_or(false)
+}
+
+fn desktop_auth_html_page(title: &str, message: &str) -> String {
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f5f7fb;color:#111827}}main{{max-width:30rem;margin:15vh auto;padding:2rem;background:#fff;border:1px solid #dbe3f0;border-radius:1rem;box-shadow:0 18px 50px rgba(15,23,42,.08)}}h1{{margin:0 0 .75rem;font-size:1.25rem}}p{{margin:0;line-height:1.5;color:#4b5563}}</style></head><body><main><h1>{}</h1><p>{}</p></main></body></html>",
+        title, title, message
+    )
+}
+
+async fn write_desktop_auth_response(
+    socket: &mut tokio::net::TcpStream,
+    status_line: &str,
+    body: &str,
+) -> Result<(), String> {
+    let response = format!(
+        "{status_line}\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\ncache-control: no-store\r\nconnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+
+    socket
+        .write_all(response.as_bytes())
+        .await
+        .map_err(|e| format!("Failed to write desktop auth response: {}", e))
+}
+
+async fn read_desktop_auth_request(socket: &mut tokio::net::TcpStream) -> Result<String, String> {
+    let mut buffer = vec![0_u8; 8192];
+    let mut total = 0_usize;
+
+    loop {
+        if total == buffer.len() {
+            return Err("Desktop auth callback request was too large".to_string());
+        }
+
+        let read = socket
+            .read(&mut buffer[total..])
+            .await
+            .map_err(|e| format!("Failed to read desktop auth callback: {}", e))?;
+
+        if read == 0 {
+            break;
+        }
+
+        total += read;
+
+        if buffer[..total].windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+    }
+
+    if total == 0 {
+        return Err("Desktop auth callback closed before a request was received".to_string());
+    }
+
+    Ok(String::from_utf8_lossy(&buffer[..total]).into_owned())
+}
+
+async fn handle_desktop_auth_connection(
+    mut socket: tokio::net::TcpStream,
+    expected_state: &str,
+) -> Result<DesktopAuthLoopbackPayload, String> {
+    let request = read_desktop_auth_request(&mut socket).await?;
+    let request_line = request
+        .lines()
+        .next()
+        .ok_or_else(|| "Desktop auth callback request was malformed".to_string())?;
+
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or_default();
+    let target = parts.next().unwrap_or_default();
+
+    if method != "GET" {
+        let body = desktop_auth_html_page(
+            "Desktop sign-in failed",
+            "The browser callback used an unsupported HTTP method.",
+        );
+        let _ = write_desktop_auth_response(&mut socket, "HTTP/1.1 405 Method Not Allowed", &body).await;
+        return Err("Desktop auth callback must use GET".to_string());
+    }
+
+    let parsed = tauri::Url::parse(&format!("http://127.0.0.1{}", target))
+        .map_err(|e| format!("Desktop auth callback URL was invalid: {}", e))?;
+
+    if parsed.path() != DESKTOP_AUTH_CALLBACK_PATH {
+        let body = desktop_auth_html_page(
+            "Desktop sign-in failed",
+            "The browser callback path was not recognized.",
+        );
+        let _ = write_desktop_auth_response(&mut socket, "HTTP/1.1 404 Not Found", &body).await;
+        return Err("Desktop auth callback path did not match the expected listener path".to_string());
+    }
+
+    let state = match parsed
+        .query_pairs()
+        .find(|(key, _)| key == "state")
+        .map(|(_, value)| value.into_owned())
+    {
+        Some(value) => value,
+        None => {
+            let body = desktop_auth_html_page(
+                "Desktop sign-in failed",
+                "The browser callback was missing its state value.",
+            );
+            let _ = write_desktop_auth_response(&mut socket, "HTTP/1.1 400 Bad Request", &body).await;
+            return Err("Desktop auth callback was missing state".to_string());
+        }
+    };
+
+    let handoff_token = match parsed
+        .query_pairs()
+        .find(|(key, _)| key == "handoffToken")
+        .map(|(_, value)| value.into_owned())
+    {
+        Some(value) => value,
+        None => {
+            let body = desktop_auth_html_page(
+                "Desktop sign-in failed",
+                "The browser callback was missing the handoff token.",
+            );
+            let _ = write_desktop_auth_response(&mut socket, "HTTP/1.1 400 Bad Request", &body).await;
+            return Err("Desktop auth callback was missing the handoff token".to_string());
+        }
+    };
+
+    if state != expected_state {
+        let body = desktop_auth_html_page(
+            "Desktop sign-in failed",
+            "The sign-in state did not match this desktop session.",
+        );
+        let _ = write_desktop_auth_response(&mut socket, "HTTP/1.1 400 Bad Request", &body).await;
+        return Err("Desktop auth callback state mismatch".to_string());
+    }
+
+    let body = desktop_auth_html_page(
+        "Desktop sign-in complete",
+        "You can return to AI Operator Desktop.",
+    );
+    write_desktop_auth_response(&mut socket, "HTTP/1.1 200 OK", &body).await?;
+
+    Ok(DesktopAuthLoopbackPayload { handoff_token, state })
+}
+
+async fn run_desktop_auth_listener(
+    listener: TcpListener,
+    expected_state: String,
+    mut shutdown_rx: oneshot::Receiver<()>,
+    result_tx: oneshot::Sender<Result<DesktopAuthLoopbackPayload, String>>,
+) {
+    let outcome = tokio::select! {
+        _ = &mut shutdown_rx => Err("Desktop auth listener canceled".to_string()),
+        accept_result = listener.accept() => {
+            match accept_result {
+                Ok((socket, _)) => handle_desktop_auth_connection(socket, &expected_state).await,
+                Err(e) => Err(format!("Failed to accept desktop auth callback: {}", e)),
+            }
+        }
+    };
+
+    let _ = result_tx.send(outcome);
 }
 
 fn create_main_window(app: &AppHandle) -> Result<(), tauri::Error> {
@@ -700,6 +905,98 @@ fn open_external_url(app: AppHandle, url: String) -> KeyResult {
             error: Some(format!("Failed to open URL: {}", e)),
         },
     }
+}
+
+#[tauri::command]
+async fn desktop_auth_listen_start(
+    runtime: State<'_, DesktopAuthRuntimeState>,
+    state: String,
+    timeout_ms: Option<u64>,
+) -> Result<DesktopAuthLoopbackStartPayload, String> {
+    let _ = normalized_timeout_ms(timeout_ms);
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("Failed to bind desktop auth loopback listener: {}", e))?;
+    let addr = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to resolve desktop auth loopback port: {}", e))?;
+    let callback_url = format!("http://127.0.0.1:{}{}", addr.port(), DESKTOP_AUTH_CALLBACK_PATH);
+
+    let (result_tx, result_rx) = oneshot::channel();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    {
+        let mut guard = runtime.pending.lock().await;
+        if let Some(mut existing) = guard.take() {
+            if let Some(existing_shutdown) = existing.shutdown_tx.take() {
+                let _ = existing_shutdown.send(());
+            }
+        }
+
+        *guard = Some(PendingDesktopAuthListener {
+            result_rx: Some(result_rx),
+            shutdown_tx: Some(shutdown_tx),
+        });
+    }
+
+    tauri::async_runtime::spawn(run_desktop_auth_listener(
+        listener,
+        state,
+        shutdown_rx,
+        result_tx,
+    ));
+
+    Ok(DesktopAuthLoopbackStartPayload { callback_url })
+}
+
+#[tauri::command]
+async fn desktop_auth_listen_finish(
+    runtime: State<'_, DesktopAuthRuntimeState>,
+    timeout_ms: Option<u64>,
+) -> Result<DesktopAuthLoopbackPayload, String> {
+    let timeout_ms = normalized_timeout_ms(timeout_ms);
+    let result_rx = {
+        let mut guard = runtime.pending.lock().await;
+        let pending = guard
+            .as_mut()
+            .ok_or_else(|| "Desktop auth listener is not running".to_string())?;
+
+        pending
+            .result_rx
+            .take()
+            .ok_or_else(|| "Desktop auth callback is already being awaited".to_string())?
+    };
+
+    let outcome = timeout(Duration::from_millis(timeout_ms), result_rx)
+        .await;
+
+    let mut guard = runtime.pending.lock().await;
+    if let Some(mut pending) = guard.take() {
+        if let Some(shutdown_tx) = pending.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+    }
+
+    match outcome {
+        Ok(result) => match result {
+            Ok(payload) => payload,
+            Err(_) => Err("Desktop auth listener ended unexpectedly".to_string()),
+        },
+        Err(_) => Err("Desktop sign-in timed out before the browser callback arrived".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn desktop_auth_listen_cancel(runtime: State<'_, DesktopAuthRuntimeState>) -> KeyResult {
+    let mut guard = runtime.pending.lock().await;
+
+    if let Some(mut pending) = guard.take() {
+        if let Some(shutdown_tx) = pending.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+    }
+
+    KeyResult { ok: true, error: None }
 }
 
 #[tauri::command]
@@ -1143,6 +1440,7 @@ fn start_recording(goal: String, description: String) -> Result<String, String> 
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(TrayRuntimeState::default())
+        .manage(DesktopAuthRuntimeState::default())
         .manage(AgentState::new())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .plugin(tauri_plugin_dialog::init());
@@ -1165,6 +1463,9 @@ pub fn run() {
             device_token_set,
             device_token_get,
             device_token_clear,
+            desktop_auth_listen_start,
+            desktop_auth_listen_finish,
+            desktop_auth_listen_cancel,
             tray_update_state,
             main_window_show,
             main_window_hide,

@@ -13,7 +13,7 @@ import { screenStore } from './store/screen.js';
 import { actionStore } from './store/actions.js';
 import { toolStore } from './store/tools.js';
 import { setRunPersistence, setSSEBroadcast } from './engine/runEngine.js';
-import { redactActionForLog, DEFAULT_RUN_CONSTRAINTS } from '@ai-operator/shared';
+import { redactActionForLog } from '@ai-operator/shared';
 import type { Device, InputAction, RunMode, ServerEventType } from '@ai-operator/shared';
 import { prisma } from './db/prisma.js';
 import { actionsRepo } from './repos/actions.js';
@@ -37,6 +37,13 @@ import { recoverInProgressRunsOnStartup } from './lib/run-recovery.js';
 import { redact } from './lib/redact.js';
 import { registerRootRoute } from './lib/root-route.js';
 import { buildSseHeaders } from './lib/sse.js';
+import {
+  buildDesktopSignInUrl,
+  desktopAuth,
+  validateDesktopLoopbackCallbackUrl,
+} from './lib/desktop-auth.js';
+import { createRunForOwnedDevice } from './lib/run-creation.js';
+import { revokeDesktopSession } from './lib/desktop-session.js';
 import { startRetentionScheduler } from './lib/retention.js';
 import { createSecurityOnSendHook, DEFAULT_JSON_BODY_LIMIT, WEBHOOK_RAW_BODY_LIMIT } from './lib/security.js';
 import { dispatchDeviceCommand, isDeviceCommandQueueEnabled } from './lib/device-commands.js';
@@ -81,6 +88,7 @@ const fastify = Fastify({
         'req.body.token',
         'req.body.accessToken',
         'req.body.refreshToken',
+        'req.body.handoffToken',
         'req.body.csrfToken',
         'res.headers["set-cookie"]',
       ],
@@ -347,6 +355,43 @@ async function createAuditEvent(
 function authFromQueryToken(token?: string): AuthUser | null {
   if (!token) return null;
   return verifyAccessToken(token);
+}
+
+function extractBearerToken(authorizationHeader: unknown): string | null {
+  const header = getHeaderValue(authorizationHeader);
+  if (!header) {
+    return null;
+  }
+
+  const [scheme, token] = header.split(/\s+/, 2);
+  if (scheme !== 'Bearer' || !token) {
+    return null;
+  }
+
+  return token;
+}
+
+async function requireDesktopDeviceSession(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<{ deviceId: string; userId: string; deviceToken: string } | null> {
+  const deviceToken = extractBearerToken(request.headers.authorization);
+  if (!deviceToken) {
+    reply.status(401);
+    return null;
+  }
+
+  const session = await devicesRepo.findByDeviceToken(deviceToken);
+  if (!session || !session.ownerUserId) {
+    reply.status(401);
+    return null;
+  }
+
+  return {
+    deviceId: session.device.deviceId,
+    userId: session.ownerUserId,
+    deviceToken,
+  };
 }
 
 function buildSessionIdentity(request: { ip: string; headers: Record<string, unknown> }) {
@@ -936,6 +981,309 @@ fastify.get('/auth/sessions', async (request, reply) => {
   };
 });
 
+fastify.post('/desktop/auth/start', async (request, reply) => {
+  if (!(await enforceHttpRateLimit(reply, `ip:${request.ip}:desktop-auth:start`, config.AUTH_LOGIN_PER_MIN, 60_000))) {
+    return;
+  }
+
+  const { deviceId, callbackUrl, state, nonce } = request.body as {
+    deviceId?: string;
+    callbackUrl?: string;
+    state?: string;
+    nonce?: string;
+  };
+
+  if (!deviceId || !callbackUrl || !state || !nonce) {
+    reply.status(400);
+    return { error: 'deviceId, callbackUrl, state, and nonce are required' };
+  }
+
+  const validatedCallback = validateDesktopLoopbackCallbackUrl(callbackUrl);
+  if (!validatedCallback.ok) {
+    reply.status(400);
+    return { error: validatedCallback.error };
+  }
+
+  const attempt = desktopAuth.startAttempt({
+    deviceId,
+    callbackUrl: validatedCallback.callbackUrl,
+    state,
+    nonce,
+  });
+
+  return {
+    ok: true,
+    attemptId: attempt.attemptId,
+    expiresAt: attempt.expiresAt,
+    authUrl: buildDesktopSignInUrl(config.APP_BASE_URL, attempt.attemptId),
+  };
+});
+
+fastify.post('/desktop/auth/exchange', async (request, reply) => {
+  if (!(await enforceHttpRateLimit(reply, `ip:${request.ip}:desktop-auth:exchange`, config.AUTH_LOGIN_PER_MIN, 60_000))) {
+    return;
+  }
+
+  const { handoffToken, deviceId, state, nonce } = request.body as {
+    handoffToken?: string;
+    deviceId?: string;
+    state?: string;
+    nonce?: string;
+  };
+
+  if (!handoffToken || !deviceId || !state || !nonce) {
+    reply.status(400);
+    return { error: 'handoffToken, deviceId, state, and nonce are required' };
+  }
+
+  const consumed = desktopAuth.consumeHandoff({
+    handoffToken,
+    deviceId,
+    state,
+    nonce,
+  });
+
+  if (!consumed.ok) {
+    if (consumed.error === 'HANDOFF_ALREADY_USED') {
+      reply.status(409);
+    } else if (consumed.error === 'HANDOFF_EXPIRED') {
+      reply.status(410);
+    } else if (consumed.error === 'HANDOFF_NOT_FOUND') {
+      reply.status(404);
+    } else {
+      reply.status(400);
+    }
+
+    return { error: consumed.error };
+  }
+
+  const persistedDevice = await devicesRepo.findByDeviceId(deviceId);
+  if (!persistedDevice) {
+    reply.status(404);
+    return { error: 'Device not found' };
+  }
+
+  const deviceToken = randomBytes(36).toString('base64url');
+  await devicesRepo.claimDevice(deviceId, consumed.userId, deviceToken);
+  deviceStore.claimDevice(deviceId);
+  ownership.setDeviceOwner(deviceId, consumed.userId);
+  await createAuditEvent(request, {
+    userId: consumed.userId,
+    deviceId,
+    eventType: 'device.claimed',
+  });
+  await createAuditEvent(request, {
+    userId: consumed.userId,
+    deviceId,
+    eventType: 'device.token_issued',
+  });
+
+  return {
+    ok: true,
+    deviceToken,
+    device: await getOwnedDevice(consumed.userId, deviceId),
+  };
+});
+
+fastify.post('/desktop/auth/logout', async (request, reply) => {
+  if (!(await enforceHttpRateLimit(reply, `ip:${request.ip}:desktop-auth:logout`, config.AUTH_LOGIN_PER_MIN, 60_000))) {
+    return;
+  }
+
+  const desktopSession = await requireDesktopDeviceSession(request, reply);
+  if (!desktopSession) {
+    return { error: 'Unauthorized' };
+  }
+
+  const revoked = await revokeDesktopSession({
+    deviceToken: desktopSession.deviceToken,
+    devicesRepo,
+  });
+
+  if (!revoked.ok) {
+    reply.status(401);
+    return { error: 'Unauthorized' };
+  }
+
+  deviceStore.revokeSession(revoked.deviceId);
+  ownership.setDeviceOwner(revoked.deviceId, revoked.userId);
+  await createAuditEvent(request, {
+    userId: revoked.userId,
+    deviceId: revoked.deviceId,
+    eventType: 'device.token_revoked',
+  });
+
+  return {
+    ok: true,
+    device: await getOwnedDevice(revoked.userId, revoked.deviceId),
+  };
+});
+
+fastify.post('/desktop/auth/complete', async (request, reply) => {
+  const user = await requireAuth(request, reply);
+  if (!user) {
+    return { error: 'Unauthorized' };
+  }
+
+  if (!(await enforceHttpRateLimit(reply, `user:${user.id}:desktop-auth:complete`, config.AUTH_LOGIN_PER_MIN, 60_000))) {
+    return;
+  }
+
+  const { attemptId } = request.body as {
+    attemptId?: string;
+  };
+
+  if (!attemptId) {
+    reply.status(400);
+    return { error: 'attemptId is required' };
+  }
+
+  const issued = desktopAuth.issueHandoff({
+    attemptId,
+    userId: user.id,
+  });
+
+  if (!issued.ok) {
+    reply.status(issued.error === 'ATTEMPT_EXPIRED' ? 410 : 404);
+    return { error: issued.error };
+  }
+
+  await createAuditEvent(request, {
+    userId: user.id,
+    deviceId: issued.deviceId,
+    eventType: 'desktop.auth_handoff_issued',
+    meta: { attemptId: issued.attemptId },
+  });
+
+  return {
+    ok: true,
+    handoffToken: issued.handoffToken,
+    callbackUrl: issued.callbackUrl,
+    state: issued.state,
+    expiresAt: issued.expiresAt,
+  };
+});
+
+fastify.get('/desktop/me', async (request, reply) => {
+  const desktopSession = await requireDesktopDeviceSession(request, reply);
+  if (!desktopSession) {
+    return { error: 'Unauthorized' };
+  }
+
+  const user = await usersRepo.findById(desktopSession.userId);
+  if (!user) {
+    reply.status(401);
+    return { error: 'Unauthorized' };
+  }
+
+  const [device, runs] = await Promise.all([
+    getOwnedDevice(user.id, desktopSession.deviceId),
+    runsRepo.listOwnedByDevice(user.id, desktopSession.deviceId, 12),
+  ]);
+
+  if (!device) {
+    reply.status(404);
+    return { error: 'Device not found' };
+  }
+
+  const activeRun = runs.find((run) => ['queued', 'running', 'waiting_for_user'].includes(run.status)) ?? null;
+
+  return {
+    ok: true,
+    user: {
+      id: user.id,
+      email: user.email,
+    },
+    billing: getBillingSnapshot(user),
+    device,
+    runs,
+    activeRun,
+    readiness: {
+      billingEnabled: config.BILLING_ENABLED,
+      subscriptionStatus: user.subscriptionStatus === 'active' ? 'active' : 'inactive',
+    },
+  };
+});
+
+fastify.post('/desktop/runs', async (request, reply) => {
+  const desktopSession = await requireDesktopDeviceSession(request, reply);
+  if (!desktopSession) {
+    return { error: 'Unauthorized' };
+  }
+
+  if (!(await enforceHttpRateLimit(reply, `user:${desktopSession.userId}:runs:create`, config.RUNS_CREATE_PER_MIN, 60_000))) {
+    return;
+  }
+
+  const user = await usersRepo.findById(desktopSession.userId);
+  if (!user) {
+    reply.status(401);
+    return { error: 'Unauthorized' };
+  }
+
+  if (!(await requireActiveSubscription(request, reply, user))) {
+    return;
+  }
+
+  const { goal, mode } = request.body as {
+    goal?: string;
+    mode?: RunMode;
+  };
+
+  if (!goal?.trim()) {
+    reply.status(400);
+    return { error: 'goal is required' };
+  }
+
+  const device = await getOwnedDevice(user.id, desktopSession.deviceId);
+  if (!device) {
+    reply.status(404);
+    return { error: 'Device not found' };
+  }
+
+  if (!device.paired) {
+    reply.status(400);
+    return { error: 'Device must be signed in before starting a run' };
+  }
+
+  const created = await createRunForOwnedDevice({
+    userId: user.id,
+    device,
+    goal: goal.trim(),
+    mode,
+    queueEnabled: isDeviceCommandQueueEnabled(config.RATE_LIMIT_BACKEND),
+    runStore,
+    ownership,
+    runsRepo,
+    dispatchRunStart: (deviceId, payload) => dispatchDeviceCommandToDevice(deviceId, 'run.start', payload),
+  });
+
+  await createAuditEvent(request, {
+    userId: user.id,
+    deviceId: desktopSession.deviceId,
+    runId: created.run.runId,
+    eventType: 'run.created',
+    meta: { mode: created.mode, initiatedBy: 'desktop' },
+  });
+
+  fastify.log.info(
+    { runId: created.run.runId, deviceId: desktopSession.deviceId, mode: created.mode },
+    'Desktop run created'
+  );
+
+  if (created.delivery && (created.delivery.queued || created.delivery.delivered)) {
+    fastify.log.info(
+      { runId: created.run.runId, mode: created.mode, queued: created.delivery.queued },
+      'Desktop run start dispatched to device'
+    );
+  }
+
+  return {
+    ok: true,
+    run: created.run,
+  };
+});
+
 // ============================================================================
 // Billing Endpoints
 // ============================================================================
@@ -1455,7 +1803,7 @@ fastify.post('/runs', async (request, reply) => {
 
   const { deviceId, goal, mode } = request.body as { deviceId: string; goal: string; mode?: RunMode };
 
-  if (!deviceId || !goal) {
+  if (!deviceId || !goal?.trim()) {
     reply.status(400);
     return { error: 'deviceId and goal are required' };
   }
@@ -1471,41 +1819,38 @@ fastify.post('/runs', async (request, reply) => {
     return { error: 'Device must be paired before starting a run' };
   }
 
-  // Validate mode
-  const runMode: RunMode = mode === 'ai_assist' ? 'ai_assist' : 'manual';
-  
-  // Create run with constraints for AI Assist mode
-  const constraints = runMode === 'ai_assist' ? DEFAULT_RUN_CONSTRAINTS : undefined;
-  const run = runStore.create({ deviceId, goal, mode: runMode, constraints });
-  ownership.setRunOwner(run.runId, user.id);
-  await runsRepo.save(run, user.id);
+  const created = await createRunForOwnedDevice({
+    userId: user.id,
+    device,
+    goal: goal.trim(),
+    mode,
+    queueEnabled: isDeviceCommandQueueEnabled(config.RATE_LIMIT_BACKEND),
+    runStore,
+    ownership,
+    runsRepo,
+    dispatchRunStart: (targetDeviceId, payload) => dispatchDeviceCommandToDevice(targetDeviceId, 'run.start', payload),
+  });
+
   await createAuditEvent(request, {
     userId: user.id,
     deviceId,
-    runId: run.runId,
+    runId: created.run.runId,
     eventType: 'run.created',
-    meta: { mode: runMode },
+    meta: { mode: created.mode },
   });
   
-  fastify.log.info({ runId: run.runId, deviceId, mode: runMode }, 'Run created');
+  fastify.log.info({ runId: created.run.runId, deviceId, mode: created.mode }, 'Run created');
 
-  const queueEnabled = isDeviceCommandQueueEnabled(config.RATE_LIMIT_BACKEND);
-  if (device.connected || queueEnabled) {
-    const delivery = await dispatchDeviceCommandToDevice(deviceId, 'run.start', {
-      runId: run.runId,
-      goal,
-      mode: runMode,
-      constraints,
-    });
-
-    if (delivery.queued || delivery.delivered) {
-      fastify.log.info({ runId: run.runId, mode: runMode, queued: delivery.queued }, 'Run start dispatched to device');
-    } else {
-      fastify.log.warn({ runId: run.runId, deviceId }, 'Failed to dispatch run.start to device');
-    }
+  if (created.delivery?.queued || created.delivery?.delivered) {
+    fastify.log.info(
+      { runId: created.run.runId, mode: created.mode, queued: created.delivery.queued },
+      'Run start dispatched to device'
+    );
+  } else if (device.connected || isDeviceCommandQueueEnabled(config.RATE_LIMIT_BACKEND)) {
+    fastify.log.warn({ runId: created.run.runId, deviceId }, 'Failed to dispatch run.start to device');
   }
 
-  return { run };
+  return { run: created.run };
 });
 
 fastify.get('/runs/:runId', async (request, reply) => {

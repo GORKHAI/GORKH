@@ -157,3 +157,28 @@ test('buildApiUrl appends the stored access token for SSE and screen URLs', asyn
     'https://gm7.onrender.com/events?deviceId=abc&token=query-token-456'
   );
 });
+
+test('getMe returns null without forcing a hard redirect when browser auth is missing', async (t) => {
+  const auth = await loadAuthModule(t);
+  const { location } = installBrowserGlobals();
+  const calls = [];
+
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+
+    if (String(url).endsWith('/auth/refresh')) {
+      return createJsonResponse({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    return createJsonResponse({ error: 'Unauthorized' }, { status: 401 });
+  };
+
+  const user = await auth.getMe();
+
+  assert.equal(user, null);
+  assert.deepEqual(calls, [
+    'https://gm7.onrender.com/auth/me',
+    'https://gm7.onrender.com/auth/refresh',
+  ]);
+  assert.equal(location.href, 'https://gm7-tau.vercel.app/login');
+});

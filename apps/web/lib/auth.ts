@@ -32,6 +32,13 @@ export interface DesktopDownloadInfo {
   publishedAt?: string;
 }
 
+export interface DesktopAuthCompletion {
+  handoffToken: string;
+  callbackUrl: string;
+  state: string;
+  expiresAt: number;
+}
+
 interface ApiFetchOptions extends RequestInit {
   retryOnAuthFailure?: boolean;
 }
@@ -111,6 +118,10 @@ function isMutation(method?: string): boolean {
 
 function shouldAttemptRefresh(path: string): boolean {
   return path !== '/auth/login' && path !== '/auth/register' && path !== '/auth/refresh';
+}
+
+function shouldRedirectAfterAuthFailure(path: string): boolean {
+  return path !== '/auth/me';
 }
 
 async function refreshSession(): Promise<boolean> {
@@ -197,7 +208,9 @@ export async function apiFetch(path: string, init: ApiFetchOptions = {}): Promis
       if (accessToken) {
         clearStoredAccessToken();
       }
-      redirectToLogin();
+      if (shouldRedirectAfterAuthFailure(path)) {
+        redirectToLogin();
+      }
       return response;
     }
 
@@ -341,4 +354,18 @@ export async function getDesktopDownloads(): Promise<DesktopDownloadInfo | null>
   }
 
   return data as DesktopDownloadInfo;
+}
+
+export async function completeDesktopAuth(attemptId: string): Promise<DesktopAuthCompletion> {
+  const response = await apiFetch('/desktop/auth/complete', {
+    method: 'POST',
+    body: JSON.stringify({ attemptId }),
+  });
+  const data = await response.json().catch(() => ({ error: 'Failed to complete desktop auth' }));
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to complete desktop auth');
+  }
+
+  return data as DesktopAuthCompletion;
 }
