@@ -115,13 +115,20 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
   },
 };
 
-const PROVIDER_ORDER: LlmProvider[] = [
+const ALL_PROVIDER_ORDER: LlmProvider[] = [
   'native_qwen_ollama',
   'openai',
   'claude',
   'deepseek',
   'minimax',
   'kimi',
+  'openai_compat',
+];
+
+const LAUNCH_PROVIDER_ORDER: LlmProvider[] = [
+  'native_qwen_ollama',
+  'openai',
+  'claude',
   'openai_compat',
 ];
 
@@ -181,6 +188,14 @@ export function getLlmProviderDefinition(provider: LlmProvider): LlmProviderDefi
   return PROVIDER_DEFINITIONS[provider];
 }
 
+export function isLaunchLlmProvider(provider: LlmProvider): boolean {
+  return LAUNCH_PROVIDER_ORDER.includes(provider);
+}
+
 export function getSupportedLlmProviders(): LlmProviderDefinition[] {
-  return PROVIDER_ORDER.map((provider) => PROVIDER_DEFINITIONS[provider]);
+  return LAUNCH_PROVIDER_ORDER.map((provider) => PROVIDER_DEFINITIONS[provider]);
+}
+
+export function getAllLlmProviders(): LlmProviderDefinition[] {
+  return ALL_PROVIDER_ORDER.map((provider) => PROVIDER_DEFINITIONS[provider]);
 }

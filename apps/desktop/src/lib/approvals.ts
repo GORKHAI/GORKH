@@ -1,4 +1,10 @@
-import type { AgentProposal, InputAction, ToolCall } from '@ai-operator/shared';
+import {
+  redactToolCallForLog,
+  sanitizeCommandName,
+  type AgentProposal,
+  type InputAction,
+  type ToolCall,
+} from '@ai-operator/shared';
 
 export type ApprovalKind = 'control_action' | 'tool_call' | 'ai_proposal';
 export type ApprovalState =
@@ -106,20 +112,14 @@ export function summarizeInputAction(action: InputAction): string {
 }
 
 export function summarizeToolCall(toolCall: ToolCall): string {
-  switch (toolCall.tool) {
-    case 'fs.list':
-      return `fs.list path=${toolCall.path}`;
-    case 'fs.read_text':
-      return `fs.read_text path=${toolCall.path}`;
-    case 'fs.write_text':
-      return `fs.write_text path=${toolCall.path}`;
-    case 'fs.apply_patch':
-      return `fs.apply_patch path=${toolCall.path}`;
-    case 'terminal.exec':
-      return `terminal.exec cmd=${toolCall.cmd}`;
-    default:
-      return 'tool_call';
+  const redacted = redactToolCallForLog(toolCall);
+  if (redacted.pathRel) {
+    return `${redacted.tool} path=${redacted.pathRel}`;
   }
+  if (redacted.cmd) {
+    return `${redacted.tool} cmd=${redacted.cmd}`;
+  }
+  return redacted.tool;
 }
 
 export function summarizeAgentProposal(proposal: AgentProposal): string {
@@ -177,19 +177,30 @@ export function getApprovalRiskForProposal(proposal: AgentProposal): ApprovalRis
 }
 
 function sanitizePersistedItem(item: ApprovalItem): ApprovalItem {
+  const summary = item.summary
+    .replace(/(fs\.[a-z_]+)\s+path=[^\s]+/gi, '$1 path=[workspace path]')
+    .replace(/(AI proposal:\s*fs\.[a-z_]+)\s+path=[^\s]+/gi, '$1 path=[workspace path]')
+    .replace(/(terminal\.exec)\s+cmd=([^\s]+).*/gi, (_match, tool, cmd) => `${tool} cmd=${sanitizeCommandName(cmd)}`);
+  const error =
+    item.error && /^[A-Z0-9_ -]+$/.test(item.error)
+      ? item.error
+      : item.error
+        ? 'REDACTED_ERROR'
+        : undefined;
+
   return {
     id: item.id,
     kind: item.kind,
     createdAt: item.createdAt,
     expiresAt: item.expiresAt,
-    summary: item.summary,
+    summary,
     risk: item.risk,
     runId: item.runId,
     actionId: item.actionId,
     toolId: item.toolId,
     source: item.source,
     state: item.state,
-    error: item.error,
+    error,
   };
 }
 

@@ -169,9 +169,9 @@ echo "STARTING_API=1"
   export DESKTOP_UPDATE_ENABLED=true
   export DESKTOP_RELEASE_SOURCE=file
   export DESKTOP_VERSION=0.1.0
-  export DESKTOP_WIN_URL=https://example.com/downloads/ai-operator-setup.exe
-  export DESKTOP_MAC_INTEL_URL=https://example.com/downloads/ai-operator-macos-intel.dmg
-  export DESKTOP_MAC_ARM_URL=https://example.com/downloads/ai-operator-macos-apple-silicon.dmg
+  export DESKTOP_WIN_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-x64-setup.exe
+  export DESKTOP_MAC_INTEL_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-x64.dmg
+  export DESKTOP_MAC_ARM_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-aarch64.dmg
   export ADMIN_API_KEY="$ADMIN_API_KEY_VALUE"
   pnpm --filter @ai-operator/api build >/tmp/ai-operator-api-build.log
   nohup node apps/api/dist/index.js >"$API_LOG" 2>&1 &
@@ -232,23 +232,20 @@ if [[ "$RUNS_WITHOUT_CSRF_STATUS" != "403" ]]; then
   exit 1
 fi
 
-set_subscription_status inactive
 DOWNLOADS_INACTIVE_STATUS="$(curl -s -o /tmp/ai-operator-downloads-inactive.json -w '%{http_code}' \
-  -b "$COOKIE_JAR" \
   "$API_BASE/downloads/desktop")"
 
-if [[ "$DOWNLOADS_INACTIVE_STATUS" != "402" ]]; then
-  echo "Expected 402 for inactive downloads, got $DOWNLOADS_INACTIVE_STATUS" >&2
+if [[ "$DOWNLOADS_INACTIVE_STATUS" != "200" ]]; then
+  echo "Expected 200 for public desktop acquisition, got $DOWNLOADS_INACTIVE_STATUS" >&2
   exit 1
 fi
 
-set_subscription_status active
 DOWNLOADS_ACTIVE_STATUS="$(curl -s -o /tmp/ai-operator-downloads-active.json -w '%{http_code}' \
   -b "$COOKIE_JAR" \
   "$API_BASE/downloads/desktop")"
 
 if [[ "$DOWNLOADS_ACTIVE_STATUS" != "200" ]]; then
-  echo "Expected 200 for active downloads, got $DOWNLOADS_ACTIVE_STATUS" >&2
+  echo "Expected 200 for authenticated desktop acquisition, got $DOWNLOADS_ACTIVE_STATUS" >&2
   exit 1
 fi
 

@@ -19,6 +19,7 @@ import {
   getLlmProviderDefinition,
   getLlmProviderLabel,
   getSupportedLlmProviders,
+  isLaunchLlmProvider,
   isPaidLlmProvider,
   providerRequiresApiKey,
   type LlmProvider,
@@ -84,6 +85,10 @@ export function SettingsPanel({
   const settings = llmSettings;
   const providerDefinition = getLlmProviderDefinition(settings.provider);
   const supportedProviders = getSupportedLlmProviders();
+  const selectedProviderVisible = isLaunchLlmProvider(settings.provider);
+  const providerOptions = selectedProviderVisible
+    ? supportedProviders
+    : [providerDefinition, ...supportedProviders.filter((provider) => provider.provider !== settings.provider)];
   const [apiKey, setApiKey] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -373,7 +378,7 @@ export function SettingsPanel({
             🤖 AI Assist Configuration
           </h3>
           <p style={{ margin: '0 0 1rem', fontSize: '0.875rem', color: '#666' }}>
-            Configure the assistant model. Local Qwen via Ollama is the free default. API keys stay in the OS keychain and are never sent to the server.
+            Configure the assistant model. Launch beta officially supports Free AI, OpenAI, Claude, and Custom OpenAI-compatible endpoints. API keys stay in the OS keychain and are never sent to the server.
           </p>
 
           {/* Provider */}
@@ -396,14 +401,34 @@ export function SettingsPanel({
                 fontSize: '0.875rem',
               }}
             >
-              {supportedProviders.map((provider) => (
+              {providerOptions.map((provider) => (
                 <option key={provider.provider} value={provider.provider}>
-                  {provider.label}
-                  {provider.paid ? ' (paid)' : provider.provider === 'native_qwen_ollama' ? ' (free default)' : ''}
+                  {provider.provider === settings.provider && !selectedProviderVisible
+                    ? `${provider.label} (compatibility mode)`
+                    : `${provider.label}${provider.paid ? ' (paid)' : provider.provider === 'native_qwen_ollama' ? ' (free default)' : ''}`}
                 </option>
               ))}
             </select>
           </div>
+
+          {!selectedProviderVisible && (
+            <div
+              style={{
+                marginBottom: '1rem',
+                padding: '0.75rem',
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '4px',
+                fontSize: '0.875rem',
+                color: '#1d4ed8',
+              }}
+            >
+              <strong>Compatibility provider</strong>
+              <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
+                {providerDefinition.label} remains available for existing setups, but it is hidden from the beta provider menu. For external beta, GORKH officially supports Free AI, OpenAI, Claude, and Custom OpenAI-compatible endpoints in the main assistant flow.
+              </p>
+            </div>
+          )}
 
           {/* Base URL */}
           <div style={{ marginBottom: '1rem' }}>
@@ -558,25 +583,6 @@ export function SettingsPanel({
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
                 You need to run a local OpenAI-compatible server (e.g., vLLM, llama.cpp server) 
                 on your machine. See documentation for setup instructions.
-              </p>
-            </div>
-          )}
-
-          {(settings.provider === 'deepseek' || settings.provider === 'minimax' || settings.provider === 'kimi') && (
-            <div
-              style={{
-                marginBottom: '1rem',
-                padding: '0.75rem',
-                backgroundColor: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                borderRadius: '4px',
-                fontSize: '0.875rem',
-                color: '#1d4ed8',
-              }}
-            >
-              <strong>{providerDefinition.label} compatibility</strong>
-              <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
-                {providerDefinition.setupHint} The desktop uses your configured base URL and API key directly; no provider traffic is proxied through the server.
               </p>
             </div>
           )}

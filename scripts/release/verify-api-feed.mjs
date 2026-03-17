@@ -30,11 +30,15 @@ const CHECKS = {
   register: false,
   login: false,
   csrf: false,
-  subscription: false,
+  acquisition: false,
   downloads: false,
   updates: false,
   metrics: false,
 };
+
+const PLACEHOLDER_HOST_PATTERN = /(^|\.)example\.com$/i;
+const PLACEHOLDER_SIGNATURE_PATTERN = /(replace-with-tauri-signature|placeholder-signature|changeme-signature)/i;
+const UPDATER_SIGNATURE_PATTERN = /^[A-Za-z0-9+/=_-]{40,}$/;
 
 function log(message) {
   console.log(message);
@@ -98,6 +102,60 @@ function extractCookie(setCookieHeader, name) {
     if (match) return match[1];
   }
   return null;
+}
+
+function normalizeAssetUrl(rawUrl) {
+  try {
+    return new URL(rawUrl, `${API_BASE}/`).toString();
+  } catch {
+    throw new Error(`Desktop release asset URL is invalid: ${rawUrl}`);
+  }
+}
+
+function assertValidAssetUrl(rawUrl, label) {
+  const normalized = normalizeAssetUrl(rawUrl);
+  const parsed = new URL(normalized);
+
+  if (PLACEHOLDER_HOST_PATTERN.test(parsed.hostname)) {
+    throw new Error(`${label} uses a placeholder host: ${rawUrl}`);
+  }
+
+  return normalized;
+}
+
+function assertValidSignature(signature, label) {
+  const trimmed = String(signature || '').trim();
+
+  if (!trimmed) {
+    throw new Error(`${label} signature is missing`);
+  }
+
+  if (PLACEHOLDER_SIGNATURE_PATTERN.test(trimmed)) {
+    throw new Error(`${label} signature is still a placeholder`);
+  }
+
+  if (!UPDATER_SIGNATURE_PATTERN.test(trimmed)) {
+    throw new Error(`${label} signature is not in updater format`);
+  }
+}
+
+async function assertAssetReachable(rawUrl, label) {
+  const url = assertValidAssetUrl(rawUrl, label);
+  let response = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+  if (response.status === 405 || response.status === 501) {
+    response = await fetch(url, { method: 'GET', redirect: 'follow' });
+  }
+
+  if (!response.ok) {
+    throw new Error(`${label} is not reachable (${response.status}): ${url}`);
+  }
+
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && Number(contentLength) === 0) {
+    throw new Error(`${label} is empty: ${url}`);
+  }
+
+  return url;
 }
 
 async function checkHealth() {
@@ -182,45 +240,22 @@ async function checkCsrfProtection() {
   CHECKS.csrf = true;
 }
 
-async function checkSubscriptionBypass() {
-  // When BILLING_ENABLED=false, the API may not enforce subscriptions
-  // This is a dev-only mode check
-  log('  Checking subscription enforcement...');
-  
-  // Try to access downloads without active subscription
+async function checkDesktopAcquisition() {
+  log('  Checking desktop acquisition without subscription...');
+
   const response = await httpRequest(`${API_BASE}/downloads/desktop`, {
     headers: {
       'Cookie': `access_token=${accessToken}; csrf_token=${csrfToken}`,
       'X-CSRF-Token': csrfToken,
     },
   });
-  
-  // If billing is disabled, this will return 200
-  // If billing is enabled and user has no subscription, this returns 402
-  if (response.status === 200) {
-    log(`    ℹ️ Subscription gating bypassed (BILLING_ENABLED likely false)`);
-    CHECKS.subscription = true;
-    return true;
-  } else if (response.status === 402) {
-    log(`    ✅ Subscription gating active (402 for inactive users)`);
-    
-    if (SKIP_SUBSCRIPTION_CHECK) {
-      log(`    ⚠️ Skipping subscription activation (SKIP_SUBSCRIPTION_CHECK=true)`);
-      CHECKS.subscription = true;
-      return true;
-    }
-    
-    log(`    ℹ️ To activate subscription, run in API directory:`);
-    log(`       npx prisma db execute --url="$DATABASE_URL" --stdin <<EOF`);
-    log(`       UPDATE "User" SET "subscriptionStatus" = 'active' WHERE email = '${USER_EMAIL}';`);
-    log(`       EOF`);
-    
-    // Don't fail the check, just note it
-    CHECKS.subscription = true;
-    return false;
-  } else {
-    throw new Error(`Unexpected status from /downloads/desktop: ${response.status}`);
+
+  if (response.status !== 200) {
+    throw new Error(`Desktop acquisition failed: expected 200, got ${response.status}`);
   }
+
+  log('    ✅ Desktop download is publicly acquirable');
+  CHECKS.acquisition = true;
 }
 
 async function checkDownloads() {
@@ -249,13 +284,20 @@ async function checkDownloads() {
     if (!data[field]) {
       throw new Error(`Downloads response missing ${field}`);
     }
-    if (!data[field].startsWith('https://') && !data[field].startsWith('http://')) {
-      throw new Error(`Downloads response ${field} is not a valid URL: ${data[field]}`);
-    }
+  }
+
+  const resolvedDownloads = {
+    windowsUrl: await assertAssetReachable(data.windowsUrl, 'Windows desktop download'),
+    macIntelUrl: await assertAssetReachable(data.macIntelUrl, 'Intel macOS desktop download'),
+    macArmUrl: await assertAssetReachable(data.macArmUrl, 'Apple Silicon macOS desktop download'),
+  };
+
+  if (SKIP_SUBSCRIPTION_CHECK) {
+    log('    ℹ️ Subscription-specific checks skipped; desktop acquisition remains public');
   }
   
   log(`    ✅ Downloads valid (version: ${data.version})`);
-  log(`       Windows: ${data.windowsUrl.substring(0, 60)}...`);
+  log(`       Windows: ${resolvedDownloads.windowsUrl.substring(0, 60)}...`);
   CHECKS.downloads = true;
 }
 
@@ -291,9 +333,12 @@ async function checkUpdates() {
   if (!platform.signature) {
     throw new Error('Update feed platform missing signature');
   }
+
+  assertValidSignature(platform.signature, 'Desktop update feed');
+  const assetUrl = await assertAssetReachable(platform.url, 'Desktop update asset');
   
   log(`    ✅ Update feed valid (version: ${data.version})`);
-  log(`       URL: ${platform.url.substring(0, 60)}...`);
+  log(`       URL: ${assetUrl.substring(0, 60)}...`);
   log(`       Signature: ${platform.signature.substring(0, 40)}...`);
   CHECKS.updates = true;
 }
@@ -348,7 +393,7 @@ async function main() {
     await checkRegister();
     await checkLogin();
     await checkCsrfProtection();
-    await checkSubscriptionBypass();
+    await checkDesktopAcquisition();
     await checkDownloads();
     await checkUpdates();
     await checkMetrics();

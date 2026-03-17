@@ -341,12 +341,8 @@ export async function createPortalSession(): Promise<string> {
   return data.url as string;
 }
 
-export async function getDesktopDownloads(): Promise<DesktopDownloadInfo | null> {
+export async function getDesktopDownloads(): Promise<DesktopDownloadInfo> {
   const response = await apiFetch('/downloads/desktop');
-  if (response.status === 402) {
-    return null;
-  }
-
   const data = await response.json().catch(() => ({ error: 'Failed to fetch desktop downloads' }));
 
   if (!response.ok) {

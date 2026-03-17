@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
+  formatLocalAiByteCount,
   getLocalAiInstallStageLabel,
+  getLocalAiInstallProgressSummary,
+  getLocalAiRuntimeSourceLabel,
   getLocalAiTierDetails,
   getLocalAiTierRuntimePlan,
+  getLocalAiTroubleshootingHint,
   type LocalAiHardwareProfile,
   type LocalAiInstallProgress,
   type LocalAiInstallStage,
@@ -51,6 +55,21 @@ function summarizeHardware(profile: LocalAiHardwareProfile | null): string | nul
   return parts.join(' • ');
 }
 
+function formatUpdatedAt(updatedAtMs: number | null | undefined): string | null {
+  if (!updatedAtMs) {
+    return null;
+  }
+
+  try {
+    return new Date(updatedAtMs).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function FreeAiSetupCard({
   status,
   installProgress,
@@ -77,6 +96,16 @@ export function FreeAiSetupCard({
   const selectedDetails = getLocalAiTierDetails(selectedTier);
   const visionPlan = getLocalAiTierRuntimePlan(status?.selectedTier ?? recommendation?.tier ?? 'standard');
   const visionModel = visionPlan.optionalVisionModel;
+  const progressSummary = getLocalAiInstallProgressSummary(installProgress);
+  const activeError = error ?? status?.lastError ?? null;
+  const supportHint = getLocalAiTroubleshootingHint(status, installProgress, hardwareProfile, error);
+  const availableDiskLabel = formatLocalAiByteCount(hardwareProfile?.availableDiskBytes);
+  const lastUpdatedLabel = formatUpdatedAt(installProgress?.updatedAtMs);
+  const selectedModel = installProgress?.selectedModel ?? status?.selectedModel ?? null;
+  const runtimeSourceLabel = getLocalAiRuntimeSourceLabel(status?.runtimeSource ?? null);
+  const statusMessage = installProgress?.message && installProgress.message !== activeError
+    ? installProgress.message
+    : null;
   const visionBoostInstalled = Boolean(
     status?.selectedModel === visionModel || status?.installedModels.includes(visionModel)
   );
@@ -133,6 +162,31 @@ export function FreeAiSetupCard({
         </div>
       )}
 
+      {(progressSummary || supportHint) && (
+        <div
+          style={{
+            marginTop: '0.85rem',
+            padding: '0.85rem',
+            background: 'white',
+            border: '1px solid #e5e7eb',
+            borderRadius: '8px',
+            fontSize: '0.8125rem',
+            color: '#334155',
+          }}
+        >
+          {progressSummary && (
+            <div>
+              <strong>Install progress:</strong> {progressSummary}
+            </div>
+          )}
+          {supportHint && (
+            <div style={{ marginTop: progressSummary ? '0.45rem' : 0, color: '#475569', lineHeight: 1.5 }}>
+              {supportHint}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ marginTop: '1rem', display: 'grid', gap: '0.65rem' }}>
         {STAGE_ORDER.map((stage) => {
           const active = activeStage === stage.key || (activeStage === 'planned' && stage.key === 'installing');
@@ -155,7 +209,7 @@ export function FreeAiSetupCard({
         })}
       </div>
 
-      {installProgress?.message && (
+      {statusMessage && (
         <div
           style={{
             marginTop: '1rem',
@@ -167,7 +221,7 @@ export function FreeAiSetupCard({
             fontSize: '0.875rem',
           }}
         >
-          {installProgress.message}
+          {statusMessage}
         </div>
       )}
 
@@ -202,7 +256,7 @@ export function FreeAiSetupCard({
         </div>
       )}
 
-      {error && (
+      {activeError && (
         <div
           style={{
             marginTop: '1rem',
@@ -214,9 +268,31 @@ export function FreeAiSetupCard({
             fontSize: '0.875rem',
           }}
         >
-          {error}
+          {activeError}
         </div>
       )}
+
+      <div
+        style={{
+          marginTop: '1rem',
+          padding: '0.85rem',
+          background: 'white',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+        }}
+      >
+        <strong style={{ display: 'block', marginBottom: '0.65rem', color: '#0f172a', fontSize: '0.875rem' }}>
+          Support details
+        </strong>
+        <div style={{ display: 'grid', gap: '0.45rem', fontSize: '0.8125rem', color: '#475569' }}>
+          <div><strong>Available disk:</strong> {availableDiskLabel ?? 'Unknown'}</div>
+          <div><strong>Runtime source:</strong> {runtimeSourceLabel}</div>
+          <div><strong>Runtime version:</strong> {status?.runtimeVersion ?? 'Not installed yet'}</div>
+          <div><strong>Selected model:</strong> {selectedModel ?? 'Not selected yet'}</div>
+          <div><strong>Managed runtime folder:</strong> {status?.managedRuntimeDir ?? hardwareProfile?.managedRuntimeDir ?? 'Unavailable'}</div>
+          {lastUpdatedLabel && <div><strong>Last status update:</strong> {lastUpdatedLabel}</div>}
+        </div>
+      </div>
 
       {visionBoostAvailable && (
         <div

@@ -64,8 +64,34 @@ test('approval summaries redact sensitive content', () => {
       tool: 'fs.read_text',
       path: '.env.local',
     }),
-    'fs.read_text path=.env.local'
+    'fs.read_text path=[workspace path]'
   );
+});
+
+test('approval diagnostics export sanitizes legacy summaries before copying', () => {
+  const controller = createApprovalController({
+    autoStart: false,
+    storage: createStorage(),
+  });
+
+  controller.createApproval({
+    kind: 'tool_call',
+    createdAt: 5_000,
+    expiresAt: 65_000,
+    summary: 'fs.read_text path=secrets/.env.local',
+    risk: 'high',
+    source: 'agent',
+    error: 'Failed to read secrets/.env.local',
+  });
+
+  const exported = controller.exportDiagnostics({
+    screenRecording: 'granted',
+    accessibility: 'unknown',
+  });
+
+  assert.match(exported, /path=\[workspace path\]/);
+  assert.doesNotMatch(exported, /secrets\/\.env\.local/);
+  assert.doesNotMatch(exported, /Failed to read secrets/);
 });
 
 test('stop-all cancels all pending approvals without rewriting terminal states', () => {

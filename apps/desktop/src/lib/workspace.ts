@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { ToolCall, WorkspaceState as SharedWorkspaceState, ToolSummary } from '@ai-operator/shared';
+import {
+  redactToolCallForLog,
+  sanitizeToolSummaryForPersistence,
+  type ToolCall,
+  type WorkspaceState as SharedWorkspaceState,
+} from '@ai-operator/shared';
 import type { WsClient } from './wsClient.js';
 
 // Re-export types
@@ -103,7 +108,7 @@ export async function executeToolWithReporting(
   
   // Report result to server
   if (runId && deviceId) {
-    const summary: ToolSummary = {
+    const summary = sanitizeToolSummaryForPersistence({
       toolEventId,
       toolCallId,
       runId,
@@ -113,7 +118,7 @@ export async function executeToolWithReporting(
       cmd,
       status: result.ok ? 'executed' : 'failed',
       at: Date.now(),
-    };
+    });
     
     if (!result.ok && result.error) {
       summary.errorCode = result.error.code;
@@ -198,23 +203,12 @@ export interface ToolResult {
 
 // Helper to get pathRel for fs tools
 function getToolPathRel(toolCall: ToolCall): string | undefined {
-  switch (toolCall.tool) {
-    case 'fs.list':
-    case 'fs.read_text':
-    case 'fs.write_text':
-    case 'fs.apply_patch':
-      return toolCall.path;
-    default:
-      return undefined;
-  }
+  return redactToolCallForLog(toolCall).pathRel;
 }
 
 // Helper to get cmd for terminal tools
 function getToolCmd(toolCall: ToolCall): string | undefined {
-  if (toolCall.tool === 'terminal.exec') {
-    return toolCall.cmd;
-  }
-  return undefined;
+  return redactToolCallForLog(toolCall).cmd;
 }
 
 /**

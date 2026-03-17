@@ -119,3 +119,24 @@ test('desktop screen-preview payload structs serialize in camelCase for the webv
     );
   }
 });
+
+test('desktop native commands and advanced agent target the selected display instead of the primary screen', () => {
+  const libSource = readFileSync(path.join(rustSrcRoot, 'lib.rs'), 'utf8');
+  const agentSource = readFileSync(path.join(rustSrcRoot, 'agent/mod.rs'), 'utf8');
+  const executorSource = readFileSync(path.join(rustSrcRoot, 'agent/executor.rs'), 'utf8');
+
+  assert.match(libSource, /fn input_click\([\s\S]*display_id: String[\s\S]*\)\s*->\s*Result<\(\), InputError>/);
+  assert.match(libSource, /fn input_double_click\([\s\S]*display_id: String[\s\S]*\)\s*->\s*Result<\(\), InputError>/);
+  assert.match(libSource, /fn get_input_target_screen\(display_id: &str\) -> Result<screenshots::Screen, InputError>/);
+  assert.match(libSource, /display_id\s*\.strip_prefix\("display-"\)/);
+  assert.match(libSource, /let screen = get_input_target_screen\(&display_id\)\?/);
+
+  assert.match(agentSource, /pub display_id: String/);
+  assert.match(agentSource, /capture_display_png\(config\.display_id\.clone\(\), Some\(1280\)\)/);
+  assert.doesNotMatch(agentSource, /capture_display_png\("display-0"\.to_string\(\), Some\(1280\)\)/);
+
+  assert.match(executorSource, /pub struct ActionExecutor\s*\{\s*display_id: String,/);
+  assert.match(executorSource, /pub fn new\(display_id: String\) -> Self/);
+  assert.match(executorSource, /input_click\(x, y, button_str\.to_string\(\), self\.display_id\.clone\(\)\)/);
+  assert.match(executorSource, /input_double_click\(x, y, "left"\.to_string\(\), self\.display_id\.clone\(\)\)/);
+});

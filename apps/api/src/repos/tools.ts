@@ -1,27 +1,28 @@
 import { Prisma } from '@prisma/client';
-import type { ToolSummary } from '@ai-operator/shared';
+import { sanitizeToolSummaryForPersistence, type ToolSummary } from '@ai-operator/shared';
 import { prisma } from '../db/prisma.js';
 
 function serializeTool(tool: ToolSummary) {
+  const sanitized = sanitizeToolSummaryForPersistence(tool);
   return {
-    id: tool.toolEventId,
-    deviceId: tool.deviceId,
-    runId: tool.runId ?? null,
-    tool: tool.tool,
-    status: tool.status,
+    id: sanitized.toolEventId,
+    deviceId: sanitized.deviceId,
+    runId: sanitized.runId ?? null,
+    tool: sanitized.tool,
+    status: sanitized.status,
     summaryJson: {
-      toolCallId: tool.toolCallId,
-      pathRel: tool.pathRel,
-      cmd: tool.cmd,
-      exitCode: tool.exitCode,
-      truncated: tool.truncated,
-      bytesWritten: tool.bytesWritten,
-      hunksApplied: tool.hunksApplied,
-      errorCode: tool.errorCode,
-      at: tool.at,
+      toolCallId: sanitized.toolCallId,
+      pathRel: sanitized.pathRel,
+      cmd: sanitized.cmd,
+      exitCode: sanitized.exitCode,
+      truncated: sanitized.truncated,
+      bytesWritten: sanitized.bytesWritten,
+      hunksApplied: sanitized.hunksApplied,
+      errorCode: sanitized.errorCode,
+      at: sanitized.at,
     } as unknown as Prisma.InputJsonValue,
-    createdAt: new Date(tool.at),
-    updatedAt: new Date(tool.at),
+    createdAt: new Date(sanitized.at),
+    updatedAt: new Date(sanitized.at),
   };
 }
 
@@ -68,7 +69,7 @@ export const toolsRepo = {
   },
 
   async save(tool: ToolSummary, ownerUserId: string) {
-    const data = serializeTool(tool);
+    const data = serializeTool(sanitizeToolSummaryForPersistence(tool));
     await prisma.toolEvent.upsert({
       where: { id: tool.toolEventId },
       update: { ...data, ownerUserId } as Prisma.ToolEventUncheckedUpdateInput,

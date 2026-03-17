@@ -87,6 +87,7 @@ export interface ManagedLocalTaskBinding extends ManagedLocalLlmBinding {
 }
 
 const GIB = 1024 * 1024 * 1024;
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 const TIER_DETAILS: Record<LocalAiTier, LocalAiTierDetails> = {
   light: {
     tier: 'light',
@@ -187,6 +188,100 @@ export function getLocalAiInstallStageLabel(stage: LocalAiInstallStage): string 
 
 export function getLocalAiTierRuntimePlan(tier: LocalAiTier): LocalAiTierRuntimePlan {
   return TIER_RUNTIME_PLAN[tier];
+}
+
+export function formatLocalAiByteCount(bytes: number | null | undefined): string | null {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) {
+    return null;
+  }
+
+  if (bytes < 1024) {
+    return `${Math.round(bytes)} B`;
+  }
+
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < BYTE_UNITS.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(1)} ${BYTE_UNITS[unitIndex]}`;
+}
+
+export function getLocalAiInstallProgressSummary(
+  progress: LocalAiInstallProgress | null | undefined
+): string | null {
+  if (!progress) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if (typeof progress.progressPercent === 'number') {
+    parts.push(`${progress.progressPercent}%`);
+  }
+
+  const downloadedLabel = formatLocalAiByteCount(progress.downloadedBytes);
+  const totalLabel = formatLocalAiByteCount(progress.totalBytes);
+  if (downloadedLabel && totalLabel) {
+    parts.push(`${downloadedLabel} of ${totalLabel}`);
+  } else if (downloadedLabel) {
+    parts.push(`${downloadedLabel} downloaded`);
+  }
+
+  return parts.length > 0 ? parts.join(' • ') : null;
+}
+
+export function getLocalAiRuntimeSourceLabel(source: LocalAiRuntimeStatus['runtimeSource']): string {
+  if (source === 'managed') {
+    return 'Managed by GORKH';
+  }
+  if (source === 'existingInstall' || source === 'existing_install') {
+    return 'Adopted existing Ollama install';
+  }
+  if (source === 'existingService' || source === 'existing_service') {
+    return 'Using existing local AI service';
+  }
+  return 'Not installed yet';
+}
+
+export function getLocalAiTroubleshootingHint(
+  status: LocalAiRuntimeStatus | null,
+  progress: LocalAiInstallProgress | null,
+  hardwareProfile: LocalAiHardwareProfile | null,
+  uiError?: string | null
+): string | null {
+  const activeError = uiError || status?.lastError || null;
+  if (activeError) {
+    const availableDiskBytes = hardwareProfile?.availableDiskBytes ?? null;
+    if (availableDiskBytes != null && availableDiskBytes < 8 * GIB) {
+      return 'This desktop may be low on free disk space. Free up space, refresh status, then repair Free AI.';
+    }
+    if (/network|download/i.test(activeError)) {
+      return 'Check network access, then refresh status and try Repair Free AI again.';
+    }
+    if (/checksum/i.test(activeError)) {
+      return 'Retry the managed runtime download. If it fails again, use the support details below when reporting it.';
+    }
+    if (/start|ready/i.test(activeError)) {
+      return 'Refresh status. If the local runtime still does not start, try Repair Free AI and include the runtime source and version in support notes.';
+    }
+    return 'Refresh status, then try Repair Free AI again. The support details below are safe to share with support.';
+  }
+
+  if (progress?.stage === 'installing') {
+    return 'Large runtime and model downloads can take a while. Keep GORKH open until this reaches Ready to use.';
+  }
+
+  if (progress?.stage === 'starting') {
+    return 'The local runtime is starting on this desktop. If this takes longer than a minute, refresh status once before retrying.';
+  }
+
+  if (status?.externalServiceDetected && status.installStage !== 'ready') {
+    return 'GORKH found another local AI service on this machine. You can keep using it, or let GORKH manage its own runtime.';
+  }
+
+  return null;
 }
 
 export function isLocalAiInstallActive(stage: LocalAiInstallStage | null | undefined): boolean {

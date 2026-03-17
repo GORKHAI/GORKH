@@ -2,7 +2,7 @@ use std::{
     env, fs, io,
     net::TcpStream,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -412,13 +412,18 @@ pub async fn start_runtime(state: &LocalAiRuntimeState) -> Result<LocalAiRuntime
         return runtime_status(state).await;
     }
 
-    let runtime_binary = ensure_runtime_binary(&managed_dir)?;
     let metadata = read_metadata(&managed_dir);
     let selected_tier = metadata
         .as_ref()
         .map(|value| value.selected_tier)
         .unwrap_or(LocalAiTier::Light);
     let plan = tier_runtime_plan(selected_tier);
+    let runtime_binary = ensure_runtime_binary(
+        &managed_dir,
+        Some(state),
+        Some(selected_tier),
+        Some(plan.default_model),
+    )?;
 
     set_install_progress(
         state,
@@ -580,7 +585,12 @@ fn run_install_worker(
         },
     );
 
-    let runtime_binary = ensure_runtime_binary(&managed_dir)?;
+    let runtime_binary = ensure_runtime_binary(
+        &managed_dir,
+        Some(&state),
+        Some(selected_tier),
+        Some(plan.default_model),
+    )?;
     let runtime_version = detect_runtime_version(&runtime_binary.path)
         .unwrap_or_else(|| "ollama-unknown".to_string());
 
@@ -704,7 +714,12 @@ fn run_enable_vision_boost_worker(
         },
     );
 
-    let runtime_binary = ensure_runtime_binary(&managed_dir)?;
+    let runtime_binary = ensure_runtime_binary(
+        &managed_dir,
+        Some(&state),
+        Some(selected_tier),
+        Some(vision_model),
+    )?;
     let _ = ensure_service_running(&state, &managed_dir, &runtime_binary.path)?;
 
     set_install_progress(
@@ -831,7 +846,12 @@ fn write_metadata(managed_dir: &Path, metadata: &LocalAiInstallMetadata) -> Resu
     })
 }
 
-fn ensure_runtime_binary(managed_dir: &Path) -> Result<ResolvedRuntimeBinary, String> {
+fn ensure_runtime_binary(
+    managed_dir: &Path,
+    progress_state: Option<&LocalAiRuntimeState>,
+    selected_tier: Option<LocalAiTier>,
+    selected_model: Option<&str>,
+) -> Result<ResolvedRuntimeBinary, String> {
     let path = expected_runtime_binary_path(managed_dir)
         .ok_or_else(|| "Managed local AI runtime path is unavailable.".to_string())?;
     if path.exists() {
@@ -841,7 +861,12 @@ fn ensure_runtime_binary(managed_dir: &Path) -> Result<ResolvedRuntimeBinary, St
         return Ok(ResolvedRuntimeBinary { path, source });
     }
 
-    match provision_managed_runtime(managed_dir) {
+    match provision_managed_runtime(
+        managed_dir,
+        progress_state,
+        selected_tier,
+        selected_model,
+    ) {
         Ok(resolved) => Ok(resolved),
         Err(download_error) => {
             let source = find_system_ollama_binary().ok_or_else(|| {
@@ -880,7 +905,12 @@ fn ensure_runtime_binary(managed_dir: &Path) -> Result<ResolvedRuntimeBinary, St
     }
 }
 
-fn provision_managed_runtime(managed_dir: &Path) -> Result<ResolvedRuntimeBinary, String> {
+fn provision_managed_runtime(
+    managed_dir: &Path,
+    progress_state: Option<&LocalAiRuntimeState>,
+    selected_tier: Option<LocalAiTier>,
+    selected_model: Option<&str>,
+) -> Result<ResolvedRuntimeBinary, String> {
     let asset = local_ai_manifest::resolve_current_runtime_asset().ok_or_else(|| {
         format!(
             "Managed local runtime download is not supported on {}-{} yet.",
@@ -889,7 +919,13 @@ fn provision_managed_runtime(managed_dir: &Path) -> Result<ResolvedRuntimeBinary
         )
     })?;
 
-    let archive_path = download_runtime_archive(&asset, managed_dir)?;
+    let archive_path = download_runtime_archive(
+        &asset,
+        managed_dir,
+        progress_state,
+        selected_tier,
+        selected_model,
+    )?;
     verify_runtime_archive_checksum(&archive_path, &asset.checksum_sha256)?;
     let binary_path = extract_runtime_archive(&asset, &archive_path, managed_dir)?;
     set_runtime_executable(&binary_path)?;
@@ -904,6 +940,9 @@ fn provision_managed_runtime(managed_dir: &Path) -> Result<ResolvedRuntimeBinary
 fn download_runtime_archive(
     asset: &local_ai_manifest::LocalAiRuntimeAssetManifest,
     managed_dir: &Path,
+    progress_state: Option<&LocalAiRuntimeState>,
+    selected_tier: Option<LocalAiTier>,
+    selected_model: Option<&str>,
 ) -> Result<PathBuf, String> {
     let runtime_root = runtime_dir(managed_dir);
     fs::create_dir_all(&runtime_root).map_err(|error| {
@@ -935,6 +974,7 @@ fn download_runtime_archive(
                 asset.download_url, error
             )
         })?;
+    let total_bytes = response.content_length();
 
     let mut file = fs::File::create(&archive_path).map_err(|error| {
         format!(
@@ -943,13 +983,50 @@ fn download_runtime_archive(
             error
         )
     })?;
-    io::copy(&mut response, &mut file).map_err(|error| {
-        format!(
-            "Failed to write managed runtime archive {}: {}",
-            archive_path.display(),
-            error
-        )
-    })?;
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut downloaded_bytes = 0_u64;
+
+    loop {
+        let bytes_read = io::Read::read(&mut response, &mut buffer).map_err(|error| {
+            format!(
+                "Failed to read managed runtime archive {}: {}",
+                asset.download_url, error
+            )
+        })?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        io::Write::write_all(&mut file, &buffer[..bytes_read]).map_err(|error| {
+            format!(
+                "Failed to write managed runtime archive {}: {}",
+                archive_path.display(),
+                error
+            )
+        })?;
+        downloaded_bytes += bytes_read as u64;
+
+        if let (Some(state), Some(tier), Some(model)) =
+            (progress_state, selected_tier, selected_model)
+        {
+            set_install_progress(
+                state,
+                LocalAiInstallProgress {
+                    stage: LocalAiInstallStage::Installing,
+                    selected_tier: Some(tier),
+                    selected_model: Some(model.to_string()),
+                    progress_percent: Some(runtime_download_progress_percent(
+                        downloaded_bytes,
+                        total_bytes,
+                    )),
+                    downloaded_bytes: Some(downloaded_bytes),
+                    total_bytes,
+                    message: Some("Downloading the managed local runtime...".to_string()),
+                    updated_at_ms: unix_time_ms(),
+                },
+            );
+        }
+    }
 
     Ok(archive_path)
 }
@@ -1297,13 +1374,13 @@ fn ensure_service_running(
         *guard = Some(child);
     }
 
-    if !wait_for_service_port(Duration::from_secs(20)) {
+    if let Err(error) = wait_for_service_port(state, Duration::from_secs(20)) {
         let mut guard = state.managed_child.lock().unwrap();
         if let Some(mut child) = guard.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
-        return Err("Managed local AI runtime did not become ready in time.".to_string());
+        return Err(error);
     }
 
     Ok(true)
@@ -1321,8 +1398,10 @@ fn pull_model(runtime_binary: &Path, managed_dir: &Path, model: &str) -> Result<
 
     if !status.success() {
         return Err(format!(
-            "Managed local AI could not download model {}. Check disk space and network access, then try again.",
+            "Managed local AI could not download model {} ({}). Check disk space and network access, then try again.",
             model
+            ,
+            format_exit_status(status)
         ));
     }
 
@@ -1358,15 +1437,50 @@ fn managed_child_running(state: &LocalAiRuntimeState) -> bool {
     }
 }
 
-fn wait_for_service_port(timeout: Duration) -> bool {
+fn wait_for_service_port(
+    state: &LocalAiRuntimeState,
+    timeout: Duration,
+) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if is_service_port_open() {
-            return true;
+            return Ok(());
+        }
+
+        let maybe_exit_status = {
+            let mut guard = state.managed_child.lock().unwrap();
+            let Some(child) = guard.as_mut() else {
+                return Err("Managed local AI runtime stopped before it became ready.".to_string());
+            };
+
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    *guard = None;
+                    Some(Ok(status))
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    *guard = None;
+                    Some(Err(error))
+                }
+            }
+        };
+
+        if let Some(result) = maybe_exit_status {
+            return match result {
+                Ok(status) => Err(format!(
+                    "Managed local AI runtime exited before becoming ready ({}).",
+                    format_exit_status(status)
+                )),
+                Err(error) => Err(format!(
+                    "Failed to monitor managed local AI runtime startup: {}",
+                    error
+                )),
+            };
         }
         thread::sleep(Duration::from_millis(500));
     }
-    false
+    Err("Managed local AI runtime did not become ready in time. Refresh status, then try Repair Free AI.".to_string())
 }
 
 fn is_service_port_open() -> bool {
@@ -1456,6 +1570,20 @@ fn parse_tier(value: &str) -> Option<LocalAiTier> {
         "vision" => Some(LocalAiTier::Vision),
         _ => None,
     }
+}
+
+fn runtime_download_progress_percent(downloaded_bytes: u64, total_bytes: Option<u64>) -> u8 {
+    match total_bytes {
+        Some(total) if total > 0 => {
+            let progress = downloaded_bytes as f64 / total as f64;
+            (10.0 + (progress * 20.0)).round().clamp(10.0, 30.0) as u8
+        }
+        _ => 20,
+    }
+}
+
+fn format_exit_status(status: ExitStatus) -> String {
+    format!("{}", status)
 }
 
 fn unix_time_ms() -> u64 {

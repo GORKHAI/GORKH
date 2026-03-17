@@ -50,6 +50,11 @@ test('desktop local AI runtime provisions a managed runtime from the manifest be
   );
   assert.match(
     source,
+    /content_length\(\)|downloaded_bytes|total_bytes/i,
+    'runtime provisioning should track download size/progress instead of remaining fully opaque'
+  );
+  assert.match(
+    source,
     /find_system_ollama_binary/i,
     'adopting an existing local install should remain available as a fallback path'
   );
@@ -67,5 +72,20 @@ test('desktop local AI runtime accepts official Ollama .tgz archives for macOS m
     source,
     /managed-runtime\.tgz|ends_with\(\"\\.tgz\"\)/i,
     'archive naming and extraction should preserve the .tgz managed runtime path'
+  );
+});
+
+test('desktop local AI runtime exposes actionable startup and model download failures instead of generic silent errors', () => {
+  const source = readFileSync(rustModulePath, 'utf8');
+
+  assert.match(
+    source,
+    /exit status|exited before becoming ready|did not become ready in time/i,
+    'runtime startup failures should mention whether the managed runtime exited or timed out'
+  );
+  assert.match(
+    source,
+    /could not download model .*exit status|Check disk space and network access/i,
+    'model download failures should include actionable troubleshooting guidance'
   );
 });

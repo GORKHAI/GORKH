@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-test('desktop main assistant flow exposes only real supported paid providers', async () => {
+test('desktop launch-facing provider list exposes only launch-ready providers', async () => {
   let imported: typeof import('../apps/desktop/src/lib/llmConfig.ts');
   try {
     imported = await import('../apps/desktop/src/lib/llmConfig.ts');
@@ -11,13 +11,15 @@ test('desktop main assistant flow exposes only real supported paid providers', a
     return;
   }
 
+  const launchProviders = imported.getSupportedLlmProviders().map((provider) => provider.provider);
+  assert.deepEqual(launchProviders, ['native_qwen_ollama', 'openai', 'claude', 'openai_compat']);
+
   const paidProviders = imported
     .getSupportedLlmProviders()
     .filter((provider) => provider.paid)
     .map((provider) => provider.provider);
 
-  assert.deepEqual(paidProviders, ['openai', 'claude', 'deepseek', 'minimax', 'kimi']);
-
+  assert.deepEqual(paidProviders, ['openai', 'claude']);
   assert.equal(imported.providerRequiresApiKey('openai'), true);
   assert.equal(imported.providerRequiresApiKey('claude'), true);
   assert.equal(imported.providerRequiresApiKey('deepseek'), true);
@@ -30,15 +32,14 @@ test('desktop main assistant flow exposes only real supported paid providers', a
   assert.equal(imported.getLlmRuntimeProvider('kimi'), 'openai_compat');
 
   assert.equal(imported.getLlmDefaults('openai').baseUrl, 'https://api.openai.com/v1');
+  assert.equal(imported.getLlmDefaults('openai_compat').baseUrl, 'http://127.0.0.1:8000');
   assert.equal(imported.getLlmDefaults('deepseek').baseUrl, 'https://api.deepseek.com');
 });
 
-test('desktop settings primary flow presents paid providers with real provider labels', () => {
+test('desktop settings demotes non-launch compatibility providers from the beta menu', () => {
   const source = readFileSync('apps/desktop/src/components/SettingsPanel.tsx', 'utf8');
 
-  assert.match(source, /Claude/i);
-  assert.match(source, /DeepSeek/i);
-  assert.match(source, /MiniMax/i);
-  assert.match(source, /Kimi/i);
-  assert.match(source, /Paid provider|charges may apply|billed by your provider/i);
+  assert.match(source, /Free AI, OpenAI, Claude, and Custom OpenAI-compatible/i);
+  assert.match(source, /Compatibility provider/i);
+  assert.match(source, /hidden from the beta provider menu/i);
 });

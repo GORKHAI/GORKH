@@ -1526,7 +1526,7 @@ function App() {
     approvalController.markExecuting(approval.id);
     activeClient.sendActionAck(payload.actionId, 'approved');
 
-    const result = await executeAction(payload.action);
+    const result = await executeAction(payload.action, primaryDisplayId);
     if (!result.ok) {
       setInputPermissionError(result.error?.message || 'Input injection failed');
       if (result.error?.permissionTarget) {

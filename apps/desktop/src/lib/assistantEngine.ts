@@ -306,6 +306,7 @@ class AdvancedAssistantEngineAdapter implements AssistantEngineHandle {
         credentialProvider: mapped.credentialProvider,
         providerBaseUrl: settings.baseUrl,
         providerModel: settings.model,
+        displayId: this.options.displayId,
       });
       return true;
     } catch (error) {

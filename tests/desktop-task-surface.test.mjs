@@ -5,6 +5,10 @@ import test from 'node:test';
 const appPath = 'apps/desktop/src/App.tsx';
 const helperPath = 'apps/desktop/src/lib/desktopTasks.ts';
 const accountHelperPath = 'apps/desktop/src/lib/desktopAccount.ts';
+const screenPanelPath = 'apps/desktop/src/components/ScreenPanel.tsx';
+const assistantEnginePath = 'apps/desktop/src/lib/assistantEngine.ts';
+const advancedAgentPath = 'apps/desktop/src/lib/advancedAgent.ts';
+const actionExecutorPath = 'apps/desktop/src/lib/actionExecutor.ts';
 
 test('desktop primary surface exposes an assistant-first shell instead of a run-first task composer', () => {
   const source = readFileSync(appPath, 'utf8');
@@ -30,4 +34,23 @@ test('desktop retains desktop account and device session management helpers whil
 
   assert.match(helperSource, /\/desktop\/account/, 'desktop should load desktop account/device state from the desktop API');
   assert.match(helperSource, /\/desktop\/devices\/\$\{deviceId\}\/revoke/, 'desktop should support remote desktop session revoke');
+});
+
+test('desktop routes the selected display through preview and assistant execution paths', () => {
+  const appSource = readFileSync(appPath, 'utf8');
+  const screenPanelSource = readFileSync(screenPanelPath, 'utf8');
+  const assistantEngineSource = readFileSync(assistantEnginePath, 'utf8');
+  const advancedAgentSource = readFileSync(advancedAgentPath, 'utf8');
+  const actionExecutorSource = readFileSync(actionExecutorPath, 'utf8');
+
+  assert.match(appSource, /const \[primaryDisplayId, setPrimaryDisplayId\] = useState<string>\('display-0'\)/);
+  assert.match(appSource, /onDisplayChange=\{setPrimaryDisplayId\}/);
+  assert.match(appSource, /displayId: primaryDisplayId/);
+  assert.match(appSource, /executeAction\(payload\.action,\s*primaryDisplayId\)/);
+  assert.match(screenPanelSource, /streamer\.start\(\{ displayId: selectedDisplay, fps \}\)/);
+  assert.match(assistantEngineSource, /displayId:\s*options\.displayId/);
+  assert.match(actionExecutorSource, /export async function executeAction\(action: InputAction,\s*displayId: string = 'display-0'\)/);
+  assert.match(actionExecutorSource, /displayId,/);
+  assert.match(advancedAgentSource, /displayId\?: string/);
+  assert.match(advancedAgentSource, /displayId:\s*options\?\.displayId/);
 });

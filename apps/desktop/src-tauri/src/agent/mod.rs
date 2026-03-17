@@ -59,6 +59,8 @@ pub struct AgentConfig {
     pub provider_base_url: Option<String>,
     /// Optional provider model override
     pub provider_model: Option<String>,
+    /// Display used for screenshot observation and input execution
+    pub display_id: String,
     /// Optional provider API key for cloud backends
     #[serde(skip_serializing, default)]
     pub provider_api_key: Option<String>,
@@ -76,6 +78,7 @@ impl Default for AgentConfig {
             max_retries: 3,
             provider_base_url: None,
             provider_model: None,
+            display_id: "display-0".to_string(),
             provider_api_key: None,
         }
     }
@@ -485,7 +488,7 @@ async fn run_task_loop(
         plan: plan.clone(),
     });
 
-    let executor = ActionExecutor::new();
+    let executor = ActionExecutor::new(config.display_id.clone());
     let mut previous_actions: Vec<String> = Vec::new();
     let mut completed_steps: Vec<String> = Vec::new();
     let total_steps = plan.steps.len();
@@ -524,6 +527,7 @@ async fn run_task_loop(
             pending.clone(),
             cancelled.clone(),
             &previous_actions,
+            &config,
         )
         .await?;
 
@@ -611,6 +615,7 @@ async fn execute_step(
     pending: Arc<Mutex<Option<PendingInteraction>>>,
     cancelled: Arc<AtomicBool>,
     previous_actions: &[String],
+    config: &AgentConfig,
 ) -> Result<StepOutcome, AgentError> {
     if matches!(step.step_type, planner::StepType::AskUser) {
         let _ = request_user_input(
@@ -638,7 +643,7 @@ async fn execute_step(
             ));
         }
 
-        let observation = observe_screen(provider, goal, previous_actions).await?;
+        let observation = observe_screen(provider, goal, previous_actions, config).await?;
         (callback)(AgentEvent::ScreenObserved {
             task_id: task_id.to_string(),
             observation: observation.clone(),
@@ -852,8 +857,9 @@ async fn observe_screen(
     provider: &dyn providers::LlmProvider,
     goal: &str,
     previous_actions: &[String],
+    config: &AgentConfig,
 ) -> Result<ScreenObservation, AgentError> {
-    let capture = crate::capture_display_png("display-0".to_string(), Some(1280))
+    let capture = crate::capture_display_png(config.display_id.clone(), Some(1280))
         .map_err(|error| AgentError::Vision(error.message))?;
 
     let response = provider

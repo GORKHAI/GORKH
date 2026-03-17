@@ -88,6 +88,7 @@ export interface StartAgentTaskOptions {
   credentialProvider?: string;
   providerBaseUrl?: string;
   providerModel?: string;
+  displayId?: string;
 }
 
 // Start a new agent task
@@ -101,6 +102,7 @@ export async function startAgentTask(
     credentialProvider: options?.credentialProvider,
     providerBaseUrl: options?.providerBaseUrl,
     providerModel: options?.providerModel,
+    displayId: options?.displayId,
   });
 }
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { assertSupportedDeploymentMode } from './lib/deployment.js';
+import { validateDesktopDownloadsPayload } from './lib/releases/validation.js';
 import { validateSecurityRuntimeConfig } from './lib/security.js';
 
 const configSchema = z.object({
@@ -23,22 +24,16 @@ const configSchema = z.object({
   API_PUBLIC_BASE_URL: z.string().url().default('http://localhost:3001'),
   DESKTOP_UPDATE_FEED_DIR: z.string().default('./updates'),
   DESKTOP_UPDATE_ENABLED: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
-  DESKTOP_RELEASE_SOURCE: z.enum(['file', 'github']).default('file'),
+  DESKTOP_RELEASE_SOURCE: z.enum(['file', 'github']).default('github'),
   GITHUB_REPO_OWNER: z.string().default(''),
   GITHUB_REPO_NAME: z.string().default(''),
   GITHUB_TOKEN: z.string().optional(),
   DESKTOP_RELEASE_CACHE_TTL_SECONDS: z.string().transform((s) => parseInt(s, 10)).default('60'),
   DESKTOP_RELEASE_TAG: z.string().default('latest'),
-  DESKTOP_VERSION: z.string().default('0.1.0'),
-  DESKTOP_WIN_URL: z.string().url().default('https://example.com/downloads/ai-operator-setup.exe'),
-  DESKTOP_MAC_INTEL_URL: z
-    .string()
-    .url()
-    .default('https://example.com/downloads/ai-operator-macos-intel.dmg'),
-  DESKTOP_MAC_ARM_URL: z
-    .string()
-    .url()
-    .default('https://example.com/downloads/ai-operator-macos-apple-silicon.dmg'),
+  DESKTOP_VERSION: z.string().default(''),
+  DESKTOP_WIN_URL: z.string().default(''),
+  DESKTOP_MAC_INTEL_URL: z.string().default(''),
+  DESKTOP_MAC_ARM_URL: z.string().default(''),
   ADMIN_API_KEY: z.string().default(''),
   METRICS_PUBLIC: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   AUTH_LOGIN_PER_MIN: z.string().transform((s) => parseInt(s, 10)).default('10'),
@@ -137,16 +132,16 @@ function loadConfig() {
     console.error('   API_PUBLIC_BASE_URL (default: http://localhost:3001)');
     console.error('   DESKTOP_UPDATE_FEED_DIR (default: ./updates)');
     console.error('   DESKTOP_UPDATE_ENABLED (default: true)');
-    console.error('   DESKTOP_RELEASE_SOURCE (default: file)');
+    console.error('   DESKTOP_RELEASE_SOURCE (default: github)');
     console.error('   GITHUB_REPO_OWNER (required for github mode)');
     console.error('   GITHUB_REPO_NAME (required for github mode)');
     console.error('   GITHUB_TOKEN (optional, required for private repos)');
     console.error('   DESKTOP_RELEASE_CACHE_TTL_SECONDS (default: 60)');
     console.error('   DESKTOP_RELEASE_TAG (default: latest)');
-    console.error('   DESKTOP_VERSION (default: 0.1.0)');
-    console.error('   DESKTOP_WIN_URL (default: https://example.com/downloads/ai-operator-setup.exe)');
-    console.error('   DESKTOP_MAC_INTEL_URL (default: https://example.com/downloads/ai-operator-macos-intel.dmg)');
-    console.error('   DESKTOP_MAC_ARM_URL (default: https://example.com/downloads/ai-operator-macos-apple-silicon.dmg)');
+    console.error('   DESKTOP_VERSION (required for file mode)');
+    console.error('   DESKTOP_WIN_URL (required for file mode)');
+    console.error('   DESKTOP_MAC_INTEL_URL (required for file mode)');
+    console.error('   DESKTOP_MAC_ARM_URL (required for file mode)');
     console.error('   ADMIN_API_KEY (default: disabled)');
     console.error('   METRICS_PUBLIC (default: false)');
     console.error('   AUTH_LOGIN_PER_MIN (default: 10)');
@@ -175,6 +170,21 @@ function loadConfig() {
       appBaseUrl: result.data.APP_BASE_URL,
       webOrigins,
     });
+    if (result.data.DESKTOP_RELEASE_SOURCE === 'file') {
+      validateDesktopDownloadsPayload(
+        {
+          version: result.data.DESKTOP_VERSION,
+          windowsUrl: result.data.DESKTOP_WIN_URL,
+          macIntelUrl: result.data.DESKTOP_MAC_INTEL_URL,
+          macArmUrl: result.data.DESKTOP_MAC_ARM_URL,
+        },
+        {
+          nodeEnv: result.data.NODE_ENV,
+          allowInsecureDev: result.data.ALLOW_INSECURE_DEV,
+          apiPublicBaseUrl: result.data.API_PUBLIC_BASE_URL,
+        }
+      );
+    }
   } catch (error) {
     console.error('❌ Invalid configuration:');
     console.error(`   - ${error instanceof Error ? error.message : String(error)}`);

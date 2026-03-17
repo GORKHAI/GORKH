@@ -1,5 +1,6 @@
 import type { GitHubRelease, GitHubReleaseAsset } from './github.js';
 import { fetchReleaseAssetText } from './github.js';
+import { validateDesktopAssetUrl, validateDesktopSignature } from './validation.js';
 
 export interface ResolvedDesktopRelease {
   version: string;
@@ -49,13 +50,12 @@ async function resolveSignedAsset(release: GitHubRelease, assetName: string) {
   const signatureAsset = getRequiredAsset(release, `${assetName}.sig`);
   const signature = (await fetchReleaseAssetText(signatureAsset)).trim();
 
-  if (!signature) {
-    throw new Error(`Signature asset is empty: ${signatureAsset.name}`);
-  }
-
   return {
-    url: installerAsset.browserDownloadUrl,
-    signature,
+    url: validateDesktopAssetUrl(installerAsset.browserDownloadUrl, assetName, {
+      nodeEnv: 'production',
+      allowInsecureDev: false,
+    }),
+    signature: validateDesktopSignature(signature, assetName),
   };
 }
 

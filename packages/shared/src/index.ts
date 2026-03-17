@@ -413,21 +413,72 @@ export interface ToolSummary {
   at: number;
 }
 
+export const REDACTED_WORKSPACE_PATH = '[workspace path]';
+export const REDACTED_RATIONALE = '[redacted rationale]';
+
+export function sanitizeCommandName(cmd: string): string {
+  const trimmed = cmd.trim();
+  if (!trimmed) {
+    return 'unknown';
+  }
+  return trimmed.split(/\s+/)[0] || 'unknown';
+}
+
+export function sanitizeToolCallForPersistence(toolCall: ToolCall): ToolCall {
+  switch (toolCall.tool) {
+    case 'fs.list':
+    case 'fs.read_text':
+      return {
+        tool: toolCall.tool,
+        path: REDACTED_WORKSPACE_PATH,
+      };
+    case 'fs.write_text':
+      return {
+        tool: toolCall.tool,
+        path: REDACTED_WORKSPACE_PATH,
+        content: '',
+      };
+    case 'fs.apply_patch':
+      return {
+        tool: toolCall.tool,
+        path: REDACTED_WORKSPACE_PATH,
+        patch: '',
+      };
+    case 'terminal.exec':
+      return {
+        tool: toolCall.tool,
+        cmd: sanitizeCommandName(toolCall.cmd),
+        args: [],
+        cwd: undefined,
+      };
+    default:
+      return toolCall;
+  }
+}
+
 // Helper to redact tool call for logging (never log content or args)
 export function redactToolCallForLog(toolCall: ToolCall): { tool: ToolName; pathRel?: string; cmd?: string } {
-  const t = toolCall.tool;
+  const sanitized = sanitizeToolCallForPersistence(toolCall);
+  const t = sanitized.tool;
   switch (t) {
     case 'fs.list':
     case 'fs.read_text':
     case 'fs.write_text':
     case 'fs.apply_patch':
-      return { tool: t, pathRel: (toolCall as { path: string }).path };
+      return { tool: t, pathRel: (sanitized as { path: string }).path };
     case 'terminal.exec':
-      return { tool: t, cmd: (toolCall as { cmd: string }).cmd };
+      return { tool: t, cmd: (sanitized as { cmd: string }).cmd };
     default:
-      // Exhaustive check - should not reach here
       return { tool: t as ToolName };
   }
+}
+
+export function sanitizeToolSummaryForPersistence(summary: ToolSummary): ToolSummary {
+  return {
+    ...summary,
+    ...(summary.pathRel ? { pathRel: REDACTED_WORKSPACE_PATH } : {}),
+    ...(summary.cmd ? { cmd: sanitizeCommandName(summary.cmd) } : {}),
+  };
 }
 
 // Propose tool variant for AgentProposal
@@ -440,6 +491,90 @@ export interface ProposeToolProposal {
 
 // Extended AgentProposal with propose_tool
 export type AgentProposal = ProposeActionProposal | ProposeToolProposal | AskUserProposal | DoneProposal;
+
+function sanitizeActionForPersistence(action: InputAction): InputAction {
+  if (action.kind === 'type') {
+    return {
+      kind: 'type',
+      text: `[redacted ${action.text.length} chars]`,
+    };
+  }
+
+  return action;
+}
+
+export function sanitizeAgentProposalForPersistence(proposal: AgentProposal): AgentProposal {
+  switch (proposal.kind) {
+    case 'propose_action':
+      return {
+        ...proposal,
+        action: sanitizeActionForPersistence(proposal.action) as typeof proposal.action,
+        rationale: REDACTED_RATIONALE,
+      };
+    case 'propose_tool':
+      return {
+        ...proposal,
+        toolCall: sanitizeToolCallForPersistence(proposal.toolCall),
+        rationale: REDACTED_RATIONALE,
+      };
+    case 'ask_user':
+      return {
+        ...proposal,
+        question: 'Awaiting user input',
+      };
+    case 'done':
+      return {
+        ...proposal,
+        summary: 'Task completed',
+      };
+    default:
+      return proposal;
+  }
+}
+
+export function sanitizeRunLogLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return line;
+  }
+
+  const userMatch = /^User:\s*(.*)$/i.exec(trimmed);
+  if (userMatch) {
+    return `User response (${userMatch[1].length} chars)`;
+  }
+
+  if (/^Question:\s*/i.test(trimmed)) {
+    return 'Question asked';
+  }
+
+  if (/^Task complete:\s*/i.test(trimmed)) {
+    return 'Task completed';
+  }
+
+  if (/^Action executed:\s*/i.test(trimmed)) {
+    return 'Action executed';
+  }
+
+  if (/^Action failed:\s*/i.test(trimmed)) {
+    return 'Action failed';
+  }
+
+  if (/^Tool execution error:\s*/i.test(trimmed)) {
+    return 'Tool execution error';
+  }
+
+  const toolExecuted = /^Tool executed:\s*([a-z._]+)/i.exec(trimmed);
+  if (toolExecuted) {
+    return `Tool executed: ${toolExecuted[1]}`;
+  }
+
+  const toolFailed = /^Tool failed:\s*([a-z._]+)/i.exec(trimmed);
+  if (toolFailed) {
+    return `Tool failed: ${toolFailed[1]}`;
+  }
+
+  return line;
+}
 
 export interface RunConstraints {
   maxActions: number;

@@ -26,6 +26,9 @@ import {
   ErrorCode,
   isRetryableDeviceCommandAckErrorCode,
   redactActionForLog,
+  redactToolCallForLog,
+  sanitizeRunLogLine,
+  sanitizeToolSummaryForPersistence,
 } from '@ai-operator/shared';
 import { deviceStore } from '../store/devices.js';
 import { runStore } from '../store/runs.js';
@@ -165,20 +168,12 @@ function getActionAuditMeta(action: InputAction): Record<string, unknown> {
 }
 
 function getToolAuditMeta(toolCall: ToolCall, result?: { ok: boolean; exitCode?: number; error?: { code?: string } }): Record<string, unknown> {
-  if (toolCall.tool === 'terminal.exec') {
-    const binary = toolCall.cmd.trim().split(/\s+/)[0] || 'unknown';
-    return {
-      tool: toolCall.tool,
-      cmd: binary,
-      exitCode: result?.exitCode,
-      ok: result?.ok,
-      errorCode: result?.error?.code,
-    };
-  }
+  const redacted = redactToolCallForLog(toolCall);
 
   return {
     tool: toolCall.tool,
-    pathRel: 'path' in toolCall ? toolCall.path : undefined,
+    pathRel: redacted.pathRel,
+    cmd: redacted.cmd,
     exitCode: result?.exitCode,
     ok: result?.ok,
     errorCode: result?.error?.code,
@@ -1156,7 +1151,7 @@ async function handleDeviceMessage(
       const { deviceId, runId, stepId, line, level, at } = payload;
       fastify.log.info({ deviceId, runId, stepId, level }, 'Device run log received');
 
-      const logLine: LogLine = { line, level, at };
+      const logLine: LogLine = { line: sanitizeRunLogLine(line), level, at };
       const run = runStore.addRunLog(runId, logLine);
       if (run) {
         await persistRun(runId);
@@ -1343,9 +1338,10 @@ async function handleDeviceMessage(
       };
 
       const existing = toolStore.get(toolEventId);
+      const persistedSummary = sanitizeToolSummaryForPersistence(summary);
       const stored = existing
-        ? toolStore.update(toolEventId, summary) ?? summary
-        : toolStore.add(summary);
+        ? toolStore.update(toolEventId, persistedSummary) ?? persistedSummary
+        : toolStore.add(persistedSummary);
       const toolOwnerUserId = ownership.getRunOwner(runId) ?? ownership.getDeviceOwner(deviceId) ?? undefined;
       if (toolOwnerUserId) {
         ownership.setToolOwner(stored.toolEventId, toolOwnerUserId);
@@ -1395,16 +1391,18 @@ async function handleDeviceMessage(
       let summary = toolStore.get(toolEventId) ?? toolStore.getByToolCallId(toolCallId);
 
       if (summary) {
-        summary = toolStore.update(summary.toolEventId, {
+        const nextSummary = sanitizeToolSummaryForPersistence({
+          ...summary,
           status: finalStatus,
           at,
           tool: toolCall.tool as ToolSummary['tool'],
           pathRel: redacted.pathRel,
           cmd: redacted.cmd,
           ...metadata,
-        }) ?? summary;
+        });
+        summary = toolStore.update(summary.toolEventId, nextSummary) ?? nextSummary;
       } else {
-        summary = {
+        summary = sanitizeToolSummaryForPersistence({
           toolEventId,
           toolCallId,
           runId,
@@ -1415,7 +1413,7 @@ async function handleDeviceMessage(
           status: finalStatus,
           at,
           ...metadata,
-        };
+        });
         toolStore.add(summary);
       }
       const toolOwnerUserId = ownership.getRunOwner(runId) ?? ownership.getDeviceOwner(deviceId) ?? undefined;

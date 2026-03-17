@@ -7,7 +7,6 @@ import { getDesktopDownloads, type DesktopDownloadInfo } from '../../lib/auth';
 export default function Download() {
   const [downloads, setDownloads] = useState<DesktopDownloadInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [requiresSubscription, setRequiresSubscription] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -17,11 +16,6 @@ export default function Download() {
       try {
         const result = await getDesktopDownloads();
         if (!active) {
-          return;
-        }
-
-        if (!result) {
-          setRequiresSubscription(true);
           return;
         }
 
@@ -48,28 +42,14 @@ export default function Download() {
         ← Back to Home
       </Link>
 
-      <h1 style={{ marginTop: '1rem' }}>Download AI Operator</h1>
-      <p>Install the signed desktop app to enable remote control, screen preview, and AI Assist on your local machine.</p>
+      <h1 style={{ marginTop: '1rem' }}>Download GORKH</h1>
+      <p>
+        Install the signed desktop app to start with the free local assistant on your own machine.
+        Paid billing stays optional and unlocks premium features after sign-in.
+      </p>
 
       {loading ? (
         <p style={{ marginTop: '1rem', color: '#666' }}>Loading current desktop release...</p>
-      ) : requiresSubscription ? (
-        <div
-          style={{
-            marginTop: '1.5rem',
-            padding: '1rem',
-            background: '#fff7ed',
-            border: '1px solid #fdba74',
-            borderRadius: '8px',
-          }}
-        >
-          <p style={{ margin: 0, color: '#9a3412' }}>
-            An active subscription is required to access desktop downloads.
-          </p>
-          <Link href="/billing" style={{ display: 'inline-block', marginTop: '0.75rem', color: '#2563eb' }}>
-            Subscribe to download
-          </Link>
-        </div>
       ) : error ? (
         <div
           style={{

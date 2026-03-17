@@ -4,7 +4,7 @@ import cors from '@fastify/cors';
 import fastifyRawBody from 'fastify-raw-body';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 import { config } from './config.js';
 import { setupWebSocket, sendToDevice, getWsConnectionsCount } from './lib/ws-handler.js';
 import { deviceStore } from './store/devices.js';
@@ -27,6 +27,7 @@ import { stripeEventsRepo } from './repos/stripe-events.js';
 import { ownership } from './lib/ownership.js';
 import { fetchDesktopRelease, getGitHubReleaseCacheStats } from './lib/releases/github.js';
 import { resolveDesktopAssets } from './lib/releases/resolveDesktopAssets.js';
+import { validateDesktopDownloadsPayload, validateDesktopUpdateManifest } from './lib/releases/validation.js';
 import { consumeRateLimit, getRateLimitKeyCount } from './lib/ratelimit.js';
 import { stripe, mapStripeSubscriptionStatus } from './lib/stripe.js';
 import { requireActiveSubscription } from './lib/subscription.js';
@@ -471,35 +472,47 @@ function getDesktopUpdateManifestPath(platform: string, arch: string): string | 
   return resolve(process.cwd(), config.DESKTOP_UPDATE_FEED_DIR, `desktop-${platform}-${arch}.json`);
 }
 
-function normalizeDesktopUpdateManifest(manifest: DesktopUpdateManifest): DesktopUpdateManifest {
-  if (!manifest.platforms) {
-    return manifest;
+function getDesktopArtifactPath(artifactName: string): string | null {
+  if (!/^[a-z0-9._-]+$/i.test(artifactName)) {
+    return null;
   }
 
-  const normalizedPlatforms = Object.fromEntries(
-    Object.entries(manifest.platforms).map(([target, value]) => [
-      target,
-      {
-        ...value,
-        url: value.url.startsWith('/')
-          ? `${config.API_PUBLIC_BASE_URL}${value.url}`
-          : value.url,
-      },
-    ])
-  );
+  return resolve(process.cwd(), config.DESKTOP_UPDATE_FEED_DIR, 'artifacts', artifactName);
+}
 
-  return {
-    ...manifest,
-    platforms: normalizedPlatforms,
-  };
+function getDesktopArtifactContentType(artifactName: string) {
+  switch (extname(artifactName).toLowerCase()) {
+    case '.dmg':
+      return 'application/x-apple-diskimage';
+    case '.msi':
+      return 'application/x-msi';
+    case '.exe':
+      return 'application/vnd.microsoft.portable-executable';
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 function getFileBasedDesktopDownloads() {
+  const validated = validateDesktopDownloadsPayload(
+    {
+      version: config.DESKTOP_VERSION,
+      windowsUrl: config.DESKTOP_WIN_URL,
+      macIntelUrl: config.DESKTOP_MAC_INTEL_URL,
+      macArmUrl: config.DESKTOP_MAC_ARM_URL,
+    },
+    {
+      nodeEnv: config.NODE_ENV,
+      allowInsecureDev: config.ALLOW_INSECURE_DEV,
+      apiPublicBaseUrl: config.API_PUBLIC_BASE_URL,
+    }
+  );
+
   return {
-    version: config.DESKTOP_VERSION,
-    windowsUrl: config.DESKTOP_WIN_URL,
-    macIntelUrl: config.DESKTOP_MAC_INTEL_URL,
-    macArmUrl: config.DESKTOP_MAC_ARM_URL,
+    version: validated.version,
+    windowsUrl: validated.windowsUrl,
+    macIntelUrl: validated.macIntelUrl,
+    macArmUrl: validated.macArmUrl,
     notes: 'Signed release artifacts and updater metadata are published through the desktop release pipeline.',
     publishedAt: null,
   };
@@ -539,8 +552,14 @@ async function getDesktopUpdateManifest(platform: string, arch: string, currentV
       throw new Error('Invalid update target');
     }
 
+    const target = `${platform}-${arch}`;
     const manifestText = await readFile(manifestPath, 'utf8');
-    const manifest = normalizeDesktopUpdateManifest(JSON.parse(manifestText) as DesktopUpdateManifest);
+    const manifest = validateDesktopUpdateManifest(JSON.parse(manifestText) as DesktopUpdateManifest, {
+      target,
+      apiPublicBaseUrl: config.API_PUBLIC_BASE_URL,
+      nodeEnv: config.NODE_ENV,
+      allowInsecureDev: config.ALLOW_INSECURE_DEV,
+    });
 
     fastify.log.debug(
       { platform, arch, currentVersion, latestVersion: manifest.version },
@@ -1395,16 +1414,7 @@ fastify.get('/billing/status', async (request, reply) => {
   return getBillingSnapshot(billing);
 });
 
-fastify.get('/downloads/desktop', async (request, reply) => {
-  const user = await requireAuth(request, reply);
-  if (!user) {
-    return { error: 'Unauthorized' };
-  }
-
-  if (!(await requireActiveSubscription(request, reply, user))) {
-    return;
-  }
-
+fastify.get('/downloads/desktop', async (_request, reply) => {
   try {
     return await getDesktopDownloadsPayload();
   } catch (error) {
@@ -1412,6 +1422,26 @@ fastify.get('/downloads/desktop', async (request, reply) => {
     fastify.log.warn({ err: message }, 'Desktop downloads unavailable');
     reply.status(503);
     return { error: 'Downloads are not configured. Contact support.' };
+  }
+});
+
+fastify.get('/downloads/desktop/artifacts/:artifactName', async (request, reply) => {
+  const { artifactName } = request.params as { artifactName: string };
+  const artifactPath = getDesktopArtifactPath(artifactName);
+
+  if (!artifactPath) {
+    reply.status(400);
+    return { error: 'Invalid artifact name' };
+  }
+
+  try {
+    const artifact = await readFile(artifactPath);
+    reply.header('Cache-Control', 'no-store');
+    reply.type(getDesktopArtifactContentType(artifactName));
+    return reply.send(artifact);
+  } catch {
+    reply.status(404);
+    return { error: 'Artifact not found' };
   }
 });
 

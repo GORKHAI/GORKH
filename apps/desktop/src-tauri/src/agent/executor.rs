@@ -98,11 +98,13 @@ impl Action {
 }
 
 /// Executor for actions
-pub struct ActionExecutor;
+pub struct ActionExecutor {
+    display_id: String,
+}
 
 impl ActionExecutor {
-    pub fn new() -> Self {
-        Self
+    pub fn new(display_id: String) -> Self {
+        Self { display_id }
     }
 
     /// Execute an action
@@ -119,12 +121,12 @@ impl ActionExecutor {
                     MouseButton::Middle => "middle",
                 };
                 // Call into Tauri command
-                crate::input_click(x, y, button_str.to_string())
+                crate::input_click(x, y, button_str.to_string(), self.display_id.clone())
                     .map_err(|e| ExecuteError::InputError(e.message))?;
                 Ok(ActionResult::Success)
             }
             Action::DoubleClick { x, y } => {
-                crate::input_double_click(x, y, "left".to_string())
+                crate::input_double_click(x, y, "left".to_string(), self.display_id.clone())
                     .map_err(|e| ExecuteError::InputError(e.message))?;
                 Ok(ActionResult::Success)
             }

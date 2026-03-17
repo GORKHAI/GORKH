@@ -47,6 +47,25 @@ test('desktop run routes authenticate with desktop device sessions and reuse sha
   );
 });
 
+test('desktop download acquisition is not gated behind a paid subscription', () => {
+  const source = readFileSync(apiIndexPath, 'utf8');
+
+  const desktopDownloadsRoute = source.match(/fastify\.get\('\/downloads\/desktop'[\s\S]*?try \{/);
+  assert.ok(desktopDownloadsRoute, 'desktop downloads route should be readable from source');
+
+  assert.doesNotMatch(
+    desktopDownloadsRoute[0],
+    /requireAuth\(/,
+    'desktop downloads should stay publicly acquirable so a new user can fetch the desktop app before subscribing'
+  );
+
+  assert.doesNotMatch(
+    desktopDownloadsRoute[0],
+    /requireActiveSubscription/,
+    'desktop downloads should remain available to signed-in users even when they stay on the free local plan'
+  );
+});
+
 test('shared run creation persists the existing run model and dispatches run.start for desktop-initiated runs', async () => {
   const { createRunForOwnedDevice } = await import('../apps/api/dist/lib/run-creation.js');
 

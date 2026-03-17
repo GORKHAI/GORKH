@@ -1,11 +1,11 @@
 {
   "version": "0.1.0",
-  "notes": "Development feed stub for Intel macOS builds.",
+  "notes": "Local file-mode feed fixture for Intel macOS smoke verification.",
   "pub_date": "2026-03-03T00:00:00.000Z",
   "platforms": {
     "darwin-x86_64": {
       "url": "/downloads/desktop/artifacts/ai-operator-0.1.0-x64.dmg",
-      "signature": "replace-with-tauri-signature"
+      "signature": "MEUCIC9Fh6Q4qL0vS2xP8nW5tR7mJ3kY4pN2dL6cR1vB8s3ZAiEAq2L9sH6dP4mT7wK1xV8nJ5rC3qD0yB6uF4pL2tQ9m8I="
     }
   }
 }

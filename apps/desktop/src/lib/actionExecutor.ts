@@ -6,7 +6,7 @@ export interface ActionResult {
   error?: { code: string; message: string; permissionTarget?: 'accessibility' };
 }
 
-export async function executeAction(action: InputAction): Promise<ActionResult> {
+export async function executeAction(action: InputAction, displayId: string = 'display-0'): Promise<ActionResult> {
   try {
     switch (action.kind) {
       case 'click':
@@ -14,6 +14,7 @@ export async function executeAction(action: InputAction): Promise<ActionResult> 
           xNorm: action.x,
           yNorm: action.y,
           button: action.button,
+          displayId,
         });
         return { ok: true };
 
@@ -22,6 +23,7 @@ export async function executeAction(action: InputAction): Promise<ActionResult> 
           xNorm: action.x,
           yNorm: action.y,
           button: action.button,
+          displayId,
         });
         return { ok: true };
 

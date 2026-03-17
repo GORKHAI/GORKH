@@ -6,6 +6,12 @@ import {
   type LlmSettings,
 } from './llmConfig.js';
 import { taskLikelyNeedsVision, type LocalAiRuntimeStatus } from './localAi.js';
+import {
+  buildRedactedLocalToolPreview,
+  buildRedactedToolSummary,
+  getRedactedToolMetadata,
+} from './privacy.js';
+import { sanitizeRunLogLine } from '@ai-operator/shared';
 import type { 
   AgentProposal, 
   InputAction, 
@@ -204,23 +210,14 @@ export class AiAssistController {
       });
 
       // Log result
-      const target = this.getToolTarget(toolCall);
       if (result.ok) {
-        this.options.wsClient.sendRunLog(
-          this.options.runId,
-          `Tool executed: ${toolCall.tool} ${target}`,
-          'info'
-        );
-        this.actionResults.push(`Executed tool: ${toolCall.tool} ${target}`);
+        this.sendSafeRunLog(`Tool executed: ${toolCall.tool}`, 'info');
+        this.actionResults.push(`Executed tool: ${toolCall.tool}`);
       } else {
         const errorLine = result.error.code === 'PATH_OUTSIDE_WORKSPACE'
           ? 'Blocked: path outside workspace'
-          : `Tool failed: ${toolCall.tool} ${target} - ${result.error.message}`;
-        this.options.wsClient.sendRunLog(
-          this.options.runId,
-          errorLine,
-          'warn'
-        );
+          : `Tool failed: ${toolCall.tool}`;
+        this.sendSafeRunLog(errorLine, 'warn');
         this.actionResults.push(errorLine);
       }
 
@@ -230,11 +227,7 @@ export class AiAssistController {
       // Check constraints
       if (this.state.actionCount >= this.options.constraints.maxActions) {
         this.log('warn', `Reached max actions limit (${this.options.constraints.maxActions})`);
-        this.options.wsClient.sendRunLog(
-          this.options.runId,
-          `Reached maximum action limit (${this.options.constraints.maxActions})`,
-          'warn'
-        );
+        this.sendSafeRunLog(`Reached maximum action limit (${this.options.constraints.maxActions})`, 'warn');
         
         this.state.currentProposal = {
           kind: 'ask_user',
@@ -282,11 +275,7 @@ export class AiAssistController {
         errorCode: 'EXECUTION_FAILED',
         rationale,
       });
-      this.options.wsClient.sendRunLog(
-        this.options.runId,
-        `Tool execution error: ${errorMsg}`,
-        'error'
-      );
+      this.sendSafeRunLog('Tool execution error: EXECUTION_FAILED', 'error');
 
       // Ask user what to do
       this.state.currentProposal = {
@@ -304,37 +293,12 @@ export class AiAssistController {
     return await invoke<ToolResult>('tool_execute', { toolCall });
   }
 
-  private getToolTarget(toolCall: ToolCall): string {
-    switch (toolCall.tool) {
-      case 'fs.list':
-      case 'fs.read_text':
-      case 'fs.write_text':
-      case 'fs.apply_patch':
-        return toolCall.path;
-      case 'terminal.exec':
-        return toolCall.cmd;
-      default:
-        return '';
-    }
-  }
-
   private getToolPathRel(toolCall: ToolCall): string | undefined {
-    switch (toolCall.tool) {
-      case 'fs.list':
-      case 'fs.read_text':
-      case 'fs.write_text':
-      case 'fs.apply_patch':
-        return toolCall.path;
-      default:
-        return undefined;
-    }
+    return getRedactedToolMetadata(toolCall).pathRel;
   }
 
   private getToolCmd(toolCall: ToolCall): string | undefined {
-    if (toolCall.tool === 'terminal.exec') {
-      return toolCall.cmd;
-    }
-    return undefined;
+    return getRedactedToolMetadata(toolCall).cmd;
   }
 
   private buildToolSummary(
@@ -387,7 +351,7 @@ export class AiAssistController {
       summary.errorCode = result.error.code;
     }
 
-    return summary;
+    return buildRedactedToolSummary(summary);
   }
 
   async start(settings: LlmSettings): Promise<boolean> {
@@ -400,11 +364,7 @@ export class AiAssistController {
     const hasKey = await hasLlMProviderConfigured(settings.provider);
     if (!hasKey) {
       this.setError('LLM API key not configured. Please set it in Settings.');
-      this.options.wsClient.sendRunLog(
-        this.options.runId,
-        'AI Assist cannot start: LLM API key not configured',
-        'error'
-      );
+      this.sendSafeRunLog('AI Assist cannot start: LLM API key not configured', 'error');
       this.options.wsClient.sendRunUpdate(
         this.options.runId,
         'failed',
@@ -426,7 +386,7 @@ export class AiAssistController {
     this.notifyStateChange();
 
     this.log('info', 'AI Assist started');
-    this.options.wsClient.sendRunLog(this.options.runId, 'AI Assist mode started', 'info');
+    this.sendSafeRunLog('AI Assist mode started', 'info');
 
     // Start the main loop
     this.resumeLoop();
@@ -449,7 +409,7 @@ export class AiAssistController {
     this.notifyStateChange();
 
     this.log('info', `AI Assist stopped: ${reason}`);
-    this.options.wsClient.sendRunLog(this.options.runId, `AI Assist stopped: ${reason}`, 'info');
+    this.sendSafeRunLog(`AI Assist stopped: ${reason}`, 'info');
   }
 
   pause(): void {
@@ -461,7 +421,7 @@ export class AiAssistController {
     this.statusBeforePause = this.state.status;
     this.state.status = 'paused';
     this.notifyStateChange();
-    this.options.wsClient.sendRunLog(this.options.runId, 'Paused by user', 'info');
+    this.sendSafeRunLog('Paused by user', 'info');
   }
 
   resume(): void {
@@ -472,7 +432,7 @@ export class AiAssistController {
     this.paused = false;
     this.state.status = this.statusBeforePause;
     this.notifyStateChange();
-    this.options.wsClient.sendRunLog(this.options.runId, 'Resumed by user', 'info');
+    this.sendSafeRunLog('Resumed by user', 'info');
 
     if (this.state.status === 'capturing' || this.state.status === 'thinking') {
       this.resumeLoop();
@@ -507,11 +467,7 @@ export class AiAssistController {
       
       // Report success
       this.options.wsClient.sendActionResult(actionId, true);
-      this.options.wsClient.sendRunLog(
-        this.options.runId,
-        `Action executed: ${this.summarizeAction(action)}`,
-        'info'
-      );
+      this.sendSafeRunLog(`Action executed: ${this.summarizeAction(action)}`, 'info');
 
       // Track action result for history
       this.actionResults.push(`Executed: ${this.summarizeAction(action)}`);
@@ -522,11 +478,7 @@ export class AiAssistController {
       // Check constraints
       if (this.state.actionCount >= this.options.constraints.maxActions) {
         this.log('warn', `Reached max actions limit (${this.options.constraints.maxActions})`);
-        this.options.wsClient.sendRunLog(
-          this.options.runId,
-          `Reached maximum action limit (${this.options.constraints.maxActions})`,
-          'warn'
-        );
+        this.sendSafeRunLog(`Reached maximum action limit (${this.options.constraints.maxActions})`, 'warn');
         
         // Ask user if they want to continue
         this.state.currentProposal = {
@@ -555,11 +507,7 @@ export class AiAssistController {
         code: 'EXECUTION_FAILED',
         message: errorMsg,
       });
-      this.options.wsClient.sendRunLog(
-        this.options.runId,
-        `Action failed: ${errorMsg}`,
-        'error'
-      );
+      this.sendSafeRunLog('Action failed: EXECUTION_FAILED', 'error');
 
       // Ask user what to do
       this.state.currentProposal = {
@@ -591,7 +539,7 @@ export class AiAssistController {
     }
 
     this.log('info', reason);
-    this.options.wsClient.sendRunLog(this.options.runId, reason, 'info');
+    this.sendSafeRunLog(reason, 'info');
     this.actionResults.push(reason);
 
     this.state.currentProposal = undefined;
@@ -614,8 +562,8 @@ export class AiAssistController {
   userResponse(response: string): void {
     if (this.state.status !== 'asking_user') return;
 
-    this.log('info', `User response: ${response}`);
-    this.options.wsClient.sendRunLog(this.options.runId, `User: ${response}`, 'info');
+    this.log('info', `User response (${response.length} chars)`);
+    this.sendSafeRunLog(`User: ${response}`, 'info');
 
     // Check if user wants to stop
     const lower = response.toLowerCase();
@@ -625,12 +573,12 @@ export class AiAssistController {
       this.notifyStateChange();
       
       this.options.wsClient.sendRunUpdate(this.options.runId, 'done', 'User requested completion');
-      this.options.wsClient.sendRunLog(this.options.runId, 'Task completed by user request', 'info');
+      this.sendSafeRunLog('Task completed by user request', 'info');
       return;
     }
 
     // Continue with user feedback
-    this.actionResults.push(`User said: ${response}`);
+    this.actionResults.push(`User responded (${response.length} chars)`);
     this.state.status = 'capturing';
     this.state.currentProposal = undefined;
     this.state.currentProposalId = undefined;
@@ -681,9 +629,9 @@ export class AiAssistController {
             this.state.isRunning = false;
             this.notifyStateChange();
             
-            this.log('info', `Task complete: ${proposal.summary}`);
+            this.log('info', 'Task completed');
             this.options.wsClient.sendAgentProposal(this.options.runId, proposal);
-            this.options.wsClient.sendRunLog(this.options.runId, `Task complete: ${proposal.summary}`, 'info');
+            this.sendSafeRunLog(`Task complete: ${proposal.summary}`, 'info');
             this.options.wsClient.sendRunUpdate(this.options.runId, 'done');
             this.options.wsClient.sendChat(`Task completed: ${proposal.summary}`, this.options.runId);
             return;
@@ -693,9 +641,9 @@ export class AiAssistController {
             this.state.status = 'asking_user';
             this.notifyStateChange();
             
-            this.log('info', `Asking user: ${proposal.question}`);
+            this.log('info', 'Question asked');
             this.options.wsClient.sendAgentProposal(this.options.runId, proposal);
-            this.options.wsClient.sendRunLog(this.options.runId, `Question: ${proposal.question}`, 'info');
+            this.sendSafeRunLog(`Question: ${proposal.question}`, 'info');
             this.options.onProposal?.(proposal);
             
             // Wait for user response (handled by userResponse method)
@@ -719,8 +667,7 @@ export class AiAssistController {
             this.notifyStateChange();
             
             const toolName = proposal.toolCall.tool;
-            const target = this.getToolTarget(proposal.toolCall);
-            this.log('info', `Proposed tool: ${toolName} ${target}`);
+            this.log('info', `Proposed tool: ${toolName}`);
             this.options.wsClient.sendAgentProposal(this.options.runId, proposal);
             this.options.onProposal?.(proposal);
             
@@ -804,6 +751,7 @@ export class AiAssistController {
           xNorm: action.x,
           yNorm: action.y,
           button: action.button,
+          displayId: this.options.displayId,
         });
         break;
 
@@ -812,6 +760,7 @@ export class AiAssistController {
           xNorm: action.x,
           yNorm: action.y,
           button: action.button,
+          displayId: this.options.displayId,
         });
         break;
 
@@ -869,6 +818,10 @@ export class AiAssistController {
     this.state.logs = [...this.logs];
   }
 
+  private sendSafeRunLog(line: string, level: 'info' | 'warn' | 'error' = 'info'): void {
+    this.options.wsClient.sendRunLog(this.options.runId, sanitizeRunLogLine(line), level);
+  }
+
   private setError(message: string): void {
     this.state.lastError = message;
     this.state.status = 'error';
@@ -891,23 +844,6 @@ export class AiAssistController {
   }
 
   private buildLocalPreview(toolCall: ToolCall, result: ToolResult): LocalToolEvent['preview'] {
-    if (!result.ok || !result.data || typeof result.data !== 'object' || result.data === null) {
-      return undefined;
-    }
-
-    if (toolCall.tool === 'fs.read_text' && 'content' in result.data) {
-      const data = result.data as { content: string };
-      return { text: data.content.slice(0, 4000) };
-    }
-
-    if (toolCall.tool === 'terminal.exec' && 'stdout_preview' in result.data) {
-      const data = result.data as { stdout_preview: string; stderr_preview: string };
-      return {
-        stdout: data.stdout_preview,
-        stderr: data.stderr_preview,
-      };
-    }
-
-    return undefined;
+    return buildRedactedLocalToolPreview(toolCall, result);
   }
 }

@@ -225,23 +225,7 @@ fn capture_display_png(
     display_id: String,
     max_width: Option<u32>,
 ) -> Result<CaptureResult, CaptureError> {
-    let screens = screenshots::Screen::all().map_err(|e| CaptureError {
-        message: format!("Failed to get screens: {}", e),
-        needs_permission: false,
-    })?;
-
-    let idx: usize = display_id
-        .strip_prefix("display-")
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| CaptureError {
-            message: "Invalid display ID".to_string(),
-            needs_permission: false,
-        })?;
-
-    let screen = screens.get(idx).ok_or_else(|| CaptureError {
-        message: "Display not found".to_string(),
-        needs_permission: false,
-    })?;
+    let screen = get_capture_target_screen(&display_id)?;
 
     let image = screen.capture().map_err(|e| {
         let msg = format!("{}", e);
@@ -288,20 +272,57 @@ fn capture_display_png(
 }
 
 // Input injection commands
-#[tauri::command]
-fn input_click(x_norm: f64, y_norm: f64, button: String) -> Result<(), InputError> {
-    let mut enigo = Enigo::new();
+fn parse_display_index(display_id: &str) -> Result<usize, String> {
+    display_id
+        .strip_prefix("display-")
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| "Invalid display ID".to_string())
+}
 
-    // Get screen dimensions (use primary display)
+fn get_capture_target_screen(display_id: &str) -> Result<screenshots::Screen, CaptureError> {
+    let screens = screenshots::Screen::all().map_err(|e| CaptureError {
+        message: format!("Failed to get screens: {}", e),
+        needs_permission: false,
+    })?;
+
+    let idx = parse_display_index(display_id).map_err(|message| CaptureError {
+        message,
+        needs_permission: false,
+    })?;
+
+    screens.into_iter().nth(idx).ok_or_else(|| CaptureError {
+        message: "Display not found".to_string(),
+        needs_permission: false,
+    })
+}
+
+fn get_input_target_screen(display_id: &str) -> Result<screenshots::Screen, InputError> {
     let screens = screenshots::Screen::all().map_err(|e| InputError {
         message: format!("Failed to get screen: {}", e),
         needs_permission: false,
     })?;
 
-    let screen = screens.first().ok_or_else(|| InputError {
-        message: "No display found".to_string(),
+    let idx = parse_display_index(display_id).map_err(|message| InputError {
+        message,
         needs_permission: false,
     })?;
+
+    screens.into_iter().nth(idx).ok_or_else(|| InputError {
+        message: "No display found".to_string(),
+        needs_permission: false,
+    })
+}
+
+#[tauri::command]
+fn input_click(
+    x_norm: f64,
+    y_norm: f64,
+    button: String,
+    display_id: String,
+) -> Result<(), InputError> {
+    let mut enigo = Enigo::new();
+
+    let screen = get_input_target_screen(&display_id)?;
 
     let width = screen.display_info.width as f64;
     let height = screen.display_info.height as f64;
@@ -323,18 +344,15 @@ fn input_click(x_norm: f64, y_norm: f64, button: String) -> Result<(), InputErro
 }
 
 #[tauri::command]
-fn input_double_click(x_norm: f64, y_norm: f64, button: String) -> Result<(), InputError> {
+fn input_double_click(
+    x_norm: f64,
+    y_norm: f64,
+    button: String,
+    display_id: String,
+) -> Result<(), InputError> {
     let mut enigo = Enigo::new();
 
-    let screens = screenshots::Screen::all().map_err(|e| InputError {
-        message: format!("Failed to get screen: {}", e),
-        needs_permission: false,
-    })?;
-
-    let screen = screens.first().ok_or_else(|| InputError {
-        message: "No display found".to_string(),
-        needs_permission: false,
-    })?;
+    let screen = get_input_target_screen(&display_id)?;
 
     let width = screen.display_info.width as f64;
     let height = screen.display_info.height as f64;
@@ -1777,6 +1795,7 @@ async fn start_agent_task(
     credential_provider: Option<String>,
     provider_base_url: Option<String>,
     provider_model: Option<String>,
+    display_id: Option<String>,
 ) -> Result<String, String> {
     let provider_name = preferred_provider.unwrap_or_else(|| "native_qwen_ollama".to_string());
     let primary_provider = agent_provider_kind(&provider_name)?;
@@ -1795,6 +1814,7 @@ async fn start_agent_task(
         primary_provider,
         provider_base_url,
         provider_model,
+        display_id: display_id.unwrap_or_else(|| "display-0".to_string()),
         provider_api_key,
         ..Default::default()
     };

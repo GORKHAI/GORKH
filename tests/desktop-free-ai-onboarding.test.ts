@@ -7,6 +7,8 @@ test('desktop local AI helper exposes retail-friendly tier guidance and install 
 
   assert.equal(typeof imported.getLocalAiTierDetails, 'function');
   assert.equal(typeof imported.getLocalAiInstallStageLabel, 'function');
+  assert.equal(typeof imported.formatLocalAiByteCount, 'function');
+  assert.equal(typeof imported.getLocalAiInstallProgressSummary, 'function');
 
   const light = imported.getLocalAiTierDetails('light');
   const standard = imported.getLocalAiTierDetails('standard');
@@ -29,6 +31,23 @@ test('desktop local AI helper exposes retail-friendly tier guidance and install 
   assert.equal(imported.getLocalAiInstallStageLabel('starting'), 'Starting');
   assert.equal(imported.getLocalAiInstallStageLabel('ready'), 'Ready');
   assert.equal(imported.getLocalAiInstallStageLabel('error'), 'Error');
+
+  assert.equal(imported.formatLocalAiByteCount(512), '512 B');
+  assert.equal(imported.formatLocalAiByteCount(1536), '1.5 KB');
+  assert.equal(imported.formatLocalAiByteCount(3 * 1024 * 1024 * 1024), '3.0 GB');
+  assert.equal(
+    imported.getLocalAiInstallProgressSummary({
+      stage: 'installing',
+      selectedTier: 'standard',
+      selectedModel: 'qwen2.5:3b',
+      progressPercent: 42,
+      downloadedBytes: 2 * 1024 * 1024 * 1024,
+      totalBytes: 5 * 1024 * 1024 * 1024,
+      message: 'Downloading runtime...',
+      updatedAtMs: 1710000000000,
+    }),
+    '42% • 2.0 GB of 5.0 GB'
+  );
 });
 
 test('desktop retail shell includes a visible Set Up Free AI onboarding surface', () => {
@@ -41,6 +60,11 @@ test('desktop retail shell includes a visible Set Up Free AI onboarding surface'
   assert.match(appSource, /Set Up Free AI|Install local engine|Ready to use/i, 'main desktop shell should expose the free local AI onboarding entry point');
   assert.match(componentSource, /Set Up Free AI/i);
   assert.match(componentSource, /Recommended for this device/i);
+  assert.match(componentSource, /Install progress|Download progress/i);
+  assert.match(componentSource, /Available disk|disk free/i);
+  assert.match(componentSource, /Runtime source/i);
+  assert.match(componentSource, /Managed runtime folder/i);
+  assert.match(componentSource, /Selected model/i);
   assert.doesNotMatch(componentSource, /Light recommended|Standard recommended|Vision Boost optional/i);
   assert.match(componentSource, /Check this device/i);
   assert.match(componentSource, /Install local engine/i);

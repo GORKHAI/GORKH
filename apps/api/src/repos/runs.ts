@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import type { RunWithSteps } from '@ai-operator/shared';
 import { prisma } from '../db/prisma.js';
+import { sanitizeRunForPersistence } from '../lib/run-privacy.js';
 
 function clampJson<T>(value: T): T {
   const json = JSON.stringify(value);
@@ -54,7 +55,8 @@ function mapRun(row: any): RunWithSteps {
 
 export const runsRepo = {
   async save(run: RunWithSteps, ownerUserId: string) {
-    const base = serializeRun(run);
+    const sanitizedRun = sanitizeRunForPersistence(run);
+    const base = serializeRun(sanitizedRun);
     await prisma.$transaction(async (tx) => {
       await tx.run.upsert({
         where: { id: run.runId },
@@ -78,10 +80,10 @@ export const runsRepo = {
       });
 
       await tx.runStep.deleteMany({ where: { runId: run.runId } });
-      if (run.steps.length > 0) {
+      if (sanitizedRun.steps.length > 0) {
         await tx.runStep.createMany({
-          data: run.steps.map((step) => ({
-            runId: run.runId,
+          data: sanitizedRun.steps.map((step) => ({
+            runId: sanitizedRun.runId,
             stepId: step.stepId,
             title: step.title,
             status: step.status,

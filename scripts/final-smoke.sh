@@ -292,9 +292,9 @@ sleep 1
   export DESKTOP_UPDATE_ENABLED=true
   export DESKTOP_RELEASE_SOURCE=file
   export DESKTOP_VERSION=0.1.0
-  export DESKTOP_WIN_URL=https://example.com/downloads/ai-operator-setup.exe
-  export DESKTOP_MAC_INTEL_URL=https://example.com/downloads/ai-operator-macos-intel.dmg
-  export DESKTOP_MAC_ARM_URL=https://example.com/downloads/ai-operator-macos-apple-silicon.dmg
+  export DESKTOP_WIN_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-x64-setup.exe
+  export DESKTOP_MAC_INTEL_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-x64.dmg
+  export DESKTOP_MAC_ARM_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-aarch64.dmg
   export ADMIN_API_KEY="$ADMIN_API_KEY_VALUE"
   export METRICS_PUBLIC=false
   export DEPLOYMENT_MODE=single_instance
@@ -410,40 +410,58 @@ else
   echo "  ✅ CSRF protection works (403 without token)"
 fi
 
-# 6.5 Subscription gating - inactive
-echo "  6.5: Testing subscription gating (inactive user)..."
-set_subscription_status inactive
-DOWNLOADS_INACTIVE_STATUS="$(curl -s -o /tmp/ai-operator-final-downloads-inactive.json -w '%{http_code}' \
-  -b "$COOKIE_JAR" \
+# 6.5 Public desktop acquisition
+echo "  6.5: Testing public desktop acquisition..."
+DOWNLOADS_PUBLIC_STATUS="$(curl -s -o /tmp/ai-operator-final-downloads-public.json -w '%{http_code}' \
   "$API_BASE/downloads/desktop")"
 
-# When BILLING_ENABLED=false, subscription gating is bypassed (returns 200)
-# When BILLING_ENABLED=true, inactive users get 402
-if [[ "${BILLING_ENABLED:-false}" == "false" ]]; then
-  if [[ "$DOWNLOADS_INACTIVE_STATUS" != "200" ]]; then
-    record_failure "Downloads endpoint (expected 200 with billing disabled, got $DOWNLOADS_INACTIVE_STATUS)"
-  else
-    echo "  ✅ Downloads works (billing disabled, gating bypassed)"
-  fi
+if [[ "$DOWNLOADS_PUBLIC_STATUS" != "200" ]]; then
+  record_failure "Public desktop acquisition (expected 200, got $DOWNLOADS_PUBLIC_STATUS)"
 else
-  if [[ "$DOWNLOADS_INACTIVE_STATUS" != "402" ]]; then
-    record_failure "Subscription gating inactive (expected 402, got $DOWNLOADS_INACTIVE_STATUS)"
+  if ! node --input-type=module <<'EOF'
+import { readFile } from 'node:fs/promises';
+
+const payload = JSON.parse(await readFile('/tmp/ai-operator-final-downloads-public.json', 'utf8'));
+for (const [label, rawUrl] of Object.entries({
+  windows: payload.windowsUrl,
+  macIntel: payload.macIntelUrl,
+  macArm: payload.macArmUrl,
+})) {
+  if (!rawUrl) {
+    process.stderr.write(`Missing ${label} download URL\n`);
+    process.exit(1);
+  }
+
+  const url = new URL(rawUrl, 'http://localhost:3001/');
+  if (/(^|\.)example\.com$/i.test(url.hostname)) {
+    process.stderr.write(`Placeholder host for ${label}: ${rawUrl}\n`);
+    process.exit(1);
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    process.stderr.write(`Unreachable ${label} asset: ${url} (${response.status})\n`);
+    process.exit(1);
+  }
+}
+EOF
+  then
+    record_failure "Public desktop acquisition payload invalid"
   else
-    echo "  ✅ Subscription gating works (402 when inactive)"
+    echo "  ✅ Public desktop acquisition works"
   fi
 fi
 
-# 6.6 Subscription gating - active
-echo "  6.6: Testing subscription gating (active user)..."
-set_subscription_status active
+# 6.6 Authenticated desktop acquisition
+echo "  6.6: Testing authenticated desktop acquisition..."
 DOWNLOADS_ACTIVE_STATUS="$(curl -s -o /tmp/ai-operator-final-downloads-active.json -w '%{http_code}' \
   -b "$COOKIE_JAR" \
   "$API_BASE/downloads/desktop")"
 
 if [[ "$DOWNLOADS_ACTIVE_STATUS" != "200" ]]; then
-  record_failure "Subscription gating active (expected 200, got $DOWNLOADS_ACTIVE_STATUS)"
+  record_failure "Authenticated desktop acquisition (expected 200, got $DOWNLOADS_ACTIVE_STATUS)"
 else
-  echo "  ✅ Subscription gating works (200 when active)"
+  echo "  ✅ Authenticated desktop acquisition works"
 fi
 
 # 6.7 Update feed endpoint
@@ -454,9 +472,35 @@ UPDATES_STATUS="$(curl -s -o /tmp/ai-operator-final-updates.json -w '%{http_code
 if [[ "$UPDATES_STATUS" != "200" ]]; then
   record_failure "Update feed endpoint (expected 200, got $UPDATES_STATUS)"
 else
-  # Validate JSON structure
-  if ! node -e "const p = require('/tmp/ai-operator-final-updates.json'); if (!p.version || !p.platforms) process.exit(1)"; then
-    record_failure "Update feed JSON structure invalid"
+  if ! node --input-type=module <<'EOF'
+import { readFile } from 'node:fs/promises';
+
+const payload = JSON.parse(await readFile('/tmp/ai-operator-final-updates.json', 'utf8'));
+const platform = payload.platforms?.['windows-x86_64'];
+if (!payload.version || !platform?.url || !platform?.signature) {
+  process.stderr.write('Invalid updates manifest\n');
+  process.exit(1);
+}
+
+if (/(replace-with-tauri-signature|placeholder-signature|changeme-signature)/i.test(platform.signature)) {
+  process.stderr.write('Placeholder update signature\n');
+  process.exit(1);
+}
+
+const url = new URL(platform.url, 'http://localhost:3001/');
+if (/(^|\.)example\.com$/i.test(url.hostname)) {
+  process.stderr.write(`Placeholder update host: ${platform.url}\n`);
+  process.exit(1);
+}
+
+const response = await fetch(url);
+if (!response.ok) {
+  process.stderr.write(`Unreachable update asset: ${url} (${response.status})\n`);
+  process.exit(1);
+}
+EOF
+  then
+    record_failure "Update feed payload invalid"
   else
     echo "  ✅ Update feed works"
   fi

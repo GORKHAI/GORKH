@@ -1,11 +1,11 @@
 {
   "version": "0.1.0",
-  "notes": "Development feed stub for Apple Silicon builds.",
+  "notes": "Local file-mode feed fixture for Apple Silicon smoke verification.",
   "pub_date": "2026-03-03T00:00:00.000Z",
   "platforms": {
     "darwin-aarch64": {
       "url": "/downloads/desktop/artifacts/ai-operator-0.1.0-aarch64.dmg",
-      "signature": "replace-with-tauri-signature"
+      "signature": "MEYCIQDXg4P4eXvW0WmKf0p5lHd7Jk2Qw0QO3Yv9Zc1w0N6B0AIhAOZ0m6g2C2L4w0x7XJm4hP2Q9l3R2r0y7FvJw1m8c4d9"
     }
   }
 }
