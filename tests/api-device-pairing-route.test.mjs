@@ -30,4 +30,10 @@ test('device pairing and owned-device routes use persisted device records', () =
     /const pairable = await getPairableDevice\(deviceId\);/,
     'Pair route should use the persisted pairable-device lookup instead of process-local state'
   );
+
+  assert.doesNotMatch(
+    source,
+    /await dispatchDeviceCommandToDevice\(deviceId, 'chat\.message'/,
+    'Pair route should not queue the optional pairing success chat message through the reliable device-command stream'
+  );
 });

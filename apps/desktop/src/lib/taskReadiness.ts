@@ -1,6 +1,6 @@
 import type { RunMode } from '@ai-operator/shared';
 import type { LocalSettingsState } from './localSettings.js';
-import type { NativePermissionStatus } from './permissions.js';
+import type { NativePermissionStatus, PermissionPlatform, PermissionTarget } from './permissions.js';
 
 export type DesktopTaskBlockerId =
   | 'screen-preview'
@@ -37,6 +37,7 @@ export interface DesktopTaskReadiness {
 interface EvaluateDesktopTaskReadinessInput {
   mode: RunMode;
   subscriptionStatus: 'active' | 'inactive';
+  platform?: PermissionPlatform;
   permissionStatus: NativePermissionStatus;
   localSettings: LocalSettingsState;
   workspaceConfigured: boolean;
@@ -44,9 +45,40 @@ interface EvaluateDesktopTaskReadinessInput {
   isManagedLocalProvider?: boolean;
 }
 
+function isPermissionBlocked(
+  status: NativePermissionStatus[PermissionTarget],
+  platform: PermissionPlatform
+): boolean {
+  if (status === 'granted') {
+    return false;
+  }
+
+  if (platform === 'windows' && status === 'unknown') {
+    return false;
+  }
+
+  return true;
+}
+
+function getPermissionBlockerDetail(
+  target: PermissionTarget,
+  platform: PermissionPlatform
+): string {
+  if (platform === 'windows') {
+    return target === 'screenRecording'
+      ? 'Windows could not confirm screen capture is available. Review Windows Privacy settings, remote-session restrictions, or security software if capture keeps failing.'
+      : 'Windows could not confirm approved input control is available. Review Windows accessibility or security settings and match the target app privilege level if control keeps failing.';
+  }
+
+  return target === 'screenRecording'
+    ? 'Grant screen recording permission for this desktop app.'
+    : 'Grant accessibility/input permission for approved desktop actions.';
+}
+
 export function evaluateDesktopTaskReadiness(
   input: EvaluateDesktopTaskReadinessInput
 ): DesktopTaskReadiness {
+  const platform = input.platform ?? 'unknown';
   const blockers: DesktopTaskBlocker[] = [];
   const requiredSetup: DesktopTaskSetupItem[] = [];
   const optionalUpgrades: DesktopTaskSetupItem[] = [];
@@ -61,11 +93,11 @@ export function evaluateDesktopTaskReadiness(
     requiredSetup.push(item);
   }
 
-  if (input.permissionStatus.screenRecording !== 'granted') {
+  if (isPermissionBlocked(input.permissionStatus.screenRecording, platform)) {
     const item = {
       id: 'screen-permission',
       label: 'Screen recording permission missing',
-      detail: 'Grant screen recording permission for this desktop app.',
+      detail: getPermissionBlockerDetail('screenRecording', platform),
     } satisfies DesktopTaskBlocker;
     blockers.push(item);
     requiredSetup.push(item);
@@ -81,11 +113,11 @@ export function evaluateDesktopTaskReadiness(
     requiredSetup.push(item);
   }
 
-  if (input.permissionStatus.accessibility !== 'granted') {
+  if (isPermissionBlocked(input.permissionStatus.accessibility, platform)) {
     const item = {
       id: 'accessibility-permission',
       label: 'Accessibility permission missing',
-      detail: 'Grant accessibility/input permission for approved desktop actions.',
+      detail: getPermissionBlockerDetail('accessibility', platform),
     } satisfies DesktopTaskBlocker;
     blockers.push(item);
     requiredSetup.push(item);

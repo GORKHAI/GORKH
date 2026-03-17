@@ -178,7 +178,7 @@ fn open_permission_settings_impl(app: &AppHandle, target: PermissionTarget) -> R
     {
         let target_url = match target {
             PermissionTarget::ScreenRecording => "ms-settings:privacy",
-            PermissionTarget::Accessibility => "ms-settings:easeofaccess-keyboard",
+            PermissionTarget::Accessibility => "ms-settings:easeofaccess",
         };
         open_permission_settings_url(app, target_url)
     }
@@ -808,9 +808,9 @@ fn build_tray_menu(
     let toggle_window = MenuItemBuilder::with_id(
         "toggle_window",
         if state.window_visible {
-            "Hide App"
+            "Hide GORKH"
         } else {
-            "Show App"
+            "Show GORKH"
         },
     )
     .build(app)?;
@@ -844,7 +844,7 @@ fn build_tray_menu(
     };
 
     let toggle_ai = MenuItemBuilder::with_id("toggle_ai_pause", ai_label).build(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", "Quit GORKH").build(app)?;
     let separator = PredefinedMenuItem::separator(app)?;
 
     MenuBuilder::new(app)

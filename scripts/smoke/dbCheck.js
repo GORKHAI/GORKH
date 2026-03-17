@@ -73,6 +73,11 @@ try {
           ownerUserId: true,
           pairedAt: true,
           deviceToken: true,
+          deviceTokenHash: true,
+          deviceTokenIssuedAt: true,
+          deviceTokenExpiresAt: true,
+          deviceTokenLastUsedAt: true,
+          deviceTokenRevokedAt: true,
           controlEnabled: true,
           screenStreamEnabled: true,
           lastSeenAt: true,
@@ -88,6 +93,36 @@ try {
       ])
     : [0, 0, 0];
 
+  const auditSummary = testDeviceId
+    ? {
+        deviceClaimed: await prisma.auditEvent.count({
+          where: {
+            deviceId: testDeviceId,
+            eventType: 'device.claimed',
+          },
+        }),
+        controlRequested: await prisma.auditEvent.count({
+          where: {
+            deviceId: testDeviceId,
+            eventType: 'control.requested',
+          },
+        }),
+        toolExecuted: await prisma.auditEvent.count({
+          where: {
+            deviceId: testDeviceId,
+            eventType: 'tool.executed',
+          },
+        }),
+      }
+    : {
+        deviceClaimed: 0,
+        controlRequested: 0,
+        toolExecuted: 0,
+      };
+  const dbAuditOk = auditSummary.deviceClaimed > 0
+    && auditSummary.controlRequested > 0
+    && auditSummary.toolExecuted > 0;
+
   process.stdout.write(`AUDIT_EVENTS=${JSON.stringify(auditEvents)}\n`);
   process.stdout.write(
     `DEVICE_ROW=${JSON.stringify(
@@ -95,7 +130,8 @@ try {
         ? {
             ...device,
             deviceToken: redactToken(device.deviceToken),
-            hasDeviceToken: Boolean(device.deviceToken),
+            deviceTokenHash: redactToken(device.deviceTokenHash),
+            hasDeviceToken: Boolean(device.deviceTokenHash || device.deviceToken),
           }
         : null
     )}\n`
@@ -109,6 +145,8 @@ try {
       tools: counts[2],
     })}\n`
   );
+  process.stdout.write(`DB_AUDIT_SUMMARY=${JSON.stringify(auditSummary)}\n`);
+  process.stdout.write(`DB_AUDIT_OK=${dbAuditOk ? 1 : 0}\n`);
 } finally {
   await prisma.$disconnect();
 }

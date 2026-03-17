@@ -10,6 +10,7 @@ import {
 } from '../lib/workspace.js';
 import type { LocalSettingsState } from '../lib/localSettings.js';
 import {
+  getPermissionSettingsButtonLabel,
   getPermissionInstructions,
   type NativePermissionStatus,
   type PermissionTarget,
@@ -100,6 +101,8 @@ export function SettingsPanel({
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
   const screenRecordingInstructions = getPermissionInstructions('screenRecording');
   const accessibilityInstructions = getPermissionInstructions('accessibility');
+  const screenRecordingSettingsLabel = getPermissionSettingsButtonLabel('screenRecording');
+  const accessibilitySettingsLabel = getPermissionSettingsButtonLabel('accessibility');
 
   useEffect(() => {
     // Load workspace state
@@ -869,7 +872,7 @@ export function SettingsPanel({
                   fontSize: '0.75rem',
                 }}
               >
-                Open Screen Recording Settings
+                {screenRecordingSettingsLabel}
               </button>
             </div>
           </div>
@@ -908,7 +911,7 @@ export function SettingsPanel({
                   fontSize: '0.75rem',
                 }}
               >
-                Open Accessibility Settings
+                {accessibilitySettingsLabel}
               </button>
               <button
                 onClick={() => {

@@ -9,7 +9,7 @@ test('primary web dashboard is desktop-first and no longer exposes legacy pairin
   const source = readFileSync(dashboardPath, 'utf8');
 
   assert.match(source, /Use the desktop app to start tasks|Desktop is the primary place to start tasks/i);
-  assert.match(source, /Downloads|Billing|Devices|Account/i);
+  assert.match(source, /Downloads|Billing|Signed-in desktops|Account/i);
 
   assert.doesNotMatch(
     source,
@@ -17,10 +17,16 @@ test('primary web dashboard is desktop-first and no longer exposes legacy pairin
     'primary dashboard should not expose pairing or web run creation directly'
   );
 
+  assert.doesNotMatch(
+    source,
+    /Admin \/ Legacy Tools|admin\/debug fallback|migration fallback/i,
+    'primary dashboard should demote admin and legacy wording on the retail surface'
+  );
+
   assert.match(
     source,
-    /Admin \/ Legacy Tools|Legacy Tools|Migration fallback/i,
-    'primary dashboard should point to clearly labeled legacy tools'
+    /Older Desktop Tools|Advanced Browser Tools|Older desktop support/i,
+    'primary dashboard should point to a softer labeled fallback surface for older desktop flows'
   );
 });
 

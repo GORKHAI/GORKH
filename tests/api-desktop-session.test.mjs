@@ -7,28 +7,64 @@ const apiIndexPath = 'apps/api/src/index.ts';
 const devicesRepoPath = 'apps/api/src/repos/devices.ts';
 const wsHandlerPath = 'apps/api/src/lib/ws-handler.ts';
 
+function applyApiEnv() {
+  process.env.PORT ??= '3001';
+  process.env.NODE_ENV ??= 'test';
+  process.env.LOG_LEVEL ??= 'error';
+  process.env.DATABASE_URL ??= 'postgresql://postgres:postgres@localhost:5432/ai_operator';
+  process.env.JWT_SECRET ??= 'test-secret';
+  process.env.ACCESS_TOKEN_EXPIRES_IN ??= '30m';
+  process.env.REFRESH_TOKEN_TTL_DAYS ??= '14';
+  process.env.CSRF_COOKIE_NAME ??= 'csrf_token';
+  process.env.ACCESS_COOKIE_NAME ??= 'access_token';
+  process.env.REFRESH_COOKIE_NAME ??= 'refresh_token';
+  process.env.WEB_ORIGIN ??= 'http://localhost:3000';
+  process.env.STRIPE_SECRET_KEY ??= 'sk_test_value';
+  process.env.STRIPE_WEBHOOK_SECRET ??= 'whsec_test_value';
+  process.env.STRIPE_PRICE_ID ??= 'price_test_value';
+  process.env.APP_BASE_URL ??= 'http://localhost:3000';
+  process.env.API_PUBLIC_BASE_URL ??= 'http://localhost:3001';
+}
+
 test('desktop session helper revokes only the addressed device token and leaves sibling devices untouched', async () => {
-  const { revokeDesktopSession } = await import('../apps/api/dist/lib/desktop-session.js');
+  applyApiEnv();
+  const { revokeDesktopSession } = await import('../apps/api/src/lib/desktop-session.ts');
 
   const devices = new Map([
-    ['token-desktop-a', { device: { deviceId: 'desktop-a' }, ownerUserId: 'user-1', deviceToken: 'token-desktop-a' }],
-    ['token-desktop-b', { device: { deviceId: 'desktop-b' }, ownerUserId: 'user-1', deviceToken: 'token-desktop-b' }],
+    ['token-desktop-a', {
+      device: { deviceId: 'desktop-a' },
+      ownerUserId: 'user-1',
+      deviceTokenHash: 'hash-token-desktop-a',
+      deviceTokenIssuedAt: new Date('2026-03-17T00:00:00.000Z'),
+      deviceTokenLastUsedAt: new Date('2026-03-17T00:00:00.000Z'),
+      deviceTokenExpiresAt: new Date('2026-04-17T00:00:00.000Z'),
+      deviceTokenRevokedAt: null,
+    }],
+    ['token-desktop-b', {
+      device: { deviceId: 'desktop-b' },
+      ownerUserId: 'user-1',
+      deviceTokenHash: 'hash-token-desktop-b',
+      deviceTokenIssuedAt: new Date('2026-03-17T00:00:00.000Z'),
+      deviceTokenLastUsedAt: new Date('2026-03-17T00:00:00.000Z'),
+      deviceTokenExpiresAt: new Date('2026-04-17T00:00:00.000Z'),
+      deviceTokenRevokedAt: null,
+    }],
   ]);
 
   const repo = {
     async findByDeviceToken(deviceToken) {
       return devices.get(deviceToken) ?? null;
     },
+    async touchDeviceSession() {},
     async revokeDeviceSession(deviceId, deviceToken) {
       const record = devices.get(deviceToken);
       if (!record || record.device.deviceId !== deviceId) {
         return null;
       }
 
-      devices.delete(deviceToken);
+      record.deviceTokenRevokedAt = new Date('2026-03-18T00:00:00.000Z');
       return {
         ...record,
-        deviceToken: null,
       };
     },
   };
@@ -43,16 +79,24 @@ test('desktop session helper revokes only the addressed device token and leaves 
     deviceId: 'desktop-a',
     userId: 'user-1',
   });
-  assert.equal(devices.has('token-desktop-a'), false, 'the revoked desktop token should no longer resolve');
+  assert.equal(
+    devices.get('token-desktop-a')?.deviceTokenRevokedAt instanceof Date,
+    true,
+    'the revoked desktop token should be marked unusable'
+  );
   assert.equal(devices.has('token-desktop-b'), true, 'revoking one desktop must not affect sibling desktop sessions');
 });
 
 test('desktop session helper rejects stale or missing desktop tokens', async () => {
-  const { revokeDesktopSession } = await import('../apps/api/dist/lib/desktop-session.js');
+  applyApiEnv();
+  const { revokeDesktopSession } = await import('../apps/api/src/lib/desktop-session.ts');
 
   const repo = {
     async findByDeviceToken() {
       return null;
+    },
+    async touchDeviceSession() {
+      throw new Error('should not touch when token lookup fails');
     },
     async revokeDeviceSession() {
       throw new Error('should not revoke when token lookup fails');
@@ -92,26 +136,26 @@ test('desktop session revoke is scoped to the current device token and websocket
   const wsHandlerSource = readFileSync(wsHandlerPath, 'utf8');
 
   assert.match(
-    devicesRepoSource,
-    /async revokeDeviceSession\(deviceId: string, deviceToken: string\)/,
-    'Device repo should expose a token-scoped desktop session revoke method'
+    sessionSource,
+    /deviceTokenRevokedAt|deviceTokenExpiresAt/,
+    'Desktop session helpers should reason about revoke and expiry metadata'
   );
 
   assert.match(
     devicesRepoSource,
-    /updateMany\(\s*\{[\s\S]*where:\s*\{[\s\S]*id:\s*deviceId,[\s\S]*deviceToken,[\s\S]*\}/,
-    'Desktop session revoke should clear only the matching device/token pair'
+    /deviceTokenHash|hashDesktopDeviceToken/,
+    'Device repo should use hashed desktop token persistence instead of raw-token-only lookup'
   );
 
   assert.match(
     sessionSource,
-    /await devicesRepo\.revokeDeviceSession\(session\.deviceId,\s*input\.deviceToken\)/,
-    'Desktop session helper should revoke the exact authenticated desktop session'
+    /authenticateDesktopDeviceSession/,
+    'Desktop session helpers should expose shared authentication logic for HTTP and WS callers'
   );
 
   assert.match(
     wsHandlerSource,
-    /const tokenMatch = await devicesRepo\.findByDeviceToken\(deviceToken\);[\s\S]*Invalid device token/,
-    'WebSocket hello should continue to deny reconnect attempts that present a revoked device token'
+    /authenticateDesktopDeviceSession|deviceTokenRevokedAt|deviceTokenExpiresAt/,
+    'WebSocket hello should continue to deny reconnect attempts that present a revoked or expired desktop token'
   );
 });

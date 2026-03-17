@@ -29,7 +29,8 @@ start_mock() {
   rm -f "$log_path"
   (
     cd "$ROOT_DIR"
-    env DEVICE_ID="$DEVICE_ID_VALUE" "$@" node scripts/smoke/mockDevice.js >"$log_path" 2>&1 &
+    env DEVICE_ID="$DEVICE_ID_VALUE" SMOKE_DEVICE_TOKEN_PATH="$TOKEN_PATH" "$@" \
+      node scripts/smoke/mockDevice.js >"$log_path" 2>&1 &
     echo $! >"$MOCK_PID_FILE"
   )
 }
@@ -147,6 +148,9 @@ if [[ ! -s "$TOKEN_PATH" ]]; then
   exit 1
 fi
 
+# Let the initial paired session drain the follow-up pairing success message before restarting.
+wait_for_log_line 'WS_RX=server.chat.message' "$MOCK_LOG" 15
+
 DEVICE_TOKEN_VALUE="$(cat "$TOKEN_PATH")"
 echo "PAIRING_FLOW=OK"
 
@@ -228,9 +232,7 @@ grep -q 'SSE_OK=1' /tmp/ai-operator-ws-sse.txt
 echo "SSE_FLOW=OK"
 
 TEST_DEVICE_ID="$DEVICE_ID_VALUE" node "$ROOT_DIR/scripts/smoke/dbCheck.js" >/tmp/ai-operator-ws-dbcheck.txt
-grep -q 'device.claimed' /tmp/ai-operator-ws-dbcheck.txt
-grep -q 'control.requested' /tmp/ai-operator-ws-dbcheck.txt
-grep -q 'tool.executed' /tmp/ai-operator-ws-dbcheck.txt
+grep -q 'DB_AUDIT_OK=1' /tmp/ai-operator-ws-dbcheck.txt
 echo "DB_AUDIT=OK"
 
 cleanup_mock

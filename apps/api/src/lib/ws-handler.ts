@@ -45,6 +45,7 @@ import { actionsRepo } from '../repos/actions.js';
 import { toolsRepo } from '../repos/tools.js';
 import { config } from '../config.js';
 import { ownership } from './ownership.js';
+import { authenticateDesktopDeviceSession } from './desktop-session.js';
 import { consumeRateLimit } from './ratelimit.js';
 import { clearPresence, setPresence, touchPresence } from './presence.js';
 import { counterLabelsFromRateLimitKey, incCounter, setGauge } from './metrics.js';
@@ -663,8 +664,11 @@ async function handleDeviceMessage(
 
       let ownerUserId: string | null = null;
       if (deviceToken) {
-        const tokenMatch = await devicesRepo.findByDeviceToken(deviceToken);
-        if (!tokenMatch || tokenMatch.device.deviceId !== deviceId) {
+        const tokenMatch = await authenticateDesktopDeviceSession({
+          deviceToken,
+          devicesRepo,
+        });
+        if (!tokenMatch.ok || tokenMatch.deviceId !== deviceId) {
           await createSocketAuditEvent(existingState, {
             deviceId,
             eventType: 'device.hello_token_denied',
@@ -677,7 +681,7 @@ async function handleDeviceMessage(
           socket.close();
           return;
         }
-        ownerUserId = tokenMatch.ownerUserId ?? null;
+        ownerUserId = tokenMatch.userId;
       }
 
       // Mark hello received

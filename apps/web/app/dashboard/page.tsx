@@ -100,7 +100,7 @@ export default function Dashboard() {
         <div>
           <h1 style={{ margin: 0 }}>Dashboard</h1>
           <p style={{ margin: '0.35rem 0 0', color: '#6b7280' }}>
-            Desktop is the primary place to start tasks. Use this dashboard for account, downloads, billing, devices, and migration fallback.
+            Desktop is the primary place to start tasks. Use this dashboard for account, downloads, billing, signed-in desktops, and older desktop support.
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -159,7 +159,7 @@ export default function Dashboard() {
             </div>
             <h2 style={{ margin: '0.5rem 0 0', fontSize: '1.5rem' }}>Use the desktop app to start tasks</h2>
             <p style={{ margin: '0.75rem 0 0', color: '#475569', maxWidth: '52ch', lineHeight: 1.6 }}>
-              Sign in from the desktop app, complete browser auth, and run tasks directly there. The website is now secondary for account, billing, downloads, devices, and admin/debug fallback.
+              Sign in from the desktop app, complete browser auth, and run tasks directly there. The website is secondary for account, billing, downloads, signed-in desktops, and older desktop support.
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -202,7 +202,7 @@ export default function Dashboard() {
                 fontWeight: 600,
               }}
             >
-              Admin / Legacy Tools
+              Older Desktop Tools
             </Link>
           </div>
         </div>
@@ -222,7 +222,7 @@ export default function Dashboard() {
             {userEmail || 'Signed in'}
           </p>
           <p style={{ margin: '0.35rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>
-            Browser sessions: {sessions.length}
+            Active browser sign-ins: {sessions.length}
           </p>
         </section>
 
@@ -258,9 +258,9 @@ export default function Dashboard() {
       </div>
 
       <section style={{ marginTop: '1.5rem', padding: '1rem', background: 'white', border: '1px solid #e5e7eb', borderRadius: '10px' }}>
-        <h2 style={{ margin: 0, fontSize: '1rem' }}>Devices</h2>
+        <h2 style={{ margin: 0, fontSize: '1rem' }}>Signed-in desktops</h2>
         <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
-          Signed-in desktops stay visible here for account and debug purposes, but task creation belongs in the desktop app.
+          Signed-in desktops stay visible here for account reference, but task creation belongs in the desktop app.
         </p>
 
         {activeDevices.length === 0 ? (
@@ -290,7 +290,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#1d4ed8', fontWeight: 600 }}>
-                    {device.paired ? 'Signed in' : 'Legacy / unpaired'}
+                    {device.paired ? 'Signed in' : 'Older sign-in flow'}
                   </div>
                 </div>
               </div>

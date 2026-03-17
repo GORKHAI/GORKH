@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ScreenStreamer, type DisplayInfo, type CaptureError } from '../lib/screenStreamer.js';
-import { getPermissionInstructions, type NativePermissionStatus, type PermissionTarget } from '../lib/permissions.js';
+import {
+  getPermissionBannerMessage,
+  getPermissionInstructions,
+  getPermissionSettingsButtonLabel,
+  type NativePermissionStatus,
+  type PermissionTarget,
+} from '../lib/permissions.js';
 import type { WsClient } from '../lib/wsClient.js';
 
 
@@ -132,6 +138,8 @@ export function ScreenPanel({
   }, [onDisplayChange]);
 
   const screenRecordingInstructions = getPermissionInstructions('screenRecording');
+  const screenRecordingBannerMessage = getPermissionBannerMessage('screenRecording');
+  const screenRecordingSettingsLabel = getPermissionSettingsButtonLabel('screenRecording');
 
   return (
     <div
@@ -157,8 +165,7 @@ export function ScreenPanel({
             color: '#92400e',
           }}
         >
-          <strong>Permission Required:</strong> Screen Recording permission is needed. 
-          Enable it in System Settings &gt; Privacy &amp; Security &gt; Screen Recording for this app.
+          <strong>Permission Required:</strong> {screenRecordingBannerMessage}
           <div style={{ marginTop: '0.75rem', fontSize: '0.8125rem', lineHeight: 1.5 }}>
             {screenRecordingInstructions.map((step) => (
               <div key={step}>{step}</div>
@@ -177,7 +184,7 @@ export function ScreenPanel({
                 fontSize: '0.75rem',
               }}
             >
-              Open Screen Recording Settings
+              {screenRecordingSettingsLabel}
             </button>
           </div>
         </div>

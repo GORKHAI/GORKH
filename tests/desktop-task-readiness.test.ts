@@ -114,6 +114,7 @@ test('desktop custom-provider readiness keeps paid-provider setup separate from 
   const readiness = evaluateDesktopTaskReadiness({
     mode: 'ai_assist',
     subscriptionStatus: 'active',
+    platform: 'macos',
     permissionStatus: {
       screenRecording: 'granted',
       accessibility: 'granted',
@@ -142,5 +143,55 @@ test('desktop custom-provider readiness keeps paid-provider setup separate from 
     readiness.requiredSetup?.[0]?.detail ?? '',
     /configure a usable model provider/i,
     'custom provider setup should direct the user back to provider configuration'
+  );
+});
+
+test('windows readiness does not block on unknown permission state when the rest of the desktop setup is ready', () => {
+  const readiness = evaluateDesktopTaskReadiness({
+    mode: 'ai_assist',
+    subscriptionStatus: 'inactive',
+    platform: 'windows',
+    permissionStatus: {
+      screenRecording: 'unknown',
+      accessibility: 'unknown',
+    },
+    localSettings: {
+      startMinimizedToTray: false,
+      autostartEnabled: false,
+      screenPreviewEnabled: true,
+      allowControlEnabled: true,
+    },
+    workspaceConfigured: true,
+    providerConfigured: true,
+  });
+
+  assert.equal(readiness.ready, true);
+  assert.deepEqual(readiness.blockers, []);
+  assert.deepEqual(readiness.requiredSetup, []);
+});
+
+test('windows readiness still blocks when permissions are explicitly denied', () => {
+  const readiness = evaluateDesktopTaskReadiness({
+    mode: 'ai_assist',
+    subscriptionStatus: 'inactive',
+    platform: 'windows',
+    permissionStatus: {
+      screenRecording: 'denied',
+      accessibility: 'denied',
+    },
+    localSettings: {
+      startMinimizedToTray: false,
+      autostartEnabled: false,
+      screenPreviewEnabled: true,
+      allowControlEnabled: true,
+    },
+    workspaceConfigured: true,
+    providerConfigured: true,
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.deepEqual(
+    readiness.blockers.map((blocker) => blocker.id),
+    ['screen-permission', 'accessibility-permission']
   );
 });

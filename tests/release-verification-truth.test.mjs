@@ -5,6 +5,8 @@ import test from 'node:test';
 const configSource = readFileSync('apps/api/src/config.ts', 'utf8');
 const finalSmokeSource = readFileSync('scripts/final-smoke.sh', 'utf8');
 const httpSmokeSource = readFileSync('scripts/smoke/httpSmoke.sh', 'utf8');
+const wsSmokeSource = readFileSync('scripts/smoke/wsSmoke.sh', 'utf8');
+const dbCheckSource = readFileSync('scripts/smoke/dbCheck.js', 'utf8');
 const darwinArmFeed = readFileSync('apps/api/updates/desktop-darwin-aarch64.json', 'utf8');
 const darwinIntelFeed = readFileSync('apps/api/updates/desktop-darwin-x86_64.json', 'utf8');
 const windowsFeed = readFileSync('apps/api/updates/desktop-windows-x86_64.json', 'utf8');
@@ -26,6 +28,68 @@ test('desktop release config does not ship file-mode stub defaults', () => {
 test('smoke scripts do not rely on example.com desktop artifacts', () => {
   assert.doesNotMatch(finalSmokeSource, /example\.com\/downloads/);
   assert.doesNotMatch(httpSmokeSource, /example\.com\/downloads/);
+});
+
+test('final smoke uses stronger release/feed verification and executes websocket smoke when available', () => {
+  assert.match(
+    finalSmokeSource,
+    /RUN_ID="\$\{SMOKE_RUN_ID:-\$\(date \+%s\)\}"/,
+    'final smoke should derive a per-run identifier so repeated runs do not fight over shared temp files'
+  );
+
+  assert.match(
+    finalSmokeSource,
+    /scripts\/release\/verify-api-feed\.mjs/,
+    'final smoke should run the dedicated API release/feed verifier instead of relying only on ad hoc endpoint checks'
+  );
+
+  assert.match(
+    finalSmokeSource,
+    /scripts\/smoke\/wsSmoke\.sh/,
+    'final smoke should include the websocket smoke script in the launch verification path'
+  );
+
+  assert.doesNotMatch(
+    finalSmokeSource,
+    /Skipping WS smoke/,
+    'final smoke should not advertise websocket smoke coverage while skipping it'
+  );
+
+  assert.match(
+    finalSmokeSource,
+    /6\.10: Running release\/feed verifier[\s\S]*6\.11: Testing auth rate limiting/,
+    'final smoke should verify release/feed truth before intentionally exhausting the auth rate limit'
+  );
+});
+
+test('websocket smoke passes its token path through to the mock device process', () => {
+  assert.match(
+    wsSmokeSource,
+    /SMOKE_DEVICE_TOKEN_PATH="\$TOKEN_PATH"/,
+    'ws smoke should pass its configured token path to the mock device so pairing and reconnect read the same token file'
+  );
+});
+
+test('websocket smoke waits for the paired-session follow-up message before forcing reconnect', () => {
+  assert.match(
+    wsSmokeSource,
+    /wait_for_log_line 'WS_RX=server\.chat\.message' "\$MOCK_LOG" 15/,
+    'ws smoke should keep the initial paired device connected long enough to drain the pairing success follow-up message before restarting with the stored token'
+  );
+});
+
+test('websocket smoke uses an explicit DB audit summary instead of grepping a truncated raw event dump', () => {
+  assert.match(
+    dbCheckSource,
+    /DB_AUDIT_OK=/,
+    'dbCheck should emit an explicit audit summary line so later events do not hide required launch signals'
+  );
+
+  assert.match(
+    wsSmokeSource,
+    /grep -q 'DB_AUDIT_OK=1' \/tmp\/ai-operator-ws-dbcheck\.txt/,
+    'ws smoke should validate the explicit DB audit summary instead of relying on raw event text surviving a limited dump'
+  );
 });
 
 test('checked-in update feed fixtures do not use placeholder signatures', () => {

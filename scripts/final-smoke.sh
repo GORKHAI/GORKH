@@ -8,17 +8,19 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 # Configuration
-SMOKE_ENV_FILE="${SMOKE_ENV_FILE:-/tmp/ai-operator-final-smoke.env}"
-COOKIE_JAR="${COOKIE_JAR:-/tmp/ai-operator-final-smoke.cookies.txt}"
-API_LOG="${API_LOG:-/tmp/ai-operator-final-smoke-api.log}"
-WEB_LOG="${WEB_LOG:-/tmp/ai-operator-final-smoke-web.log}"
-API_PID_FILE="${API_PID_FILE:-/tmp/ai-operator-final-smoke-api.pid}"
-WEB_PID_FILE="${WEB_PID_FILE:-/tmp/ai-operator-final-smoke-web.pid}"
+RUN_ID="${SMOKE_RUN_ID:-$(date +%s)}"
+SMOKE_ENV_FILE="${SMOKE_ENV_FILE:-/tmp/ai-operator-final-smoke-$RUN_ID.env}"
+COOKIE_JAR="${COOKIE_JAR:-/tmp/ai-operator-final-smoke-$RUN_ID.cookies.txt}"
+API_LOG="${API_LOG:-/tmp/ai-operator-final-smoke-api-$RUN_ID.log}"
+WEB_LOG="${WEB_LOG:-/tmp/ai-operator-final-smoke-web-$RUN_ID.log}"
+API_PID_FILE="${API_PID_FILE:-/tmp/ai-operator-final-smoke-api-$RUN_ID.pid}"
+WEB_PID_FILE="${WEB_PID_FILE:-/tmp/ai-operator-final-smoke-web-$RUN_ID.pid}"
 API_BASE="${API_BASE:-http://localhost:3001}"
 WEB_BASE="${WEB_BASE:-http://localhost:3000}"
 ADMIN_API_KEY_VALUE="${ADMIN_API_KEY_VALUE:-final-smoke-admin-key}"
-TEST_EMAIL_VALUE="${TEST_EMAIL_VALUE:-final-smoke-$(date +%s)@example.com}"
+TEST_EMAIL_VALUE="${TEST_EMAIL_VALUE:-final-smoke-$RUN_ID@example.com}"
 TEST_PASSWORD_VALUE="${TEST_PASSWORD_VALUE:-final-smoke-pass-123}"
+VERIFY_TEST_EMAIL_VALUE="${VERIFY_TEST_EMAIL_VALUE:-verify-final-smoke-$RUN_ID@example.com}"
 DATABASE_URL_VALUE="${DATABASE_URL_VALUE:-postgresql://postgres:postgres@localhost:5432/ai_operator}"
 REDIS_URL_VALUE="${REDIS_URL_VALUE:-redis://localhost:6379}"
 BILLING_ENABLED="${BILLING_ENABLED:-false}"
@@ -535,8 +537,22 @@ else
   fi
 fi
 
-# 6.10 Auth rate limiting
-echo "  6.10: Testing auth rate limiting..."
+# 6.10 Release/feed verifier
+echo "  6.10: Running release/feed verifier..."
+if ! API_BASE="$API_BASE" \
+  USER_EMAIL="$VERIFY_TEST_EMAIL_VALUE" \
+  USER_PASSWORD="$TEST_PASSWORD_VALUE" \
+  ADMIN_API_KEY="$ADMIN_API_KEY_VALUE" \
+  node "$ROOT_DIR/scripts/release/verify-api-feed.mjs" >/tmp/ai-operator-final-verify-api-feed.log 2>&1; then
+  record_failure "Release/feed verifier"
+  echo "Release/feed verifier log:" >&2
+  tail -100 /tmp/ai-operator-final-verify-api-feed.log >&2
+else
+  echo "  ✅ Release/feed verifier passed"
+fi
+
+# 6.11 Auth rate limiting
+echo "  6.11: Testing auth rate limiting..."
 LOGIN_429=0
 for _ in $(seq 1 15); do
   status="$(curl -s -o /tmp/ai-operator-final-bad-login.json -w '%{http_code}' \
@@ -591,11 +607,25 @@ fi
 echo ""
 
 # =============================================================================
-# STEP 8: Existing Smoke Tests
+# STEP 8: WebSocket Smoke Flow
 # =============================================================================
-echo "STEP 8: Running existing smoke flow (httpSmoke.sh)..."
+echo "STEP 8: Running WebSocket smoke flow..."
+
+# Write the shared smoke env file so websocket smoke can reuse the already-authenticated session.
+cat >"$SMOKE_ENV_FILE" <<EOF
+TEST_EMAIL=$TEST_EMAIL_VALUE
+TEST_PASSWORD=$TEST_PASSWORD_VALUE
+COOKIE_JAR=$COOKIE_JAR
+CSRF_TOKEN=$CSRF_TOKEN_VALUE
+API_BASE=$API_BASE
+WEB_BASE=$WEB_BASE
+ADMIN_API_KEY=$ADMIN_API_KEY_VALUE
+DATABASE_URL=$DATABASE_URL_VALUE
+EOF
 
 # Export env for the smoke script
+export SMOKE_ENV_FILE="$SMOKE_ENV_FILE"
+export COOKIE_JAR="$COOKIE_JAR"
 export SMOKE_MANAGE_INFRA=0  # Don't reset infra, we already have it
 export SMOKE_START_WEB=0     # Don't start web, we already have it
 export SMOKE_MIGRATE_DEPLOY=1
@@ -603,18 +633,19 @@ export API_BASE="$API_BASE"
 export WEB_BASE="$WEB_BASE"
 export ADMIN_API_KEY_VALUE="$ADMIN_API_KEY_VALUE"
 export DATABASE_URL_VALUE="$DATABASE_URL_VALUE"
-export API_PID_FILE="/tmp/ai-operator-smoke-api.pid"
-export WEB_PID_FILE="/tmp/ai-operator-smoke-web.pid"
 
-# Clean up smoke script's PID files to avoid conflicts
-rm -f "$API_PID_FILE" "$WEB_PID_FILE"
-
-# Note: We skip running the full httpSmoke.sh since we've already done similar checks
-# Instead, we run a quick WS smoke test if available
 if [[ -f "$ROOT_DIR/scripts/smoke/wsSmoke.sh" ]]; then
   echo "  Running WebSocket smoke tests..."
-  # The WS smoke needs the env file from httpSmoke, so we'll skip it in final smoke
-  echo "  ℹ️ Skipping WS smoke (requires httpSmoke.env)"
+  export TOKEN_PATH="/tmp/ai-operator-final-smoke.device_token"
+  export MOCK_LOG="/tmp/ai-operator-final-smoke-mock-device.log"
+  export MOCK_PID_FILE="/tmp/ai-operator-final-smoke-mock-device.pid"
+  if ! bash "$ROOT_DIR/scripts/smoke/wsSmoke.sh" >/tmp/ai-operator-final-ws-smoke.log 2>&1; then
+    record_failure "WebSocket smoke tests"
+    echo "WebSocket smoke log:" >&2
+    tail -100 /tmp/ai-operator-final-ws-smoke.log >&2
+  else
+    echo "  ✅ WebSocket smoke tests passed"
+  fi
 fi
 
 echo "✅ Smoke flow validation complete"

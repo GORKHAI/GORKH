@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const apiIndexPath = 'apps/api/src/index.ts';
+const devicesRepoPath = 'apps/api/src/repos/devices.ts';
 
 test('desktop auth only accepts exact loopback callback URLs', async () => {
   const { validateDesktopLoopbackCallbackUrl } = await import('../apps/api/dist/lib/desktop-auth.js');
@@ -33,6 +34,7 @@ test('desktop auth only accepts exact loopback callback URLs', async () => {
 
 test('desktop auth routes use the handoff helper and rotate device tokens through existing device ownership', () => {
   const source = readFileSync(apiIndexPath, 'utf8');
+  const devicesRepoSource = readFileSync(devicesRepoPath, 'utf8');
 
   assert.match(
     source,
@@ -68,5 +70,17 @@ test('desktop auth routes use the handoff helper and rotate device tokens throug
     source,
     /await devicesRepo\.claimDevice\(deviceId,\s*consumed\.userId,\s*deviceToken\)/,
     'Desktop auth exchange should rotate the durable device token through the existing device ownership path'
+  );
+
+  assert.match(
+    devicesRepoSource,
+    /deviceTokenHash/,
+    'Desktop auth rotation should persist a hashed desktop token instead of keeping only a raw bearer secret'
+  );
+
+  assert.match(
+    devicesRepoSource,
+    /deviceTokenIssuedAt|deviceTokenExpiresAt|deviceTokenLastUsedAt|deviceTokenRevokedAt/,
+    'Desktop auth rotation should stamp desktop session metadata for issue, expiry, use, and revoke tracking'
   );
 });

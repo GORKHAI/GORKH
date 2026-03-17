@@ -97,3 +97,55 @@ test('desktop release workflow validates packaged desktop API variables before b
     'Desktop release workflow must reject non-wss API websocket values for packaged builds'
   );
 });
+
+test('desktop release workflow keeps beta macOS artifacts signed and notarized while leaving updater promotion disabled', () => {
+  const source = readFileSync(workflowPath, 'utf8');
+
+  assert.doesNotMatch(
+    source,
+    /RELEASE_LABEL="UNSIGNED BETA"/,
+    'beta release notes should not claim the whole release lane is unsigned once macOS beta artifacts are trusted'
+  );
+
+  assert.doesNotMatch(
+    source,
+    /TRUST_STATUS="Unsigned beta artifacts only"/,
+    'beta trust status should describe the real split between macOS and Windows artifacts'
+  );
+
+  assert.match(
+    source,
+    /TRUST_STATUS="macOS Developer ID signed and notarized; Windows beta artifacts unsigned"/,
+    'beta trust status should tell testers that macOS artifacts are trusted while Windows beta artifacts remain unsigned'
+  );
+
+  assert.match(
+    source,
+    /Validate beta macOS signing and notarization secrets/,
+    'beta macOS releases should fail early when signing or notarization secrets are missing'
+  );
+
+  assert.doesNotMatch(
+    source,
+    /Import Developer ID certificate into temporary keychain\s*\n\s*if:\s*needs\.prepare\.outputs\.channel == 'stable'/,
+    'macOS beta builds should not skip Developer ID signing identity import'
+  );
+
+  assert.doesNotMatch(
+    source,
+    /Notarize and staple macOS artifact\s*\n\s*if:\s*needs\.prepare\.outputs\.channel == 'stable'/,
+    'macOS beta builds should not skip notarization and stapling'
+  );
+
+  assert.match(
+    source,
+    /macOS artifacts are Developer ID signed and notarized\. Windows artifacts remain unsigned beta builds\./,
+    'beta release notes should describe the platform trust split explicitly'
+  );
+
+  assert.match(
+    source,
+    /Auto-update promotion is disabled and stable clients following DESKTOP_RELEASE_TAG=latest will ignore it by default\./,
+    'beta release notes should continue to state that updater promotion stays disabled'
+  );
+});

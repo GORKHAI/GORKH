@@ -21,9 +21,14 @@ test('desktop overlay mode uses dedicated window commands and app lifecycle wiri
   assert.match(rustSource, /fn main_window_overlay_status/, 'Rust should export an overlay-status command');
   assert.match(rustSource, /previous: Option<OverlayWindowSnapshot>/, 'overlay runtime should snapshot prior window state');
   assert.match(rustSource, /overlay mode/i, 'Rust window layer should track overlay mode explicitly');
+  assert.match(rustSource, /Hide GORKH/, 'hide-to-tray menu copy should clearly name the app');
+  assert.match(rustSource, /Show GORKH/, 'show-from-tray menu copy should clearly name the app');
+  assert.match(rustSource, /Quit GORKH/, 'quit menu copy should clearly tell macOS beta testers how to exit the app');
   assert.match(
     rustSource,
     /CloseRequested[\s\S]*main_window_exit_overlay_mode_impl|CloseRequested[\s\S]*exit_overlay_mode/i,
     'closing the window during overlay mode should exit overlay state safely instead of leaving it stuck'
   );
+  assert.match(appSource, /menu bar|tray icon/, 'desktop should explain the platform-specific hide-to-tray or menu-bar behavior');
+  assert.match(appSource, /Quit GORKH/, 'desktop should point testers to the explicit quit action after hiding the window');
 });

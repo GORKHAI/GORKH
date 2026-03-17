@@ -1,7 +1,25 @@
 import type { ControlState, Device, Platform, ScreenStreamState, WorkspaceState } from '@ai-operator/shared';
 import { prisma } from '../db/prisma.js';
+import {
+  getDesktopDeviceSessionExpiryDate,
+  hashDesktopDeviceToken,
+} from '../lib/desktop-session.js';
 
 type DeviceRow = Awaited<ReturnType<typeof prisma.device.findUniqueOrThrow>>;
+
+function hasActiveDeviceSession(row: DeviceRow, at: Date = new Date()): boolean {
+  const revokedAt = row.deviceTokenRevokedAt?.getTime();
+  if (revokedAt && revokedAt <= at.getTime()) {
+    return false;
+  }
+
+  const expiresAt = row.deviceTokenExpiresAt?.getTime();
+  if (expiresAt && expiresAt <= at.getTime()) {
+    return false;
+  }
+
+  return Boolean(row.ownerUserId && (row.deviceTokenHash || row.deviceToken));
+}
 
 function rowToDevice(row: DeviceRow): Device {
   return {
@@ -10,7 +28,7 @@ function rowToDevice(row: DeviceRow): Device {
     platform: row.platform as Platform,
     appVersion: row.appVersion ?? undefined,
     connected: false,
-    paired: Boolean(row.ownerUserId && row.deviceToken),
+    paired: hasActiveDeviceSession(row),
     pairingCode: row.pairingCode ?? undefined,
     pairingExpiresAt: row.pairingExpiresAt?.getTime(),
     lastSeenAt: row.lastSeenAt.getTime(),
@@ -41,6 +59,11 @@ export const devicesRepo = {
       device: rowToDevice(row as DeviceRow),
       ownerUserId: row.ownerUserId,
       deviceToken: row.deviceToken,
+      deviceTokenHash: row.deviceTokenHash,
+      deviceTokenIssuedAt: row.deviceTokenIssuedAt,
+      deviceTokenExpiresAt: row.deviceTokenExpiresAt,
+      deviceTokenLastUsedAt: row.deviceTokenLastUsedAt,
+      deviceTokenRevokedAt: row.deviceTokenRevokedAt,
     }));
   },
 
@@ -74,6 +97,11 @@ export const devicesRepo = {
       device: rowToDevice(row as DeviceRow),
       ownerUserId: row.ownerUserId,
       deviceToken: row.deviceToken,
+      deviceTokenHash: row.deviceTokenHash,
+      deviceTokenIssuedAt: row.deviceTokenIssuedAt,
+      deviceTokenExpiresAt: row.deviceTokenExpiresAt,
+      deviceTokenLastUsedAt: row.deviceTokenLastUsedAt,
+      deviceTokenRevokedAt: row.deviceTokenRevokedAt,
     };
   },
 
@@ -84,16 +112,55 @@ export const devicesRepo = {
       device: rowToDevice(row as DeviceRow),
       ownerUserId: row.ownerUserId,
       deviceToken: row.deviceToken,
+      deviceTokenHash: row.deviceTokenHash,
+      deviceTokenIssuedAt: row.deviceTokenIssuedAt,
+      deviceTokenExpiresAt: row.deviceTokenExpiresAt,
+      deviceTokenLastUsedAt: row.deviceTokenLastUsedAt,
+      deviceTokenRevokedAt: row.deviceTokenRevokedAt,
     };
   },
 
   async findByDeviceToken(deviceToken: string) {
-    const row = await prisma.device.findUnique({ where: { deviceToken } });
+    const tokenHash = hashDesktopDeviceToken(deviceToken);
+    let row = await prisma.device.findFirst({
+      where: { deviceTokenHash: tokenHash },
+    });
+
+    if (!row) {
+      row = await prisma.device.findUnique({ where: { deviceToken } });
+    }
+
     if (!row) return null;
+
+    if (!row.deviceTokenHash && row.deviceToken === deviceToken) {
+      const now = new Date();
+      await prisma.device.update({
+        where: { id: row.id },
+        data: {
+          deviceToken: null,
+          deviceTokenHash: tokenHash,
+          deviceTokenIssuedAt: row.deviceTokenIssuedAt ?? row.pairedAt ?? now,
+          deviceTokenExpiresAt: row.deviceTokenExpiresAt ?? getDesktopDeviceSessionExpiryDate(now),
+          deviceTokenLastUsedAt: row.deviceTokenLastUsedAt ?? now,
+          deviceTokenRevokedAt: null,
+          updatedAt: now,
+        },
+      });
+      row = await prisma.device.findUnique({ where: { id: row.id } });
+      if (!row) {
+        return null;
+      }
+    }
+
     return {
       device: rowToDevice(row as DeviceRow),
       ownerUserId: row.ownerUserId,
       deviceToken: row.deviceToken,
+      deviceTokenHash: row.deviceTokenHash,
+      deviceTokenIssuedAt: row.deviceTokenIssuedAt,
+      deviceTokenExpiresAt: row.deviceTokenExpiresAt,
+      deviceTokenLastUsedAt: row.deviceTokenLastUsedAt,
+      deviceTokenRevokedAt: row.deviceTokenRevokedAt,
     };
   },
 
@@ -116,7 +183,12 @@ export const devicesRepo = {
       data: {
         ownerUserId,
         pairedAt: now,
-        deviceToken,
+        deviceToken: null,
+        deviceTokenHash: hashDesktopDeviceToken(deviceToken),
+        deviceTokenIssuedAt: now,
+        deviceTokenExpiresAt: getDesktopDeviceSessionExpiryDate(now),
+        deviceTokenLastUsedAt: now,
+        deviceTokenRevokedAt: null,
         pairingCode: null,
         pairingExpiresAt: null,
         updatedAt: now,
@@ -126,19 +198,45 @@ export const devicesRepo = {
       device: rowToDevice(row as DeviceRow),
       ownerUserId: row.ownerUserId,
       deviceToken: row.deviceToken,
+      deviceTokenHash: row.deviceTokenHash,
+      deviceTokenIssuedAt: row.deviceTokenIssuedAt,
+      deviceTokenExpiresAt: row.deviceTokenExpiresAt,
+      deviceTokenLastUsedAt: row.deviceTokenLastUsedAt,
+      deviceTokenRevokedAt: row.deviceTokenRevokedAt,
     };
   },
 
-  async revokeDeviceSession(deviceId: string, deviceToken: string) {
-    const now = new Date();
+  async touchDeviceSession(deviceId: string, at: Date) {
+    await prisma.device.updateMany({
+      where: {
+        id: deviceId,
+        ownerUserId: {
+          not: null,
+        },
+      },
+      data: {
+        deviceTokenLastUsedAt: at,
+      },
+    });
+  },
+
+  async revokeDeviceSession(deviceId: string, deviceToken: string, at = new Date()) {
+    const tokenHash = hashDesktopDeviceToken(deviceToken);
     const result = await prisma.device.updateMany({
       where: {
         id: deviceId,
-        deviceToken,
+        OR: [
+          { deviceTokenHash: tokenHash },
+          { deviceToken: deviceToken },
+        ],
       },
       data: {
         deviceToken: null,
-        updatedAt: now,
+        deviceTokenHash: tokenHash,
+        deviceTokenLastUsedAt: at,
+        deviceTokenExpiresAt: at,
+        deviceTokenRevokedAt: at,
+        updatedAt: at,
       },
     });
 
@@ -155,6 +253,11 @@ export const devicesRepo = {
       device: rowToDevice(row as DeviceRow),
       ownerUserId: row.ownerUserId,
       deviceToken: row.deviceToken,
+      deviceTokenHash: row.deviceTokenHash,
+      deviceTokenIssuedAt: row.deviceTokenIssuedAt,
+      deviceTokenExpiresAt: row.deviceTokenExpiresAt,
+      deviceTokenLastUsedAt: row.deviceTokenLastUsedAt,
+      deviceTokenRevokedAt: row.deviceTokenRevokedAt,
     };
   },
 
@@ -167,6 +270,9 @@ export const devicesRepo = {
       },
       data: {
         deviceToken: null,
+        deviceTokenExpiresAt: now,
+        deviceTokenRevokedAt: now,
+        deviceTokenLastUsedAt: now,
         updatedAt: now,
       },
     });
@@ -190,6 +296,11 @@ export const devicesRepo = {
       device: rowToDevice(row as DeviceRow),
       ownerUserId: row.ownerUserId,
       deviceToken: row.deviceToken,
+      deviceTokenHash: row.deviceTokenHash,
+      deviceTokenIssuedAt: row.deviceTokenIssuedAt,
+      deviceTokenExpiresAt: row.deviceTokenExpiresAt,
+      deviceTokenLastUsedAt: row.deviceTokenLastUsedAt,
+      deviceTokenRevokedAt: row.deviceTokenRevokedAt,
     };
   },
 

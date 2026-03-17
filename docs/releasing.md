@@ -4,7 +4,7 @@ GitHub Releases remain the canonical source of truth for desktop downloads and u
 
 Iteration 25 splits the release lane into two channels:
 
-- `beta`: unsigned GitHub pre-releases for internal testing only.
+- `beta`: GitHub pre-releases with signed and notarized macOS artifacts, unsigned Windows artifacts, and updater promotion disabled.
 - `stable`: signed Windows installers plus signed and notarized macOS artifacts, with updater promotion enabled.
 
 ## Channels And Tags
@@ -45,11 +45,13 @@ The `<version>` segment matches the git tag without the leading `v`.
 ### Beta
 
 - Builds Windows and macOS installers.
-- Skips Authenticode signing.
-- Skips Developer ID notarization.
+- Leaves Windows beta installers unsigned.
+- Imports the macOS Developer ID certificate into a temporary keychain.
+- Builds macOS bundles with a Developer ID signing identity.
+- Submits the final macOS `.dmg` to Apple notarization, waits for completion, staples the ticket, and validates the result with `spctl`.
 - Does not upload updater `.sig` files.
 - Publishes the GitHub Release as a pre-release.
-- Marks the release notes as `UNSIGNED BETA`.
+- Marks the release notes as `MACOS-SIGNED BETA` and explicitly calls out that Windows beta artifacts remain unsigned.
 
 Beta artifacts are intentionally not promotable for auto-update.
 
@@ -64,7 +66,11 @@ Beta artifacts are intentionally not promotable for auto-update.
 
 Updater promotion is enabled only for this channel.
 
-## GitHub Secrets For Stable
+## GitHub Secrets For Signed Releases
+
+Beta macOS releases require the macOS signing and notarization secrets below.
+
+Stable releases additionally require updater-signing secrets, Windows Authenticode secrets, and the updater public key workflow variable.
 
 ### Existing updater-signing secrets
 

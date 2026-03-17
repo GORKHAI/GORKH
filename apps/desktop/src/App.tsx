@@ -66,6 +66,8 @@ import {
   type OverlayModeStatus,
 } from './lib/overlayMode.js';
 import {
+  getPermissionBannerMessage,
+  getPermissionSettingsButtonLabel,
   getPermissionStatus,
   openPermissionSettings,
   type NativePermissionStatus,
@@ -146,6 +148,14 @@ function detectPlatform(): 'macos' | 'windows' | 'linux' | 'unknown' {
   return 'unknown';
 }
 
+function getTrayNoticeMessage(platform: ReturnType<typeof detectPlatform>): string {
+  if (platform === 'macos') {
+    return 'GORKH is still running in the menu bar. Choose Quit GORKH from the menu bar icon to fully exit.';
+  }
+
+  return 'GORKH is still running in the tray. Choose Quit GORKH from the tray icon to fully exit.';
+}
+
 interface ChatItem {
   id: string;
   role: 'user' | 'agent';
@@ -201,6 +211,7 @@ function createChatItem(role: ChatItem['role'], text: string, timestamp: number 
 }
 
 function App() {
+  const platform = detectPlatform();
   const [client, setClient] = useState<WsClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>(desktopRuntimeConfig.ok ? 'disconnected' : 'error');
   const [messages, setMessages] = useState<ChatItem[]>([]);
@@ -619,7 +630,7 @@ function App() {
           setWindowVisible(false);
         }),
         listen('tray.tip', () => {
-          setTrayNotice('App is still running in the tray. Use Quit from the tray menu to exit.');
+          setTrayNotice(getTrayNoticeMessage(platform));
         }),
       ]);
 
@@ -639,7 +650,7 @@ function App() {
         unlisten();
       }
     };
-  }, []);
+  }, [platform]);
 
   useEffect(() => {
     if (!trayNotice) {
@@ -727,7 +738,7 @@ function App() {
       wsClient = new WsClient({
         deviceId: id,
         deviceName: `Desktop-${id.slice(0, 8)}`,
-        platform: detectPlatform(),
+        platform,
         appVersion: '0.0.6',
         deviceToken,
         onStatusChange: (newStatus) => {
@@ -858,7 +869,7 @@ function App() {
       wsClient?.disconnect();
       assistantEngineRef.current?.stop('Component unmounting');
     };
-  }, []);
+  }, [platform]);
 
   useEffect(() => {
     if (client && status === 'connected') {
@@ -1226,6 +1237,7 @@ function App() {
       const assistantReadiness = evaluateDesktopTaskReadiness({
         mode: 'ai_assist',
         subscriptionStatus: desktopBootstrap?.billing.subscriptionStatus ?? 'inactive',
+        platform,
         permissionStatus,
         localSettings,
         workspaceConfigured: workspaceState.configured,
@@ -1417,15 +1429,6 @@ function App() {
     setAuthError(null);
     setAuthState('signing_out');
 
-    try {
-      await clearStoredDeviceToken(deviceId);
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Desktop sign-out failed');
-      setAuthState('signed_in');
-      return;
-    }
-
-    let revokeError: string | null = null;
     if (runtimeConfig) {
       try {
         await logoutDesktopSession({
@@ -1433,8 +1436,18 @@ function App() {
           deviceToken: currentToken,
         });
       } catch (err) {
-        revokeError = err instanceof Error ? err.message : 'Desktop sign-out completed locally, but remote revoke failed';
+        setAuthError(err instanceof Error ? err.message : 'Desktop sign-out failed');
+        setAuthState('signed_in');
+        return;
       }
+    }
+
+    try {
+      await clearStoredDeviceToken(deviceId);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Desktop sign-out failed');
+      setAuthState('signed_in');
+      return;
     }
 
     client.setDeviceToken(undefined);
@@ -1460,7 +1473,6 @@ function App() {
     setAssistantEngine(null);
     setAiState(null);
     setVisionBoostRequested(false);
-    setAuthError(revokeError);
   }, [client, deviceId, runtimeConfig, sessionDeviceToken]);
 
   const handleSelectRecentRun = useCallback((runId: string) => {
@@ -1472,7 +1484,7 @@ function App() {
 
   const handleRevokeDesktopDevice = useCallback(async (targetDeviceId: string) => {
     if (!runtimeConfig || !sessionDeviceToken) {
-      setDesktopAccountError('Desktop sign-in is required before managing device sessions.');
+      setDesktopAccountError('Desktop sign-in is required before managing signed-in desktops.');
       return;
     }
 
@@ -1484,7 +1496,7 @@ function App() {
       const refreshed = await getDesktopAccount(runtimeConfig, sessionDeviceToken);
       setDesktopAccount(refreshed);
     } catch (err) {
-      setDesktopAccountError(err instanceof Error ? err.message : 'Failed to revoke desktop session');
+      setDesktopAccountError(err instanceof Error ? err.message : 'Failed to sign out the selected desktop');
     } finally {
       setDeviceRevokeBusyId(null);
     }
@@ -1725,6 +1737,7 @@ function App() {
   const assistantReadiness = evaluateDesktopTaskReadiness({
     mode: 'ai_assist',
     subscriptionStatus,
+    platform,
     permissionStatus,
     localSettings,
     workspaceConfigured: workspaceState.configured,
@@ -1734,6 +1747,7 @@ function App() {
   const taskReadiness = evaluateDesktopTaskReadiness({
     mode: 'ai_assist',
     subscriptionStatus,
+    platform,
     permissionStatus,
     localSettings,
     workspaceConfigured: workspaceState.configured,
@@ -1753,6 +1767,8 @@ function App() {
         || localAiRecommendation?.reason
         || 'Set up Free AI to prepare the local assistant for this desktop.'
     : assistantReadiness.requiredSetup[0]?.detail || 'Open settings or permission prompts to finish setup.';
+  const accessibilityPermissionBannerMessage = getPermissionBannerMessage('accessibility', platform);
+  const accessibilityPermissionSettingsLabel = getPermissionSettingsButtonLabel('accessibility', platform);
   const overlayStatusLabel = aiState?.status === 'paused'
     ? 'GORKH is paused.'
     : aiState?.status === 'awaiting_approval'
@@ -1969,7 +1985,7 @@ function App() {
           ) : (
             <div>
               <p style={{ marginTop: 0, color: '#166534', fontSize: '0.875rem', lineHeight: 1.5 }}>
-                This desktop has an active local session and will reconnect automatically with its stored device token.
+                This desktop is signed in and will reconnect automatically the next time you open it.
               </p>
               <button
                 onClick={() => {
@@ -2194,7 +2210,7 @@ function App() {
               <div style={{ marginTop: '1rem' }}>
                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem' }}>
                   <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                    Device ID: <code>{deviceId}</code>
+                    Desktop ID: <code>{deviceId}</code>
                   </span>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#4b5563' }}>
                     <span>Assistant engine</span>
@@ -2226,7 +2242,7 @@ function App() {
                   </button>
                 </div>
                 <p style={{ margin: '0 0 1rem', fontSize: '0.8125rem', color: '#6b7280', maxWidth: '72ch' }}>
-                  The assistant chat is the primary product surface. This area keeps setup details, device tools, screen controls, and diagnostics out of the way unless you need them.
+                  The assistant chat is the primary product surface. This area keeps setup details, signed-in desktops, screen controls, and diagnostics out of the way unless you need them.
                 </p>
 
                 <div
@@ -2237,14 +2253,14 @@ function App() {
                   }}
                 >
                   <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                    <h2 style={{ margin: 0, fontSize: '1rem' }}>Setup status</h2>
+                    <h2 style={{ margin: 0, fontSize: '1rem' }}>Desktop readiness</h2>
                     <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
-                      Subscription, permissions, workspace, and local engine state for this desktop.
+                      Subscription, permissions, workspace, and Free AI setup for this desktop.
                     </p>
 
                     {desktopBootstrapBusy && (
                       <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#6b7280' }}>
-                        Loading account and task state...
+                        Loading desktop readiness...
                       </p>
                     )}
 
@@ -2384,14 +2400,14 @@ function App() {
                   </section>
 
                   <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                    <h2 style={{ margin: 0, fontSize: '1rem' }}>Devices</h2>
+                    <h2 style={{ margin: 0, fontSize: '1rem' }}>Signed-in desktops</h2>
                     <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
-                      Manage the signed-in desktop session and any other desktops on this account.
+                      See this signed-in desktop and any others connected to your account.
                     </p>
 
                     {desktopAccountBusy && (
                       <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#6b7280' }}>
-                        Loading device sessions...
+                        Loading signed-in desktops...
                       </p>
                     )}
 
@@ -2428,7 +2444,7 @@ function App() {
                             border: '1px solid #e5e7eb',
                           }}
                         >
-                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Current desktop</div>
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>This desktop</div>
                           <div style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>
                             {desktopAccount.currentDevice?.deviceName || `Desktop-${deviceId.slice(0, 8)}`}
                           </div>
@@ -2450,7 +2466,7 @@ function App() {
                             border: '1px solid #e5e7eb',
                           }}
                         >
-                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Device sessions</div>
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Other signed-in desktops</div>
                           {siblingDevices.length === 0 ? (
                             <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>
                               No other signed-in desktops on this account.
@@ -2488,7 +2504,7 @@ function App() {
                                       cursor: deviceRevokeBusyId === device.deviceId ? 'not-allowed' : 'pointer',
                                     }}
                                   >
-                                    {deviceRevokeBusyId === device.deviceId ? 'Revoking...' : 'Revoke session'}
+                                    {deviceRevokeBusyId === device.deviceId ? 'Signing out...' : 'Sign out this desktop'}
                                   </button>
                                 </div>
                               ))}
@@ -2502,7 +2518,7 @@ function App() {
                   <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                     <h2 style={{ margin: 0, fontSize: '1rem' }}>Recent activity</h2>
                     <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
-                      Previous assistant work on this desktop still uses the existing backend run model, but stays secondary to the chat.
+                      Previous assistant work on this desktop stays here for quick reference, while chat remains the main surface.
                     </p>
 
                     {recentRuns.length === 0 ? (
@@ -2581,7 +2597,7 @@ function App() {
             }}
           >
             <strong>Permission Required:</strong> {inputPermissionError.includes('Accessibility') 
-              ? 'Accessibility permission is needed for remote control. Enable it in System Settings > Privacy & Security > Accessibility for this app.'
+              ? accessibilityPermissionBannerMessage
               : inputPermissionError}
             <div style={{ marginTop: '0.75rem' }}>
               <button
@@ -2596,7 +2612,7 @@ function App() {
                   fontSize: '0.75rem',
                 }}
               >
-                Open Accessibility Settings
+                {accessibilityPermissionSettingsLabel}
               </button>
             </div>
           </div>
@@ -2687,7 +2703,7 @@ function App() {
         <p style={{ marginTop: '2rem', color: '#666', maxWidth: '600px' }}>
           {isSignedIn
             ? 'This desktop is connected directly to your account. The assistant runs here, and local approvals stay on this machine.'
-            : 'Sign in from this desktop to connect it to your account and unlock the local assistant, approvals, and device controls.'}
+            : 'Sign in from this desktop to connect it to your account and unlock the local assistant, approvals, and desktop controls.'}
         </p>
         
         {isSignedIn && isAiAssist && (

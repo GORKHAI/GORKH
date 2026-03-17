@@ -93,6 +93,10 @@ export const actionStore = {
     const action = actions.get(actionId);
     if (!action) return undefined;
 
+    if (action.status === 'executed' || action.status === 'failed' || action.status === 'denied') {
+      return action;
+    }
+
     action.status = status;
     action.updatedAt = Date.now();
     return action;

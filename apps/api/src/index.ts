@@ -13,7 +13,7 @@ import { screenStore } from './store/screen.js';
 import { actionStore } from './store/actions.js';
 import { toolStore } from './store/tools.js';
 import { setRunPersistence, setSSEBroadcast } from './engine/runEngine.js';
-import { redactActionForLog } from '@ai-operator/shared';
+import { createServerMessage, redactActionForLog } from '@ai-operator/shared';
 import type { Device, InputAction, RunMode, ServerEventType } from '@ai-operator/shared';
 import { prisma } from './db/prisma.js';
 import { actionsRepo } from './repos/actions.js';
@@ -45,7 +45,7 @@ import {
 } from './lib/desktop-auth.js';
 import { buildDesktopAccountSnapshot } from './lib/desktop-account.js';
 import { createRunForOwnedDevice } from './lib/run-creation.js';
-import { revokeDesktopSession } from './lib/desktop-session.js';
+import { authenticateDesktopDeviceSession, revokeDesktopSession } from './lib/desktop-session.js';
 import { startRetentionScheduler } from './lib/retention.js';
 import { createSecurityOnSendHook, DEFAULT_JSON_BODY_LIMIT, WEBHOOK_RAW_BODY_LIMIT } from './lib/security.js';
 import { dispatchDeviceCommand, isDeviceCommandQueueEnabled } from './lib/device-commands.js';
@@ -383,16 +383,19 @@ async function requireDesktopDeviceSession(
     return null;
   }
 
-  const session = await devicesRepo.findByDeviceToken(deviceToken);
-  if (!session || !session.ownerUserId) {
+  const session = await authenticateDesktopDeviceSession({
+    deviceToken,
+    devicesRepo,
+  });
+  if (!session.ok) {
     reply.status(401);
     return null;
   }
 
   return {
-    deviceId: session.device.deviceId,
-    userId: session.ownerUserId,
-    deviceToken,
+    deviceId: session.deviceId,
+    userId: session.userId,
+    deviceToken: session.deviceToken,
   };
 }
 
@@ -1351,7 +1354,7 @@ fastify.post('/desktop/devices/:deviceId/revoke', async (request, reply) => {
     return { error: 'Device not found' };
   }
 
-  if (targetDevice.deviceToken) {
+  if (targetDevice.device.paired) {
     await devicesRepo.revokeOwnedDeviceSession(deviceId, desktopSession.userId);
     deviceStore.revokeSession(deviceId);
     ownership.setDeviceOwner(deviceId, desktopSession.userId);
@@ -1688,13 +1691,14 @@ fastify.post('/devices/:deviceId/pair', async (request, reply) => {
   await dispatchDeviceCommandToDevice(deviceId, 'device.token', {
     deviceToken,
   });
-  await dispatchDeviceCommandToDevice(deviceId, 'chat.message', {
+  sendToDevice(deviceId, createServerMessage('server.chat.message', {
+    deviceId,
     message: {
       role: 'agent' as const,
       text: '🎉 Device paired successfully! You can now receive commands.',
       createdAt: Date.now(),
     },
-  });
+  }));
 
   return { ok: true, device: await getOwnedDevice(user.id, deviceId) };
 });

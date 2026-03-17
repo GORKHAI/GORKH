@@ -75,6 +75,11 @@ test('desktop app exposes sign out and clears local desktop session state', () =
   );
   assert.match(
     source,
+    /await logoutDesktopSession\([\s\S]*await clearStoredDeviceToken\(deviceId\)/,
+    'desktop sign-out should keep the local device token until the remote revoke attempt has completed'
+  );
+  assert.match(
+    source,
     /setSessionDeviceToken\(null\)/,
     'desktop sign-out should clear the in-memory desktop session token'
   );

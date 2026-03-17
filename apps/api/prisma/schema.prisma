@@ -33,6 +33,11 @@ model Device {
   platform           String
   appVersion         String?
   deviceToken        String?   @unique
+  deviceTokenHash    String?   @unique
+  deviceTokenIssuedAt DateTime?
+  deviceTokenExpiresAt DateTime?
+  deviceTokenLastUsedAt DateTime?
+  deviceTokenRevokedAt DateTime?
   pairingCode        String?
   pairingExpiresAt   DateTime?
   pairedAt           DateTime?

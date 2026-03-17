@@ -405,4 +405,74 @@ if (!redisUrl) {
 
     assert.equal(await getQueueDepth('redis', redisUrl, deviceId), 0);
   });
+
+  test('pending pairing follow-up commands do not block later run.start delivery after reconnect', async () => {
+    const deviceId = `e2e-device-${randomUUID()}`;
+    const firstCommand = await enqueueDeviceCommand(
+      'redis',
+      redisUrl,
+      deviceId,
+      'device.token',
+      {
+        deviceToken: `token-${randomUUID()}`,
+      }
+    );
+
+    await withWsGateway(async ({ wsUrl }) => {
+      const device = new MockQueueDevice(deviceId, wsUrl, {
+        onCommand: async (message, meta) => {
+          if (message.payload.commandType === 'chat.message' && meta.deliveryCount === 1) {
+            return {
+              kind: 'disconnect_before_ack',
+              ok: true,
+            };
+          }
+
+          return { kind: 'ack', ok: true };
+        },
+      });
+
+      await device.connect();
+      await device.waitForDelivery(firstCommand.commandId, 1);
+      await waitForEmptyQueue('redis', redisUrl, deviceId, 6_000);
+
+      const pendingAcrossReconnect = await enqueueDeviceCommand(
+        'redis',
+        redisUrl,
+        deviceId,
+        'chat.message',
+        {
+          message: {
+            role: 'agent',
+            text: 'paired',
+            createdAt: Date.now(),
+          },
+        }
+      );
+
+      await device.waitForDelivery(pendingAcrossReconnect.commandId, 1, 8_000);
+      await waitFor(async () => device.ws === null, 2_000);
+
+      await device.connect();
+
+      const postReconnectRun = await enqueueDeviceCommand(
+        'redis',
+        redisUrl,
+        deviceId,
+        'run.start',
+        {
+          runId: `run-${randomUUID()}`,
+          goal: 'manual smoke run',
+          mode: 'manual',
+        }
+      );
+
+      await device.waitForDelivery(pendingAcrossReconnect.commandId, 2, 8_000);
+      await device.waitForDelivery(postReconnectRun.commandId, 1, 8_000);
+      await waitForEmptyQueue('redis', redisUrl, deviceId, 8_000);
+      await device.disconnect();
+    });
+
+    assert.equal(await getQueueDepth('redis', redisUrl, deviceId), 0);
+  });
 }
