@@ -1543,11 +1543,21 @@ fn clear_last_error(state: &LocalAiRuntimeState) {
 }
 
 fn managed_runtime_dir() -> PathBuf {
-    dirs::data_local_dir()
+    let base_dir = dirs::data_local_dir()
         .or_else(dirs::data_dir)
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("AI Operator")
-        .join("local-ai")
+        .unwrap_or_else(|| PathBuf::from("."));
+    let preferred_dir = base_dir.join("GORKH");
+    let legacy_dir = base_dir.join("AI Operator");
+
+    let app_dir = if preferred_dir.exists() {
+        preferred_dir
+    } else if legacy_dir.exists() {
+        legacy_dir
+    } else {
+        preferred_dir
+    };
+
+    app_dir.join("local-ai")
 }
 
 fn expected_runtime_binary_path(managed_dir: &Path) -> Option<PathBuf> {

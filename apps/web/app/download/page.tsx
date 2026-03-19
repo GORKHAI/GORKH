@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Activity, ArrowLeft, Download as DownloadIcon, Laptop, MonitorCog, Shield } from 'lucide-react';
+import { Activity, ArrowLeft, Download as DownloadIcon, Laptop, MonitorCog } from 'lucide-react';
 import Link from 'next/link';
 import { getDesktopDownloads, type DesktopDownloadInfo } from '../../lib/auth';
 import { Badge, Button, Card, Banner } from '../../components/ui';
@@ -51,8 +51,9 @@ export default function Download() {
           Download GORKH
         </h1>
         <p className="hero__subtitle" style={{ maxWidth: 640 }}>
-          Install the signed desktop app to start with the free local assistant on your own machine. Paid
-          billing stays optional and unlocks premium features after sign-in.
+          Install the desktop app to start with the free local assistant on your own machine. This beta
+          page serves direct installer downloads for early testing, while automatic updates are configured
+          separately for stable releases.
         </p>
       </section>
 
@@ -79,16 +80,25 @@ export default function Download() {
                 {downloads.notes ? <p className="copy">{downloads.notes}</p> : null}
               </div>
               <div className="stack" style={{ gap: 10, minWidth: 180 }}>
-                <Badge>
-                  <Shield size={14} />
-                  Signed release
-                </Badge>
+                <Badge tone="warning">Mac-first beta</Badge>
+                <Badge>Direct installer downloads</Badge>
                 {downloads.publishedAt ? (
                   <p className="small-note mono">Published {new Date(downloads.publishedAt).toLocaleString()}</p>
                 ) : null}
               </div>
             </div>
           </Card>
+
+          <div className="stack" style={{ marginTop: 18, gap: 12 }}>
+            <Banner tone="warning">
+              macOS beta builds are Developer ID signed and notarized. Windows beta builds are available
+              for early testing and may show SmartScreen warnings because they are not yet Authenticode signed.
+            </Banner>
+            <Banner tone="success">
+              These are direct installer downloads for the current beta. Stable releases add signed Windows
+              installers and updater-ready release feeds.
+            </Banner>
+          </div>
 
           <section className="downloads-grid" style={{ marginTop: 24 }}>
             <Card hover>
@@ -97,7 +107,8 @@ export default function Download() {
                 Windows
               </h2>
               <p className="copy" style={{ marginTop: 10 }}>
-                Windows 10 and 11 64-bit desktop operator build.
+                Early Windows beta build for 64-bit testers. Expect SmartScreen prompts until stable
+                signing is enabled.
               </p>
               <a href={downloads.windowsUrl} style={{ marginTop: 20 }}>
                 <Button className="button--wide">
@@ -113,7 +124,7 @@ export default function Download() {
                 macOS Apple Silicon
               </h2>
               <p className="copy" style={{ marginTop: 10 }}>
-                Signed desktop app for M-series Macs.
+                Developer ID signed and notarized macOS beta for M-series Macs.
               </p>
               <a href={downloads.macArmUrl} style={{ marginTop: 20 }}>
                 <Button className="button--wide" variant="secondary">
@@ -129,7 +140,7 @@ export default function Download() {
                 macOS Intel
               </h2>
               <p className="copy" style={{ marginTop: 10 }}>
-                Signed desktop app for Intel-based Macs.
+                Developer ID signed and notarized macOS beta for Intel-based Macs.
               </p>
               <a href={downloads.macIntelUrl} style={{ marginTop: 20 }}>
                 <Button className="button--wide" variant="secondary">

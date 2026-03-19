@@ -103,6 +103,7 @@ function getOrCreateDeviceId(): string {
 
 const LEGACY_DEVICE_TOKEN_KEY = 'ai-operator-device-token';
 const LLM_SETTINGS_STORAGE_KEY = 'ai-operator-settings';
+const DESKTOP_APP_VERSION = __GORKH_DESKTOP_VERSION__;
 
 async function getStoredDeviceToken(deviceId: string): Promise<string | undefined> {
   const token = await invoke<string | null>('device_token_get', { deviceId });
@@ -739,7 +740,7 @@ function App() {
         deviceId: id,
         deviceName: `Desktop-${id.slice(0, 8)}`,
         platform,
-        appVersion: '0.0.6',
+        appVersion: DESKTOP_APP_VERSION,
         deviceToken,
         onStatusChange: (newStatus) => {
           console.log('[App] Connection status:', newStatus);

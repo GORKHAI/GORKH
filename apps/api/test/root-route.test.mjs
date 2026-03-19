@@ -23,7 +23,7 @@ test('GET / returns API service metadata and useful endpoints', async () => {
 
     const payload = response.json();
     assert.deepEqual(payload, {
-      name: 'AI Operator API',
+      name: 'GORKH API',
       status: 'ok',
       version: '1.2.3',
       environment: 'production',

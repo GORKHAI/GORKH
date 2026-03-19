@@ -12,7 +12,7 @@ function buildLink(baseUrl: string, path: string): string {
 
 export function registerRootRoute(fastify: FastifyInstance, options: RootRouteOptions): void {
   fastify.get('/', async () => ({
-    name: 'AI Operator API',
+    name: 'GORKH API',
     status: 'ok' as const,
     version: options.appVersion,
     environment: options.nodeEnv,

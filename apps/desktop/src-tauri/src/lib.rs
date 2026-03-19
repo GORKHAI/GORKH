@@ -59,6 +59,20 @@ struct InputError {
     needs_permission: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DisplayBounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+fn resolve_display_point(x_norm: f64, y_norm: f64, bounds: DisplayBounds) -> (i32, i32) {
+    let x = bounds.x + (x_norm * bounds.width as f64) as i32;
+    let y = bounds.y + (y_norm * bounds.height as f64) as i32;
+    (x, y)
+}
+
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -144,6 +158,35 @@ fn detect_accessibility_status() -> PermissionState {
     #[cfg(not(target_os = "macos"))]
     {
         PermissionState::Unknown
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_display_point, DisplayBounds};
+
+    #[test]
+    fn resolve_display_point_keeps_primary_display_coordinates_stable() {
+        let bounds = DisplayBounds {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+
+        assert_eq!(resolve_display_point(0.5, 0.5, bounds), (960, 540));
+    }
+
+    #[test]
+    fn resolve_display_point_offsets_coordinates_for_secondary_display_origin() {
+        let bounds = DisplayBounds {
+            x: 1440,
+            y: -900,
+            width: 2000,
+            height: 1000,
+        };
+
+        assert_eq!(resolve_display_point(0.25, 0.6, bounds), (1940, -300));
     }
 }
 
@@ -323,13 +366,16 @@ fn input_click(
     let mut enigo = Enigo::new();
 
     let screen = get_input_target_screen(&display_id)?;
-
-    let width = screen.display_info.width as f64;
-    let height = screen.display_info.height as f64;
-
-    // Convert normalized to absolute
-    let x = (x_norm * width) as i32;
-    let y = (y_norm * height) as i32;
+    let (x, y) = resolve_display_point(
+        x_norm,
+        y_norm,
+        DisplayBounds {
+            x: screen.display_info.x,
+            y: screen.display_info.y,
+            width: screen.display_info.width,
+            height: screen.display_info.height,
+        },
+    );
 
     let mouse_button = match button.as_str() {
         "right" => EnigoMouseButton::Right,
@@ -353,12 +399,16 @@ fn input_double_click(
     let mut enigo = Enigo::new();
 
     let screen = get_input_target_screen(&display_id)?;
-
-    let width = screen.display_info.width as f64;
-    let height = screen.display_info.height as f64;
-
-    let x = (x_norm * width) as i32;
-    let y = (y_norm * height) as i32;
+    let (x, y) = resolve_display_point(
+        x_norm,
+        y_norm,
+        DisplayBounds {
+            x: screen.display_info.x,
+            y: screen.display_info.y,
+            width: screen.display_info.width,
+            height: screen.display_info.height,
+        },
+    );
 
     let mouse_button = match button.as_str() {
         "right" => EnigoMouseButton::Right,
@@ -508,6 +558,8 @@ impl Default for TrayMenuState {
 
 const DESKTOP_AUTH_CALLBACK_PATH: &str = "/desktop-auth/callback";
 const DESKTOP_AUTH_MAX_WAIT_MS: u64 = 125_000;
+const KEYRING_SERVICE_NAME: &str = "gorkh";
+const LEGACY_KEYRING_SERVICE_NAME: &str = "ai-operator";
 
 #[derive(Default)]
 struct DesktopAuthRuntimeState {
@@ -542,9 +594,75 @@ fn device_token_account(device_id: &str) -> String {
     format!("device_token::{}", device_id)
 }
 
-fn keyring_entry(account: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new("ai-operator", account)
+fn keyring_entry_for_service(service: &str, account: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(service, account)
         .map_err(|e| format!("Failed to access secure storage: {}", e))
+}
+
+fn keyring_entry(account: &str) -> Result<keyring::Entry, String> {
+    keyring_entry_for_service(KEYRING_SERVICE_NAME, account)
+}
+
+fn legacy_keyring_entry(account: &str) -> Result<keyring::Entry, String> {
+    keyring_entry_for_service(LEGACY_KEYRING_SERVICE_NAME, account)
+}
+
+fn keyring_set_secret(account: &str, value: &str) -> Result<(), String> {
+    let entry = keyring_entry(account)?;
+    entry
+        .set_password(value)
+        .map_err(|e| format!("Failed to store secure value: {}", e))?;
+
+    if let Ok(legacy) = legacy_keyring_entry(account) {
+        let _ = legacy.delete_credential();
+    }
+
+    Ok(())
+}
+
+fn keyring_get_secret(account: &str) -> Option<String> {
+    let primary = keyring_entry(account).ok();
+    if let Some(entry) = primary.as_ref() {
+        if let Ok(value) = entry.get_password() {
+            return Some(value);
+        }
+    }
+
+    let legacy_value = legacy_keyring_entry(account)
+        .ok()
+        .and_then(|entry| entry.get_password().ok())?;
+
+    if let Some(entry) = primary {
+        let _ = entry.set_password(&legacy_value);
+    }
+    if let Ok(legacy) = legacy_keyring_entry(account) {
+        let _ = legacy.delete_credential();
+    }
+
+    Some(legacy_value)
+}
+
+fn keyring_delete_secret(account: &str) -> Result<(), String> {
+    let primary_result = keyring_entry(account)
+        .and_then(|entry| entry.delete_credential().map_err(|e| e.to_string()));
+    let legacy_result = legacy_keyring_entry(account)
+        .and_then(|entry| entry.delete_credential().map_err(|e| e.to_string()));
+
+    if primary_result.is_ok() || legacy_result.is_ok() {
+        return Ok(());
+    }
+
+    let primary_error = primary_result.err();
+    let legacy_error = legacy_result.err();
+    Err(match (primary_error, legacy_error) {
+        (Some(primary), Some(legacy)) => format!(
+            "Failed to clear secure value: {} (legacy fallback also failed: {})",
+            primary, legacy
+        ),
+        (Some(primary), None) => format!("Failed to clear secure value: {}", primary),
+        (None, Some(legacy)) => format!("Failed to clear secure value: {}", legacy),
+        (None, None) => "Failed to clear secure value".to_string(),
+    })
 }
 
 fn is_local_dev_host(host: Option<&str>) -> bool {
@@ -1344,16 +1462,10 @@ fn autostart_set_enabled(enabled: bool) -> KeyResult {
 
 #[tauri::command]
 fn device_token_set(device_id: String, token: String) -> KeyResult {
-    match keyring_entry(&device_token_account(&device_id)) {
-        Ok(entry) => match entry.set_password(&token) {
-            Ok(()) => KeyResult {
-                ok: true,
-                error: None,
-            },
-            Err(e) => KeyResult {
-                ok: false,
-                error: Some(format!("Failed to store device token: {}", e)),
-            },
+    match keyring_set_secret(&device_token_account(&device_id), &token) {
+        Ok(()) => KeyResult {
+            ok: true,
+            error: None,
         },
         Err(error) => KeyResult {
             ok: false,
@@ -1364,23 +1476,15 @@ fn device_token_set(device_id: String, token: String) -> KeyResult {
 
 #[tauri::command]
 fn device_token_get(device_id: String) -> Option<String> {
-    keyring_entry(&device_token_account(&device_id))
-        .ok()
-        .and_then(|entry| entry.get_password().ok())
+    keyring_get_secret(&device_token_account(&device_id))
 }
 
 #[tauri::command]
 fn device_token_clear(device_id: String) -> KeyResult {
-    match keyring_entry(&device_token_account(&device_id)) {
-        Ok(entry) => match entry.delete_credential() {
-            Ok(()) => KeyResult {
-                ok: true,
-                error: None,
-            },
-            Err(e) => KeyResult {
-                ok: false,
-                error: Some(format!("Failed to clear device token: {}", e)),
-            },
+    match keyring_delete_secret(&device_token_account(&device_id)) {
+        Ok(()) => KeyResult {
+            ok: true,
+            error: None,
         },
         Err(error) => KeyResult {
             ok: false,
@@ -1391,16 +1495,10 @@ fn device_token_clear(device_id: String) -> KeyResult {
 
 #[tauri::command]
 fn set_llm_api_key(provider: String, key: String) -> KeyResult {
-    match keyring_entry(&format!("llm_api_key:{}", provider)) {
-        Ok(entry) => match entry.set_password(&key) {
-            Ok(()) => KeyResult {
-                ok: true,
-                error: None,
-            },
-            Err(e) => KeyResult {
-                ok: false,
-                error: Some(format!("Failed to store key: {}", e)),
-            },
+    match keyring_set_secret(&format!("llm_api_key:{}", provider), &key) {
+        Ok(()) => KeyResult {
+            ok: true,
+            error: None,
         },
         Err(error) => KeyResult {
             ok: false,
@@ -1411,23 +1509,15 @@ fn set_llm_api_key(provider: String, key: String) -> KeyResult {
 
 #[tauri::command]
 fn has_llm_api_key(provider: String) -> bool {
-    keyring_entry(&format!("llm_api_key:{}", provider))
-        .map(|entry| entry.get_password().is_ok())
-        .unwrap_or(false)
+    keyring_get_secret(&format!("llm_api_key:{}", provider)).is_some()
 }
 
 #[tauri::command]
 fn clear_llm_api_key(provider: String) -> KeyResult {
-    match keyring_entry(&format!("llm_api_key:{}", provider)) {
-        Ok(entry) => match entry.delete_credential() {
-            Ok(()) => KeyResult {
-                ok: true,
-                error: None,
-            },
-            Err(e) => KeyResult {
-                ok: false,
-                error: Some(format!("Failed to clear key: {}", e)),
-            },
+    match keyring_delete_secret(&format!("llm_api_key:{}", provider)) {
+        Ok(()) => KeyResult {
+            ok: true,
+            error: None,
         },
         Err(error) => KeyResult {
             ok: false,
@@ -1471,22 +1561,14 @@ struct ProposalError {
 async fn llm_propose_next_action(params: ProposalRequest) -> Result<ProposalResult, ProposalError> {
     let api_key = match params.provider.as_str() {
         "native_qwen_ollama" | "openai_compat" => {
-            keyring_entry(&format!("llm_api_key:{}", params.provider))
-                .ok()
-                .and_then(|entry| entry.get_password().ok())
-                .unwrap_or_default()
+            keyring_get_secret(&format!("llm_api_key:{}", params.provider)).unwrap_or_default()
         }
         "openai" | "claude" | "deepseek" | "minimax" | "kimi" => {
-            let entry =
-                keyring_entry(&format!("llm_api_key:{}", params.provider)).map_err(|e| {
-                    ProposalError {
-                        code: "KEYRING_ERROR".to_string(),
-                        message: e,
-                    }
-                })?;
-            entry.get_password().map_err(|e| ProposalError {
-                code: "NO_API_KEY".to_string(),
-                message: format!("No API key configured: {}", e),
+            keyring_get_secret(&format!("llm_api_key:{}", params.provider)).ok_or_else(|| {
+                ProposalError {
+                    code: "NO_API_KEY".to_string(),
+                    message: "No API key configured".to_string(),
+                }
             })?
         }
         _ => String::new(),
@@ -1494,8 +1576,7 @@ async fn llm_propose_next_action(params: ProposalRequest) -> Result<ProposalResu
 
     // Get workspace configuration status
     let workspace_configured = params.workspace_configured.or_else(|| {
-        let guard = workspace::WORKSPACE_ROOT.lock().unwrap();
-        Some(guard.is_some())
+        Some(workspace::current_workspace_root().is_some())
     });
 
     let proposal_params = llm::ProposalParams {
@@ -1728,8 +1809,7 @@ async fn is_agent_provider_available(provider_type: &str) -> Result<bool, String
             Ok(provider.is_available().await)
         }
         ProviderType::OpenAi | ProviderType::Claude => {
-            let key_entry = keyring_entry(&format!("llm_api_key:{}", provider_type))?;
-            Ok(key_entry.get_password().is_ok())
+            Ok(keyring_get_secret(&format!("llm_api_key:{}", provider_type)).is_some())
         }
     }
 }
@@ -1771,18 +1851,13 @@ async fn test_provider(provider_type: String) -> Result<bool, String> {
 /// Set provider API key (stored in keychain)
 #[tauri::command]
 fn set_provider_api_key(provider_type: String, api_key: String) -> Result<(), String> {
-    let entry = keyring_entry(&format!("llm_api_key:{}", provider_type))?;
-    entry
-        .set_password(&api_key)
-        .map_err(|e| format!("Failed to store API key: {}", e))
+    keyring_set_secret(&format!("llm_api_key:{}", provider_type), &api_key)
 }
 
 /// Check if provider API key exists
 #[tauri::command]
 fn has_provider_api_key(provider_type: String) -> bool {
-    keyring_entry(&format!("llm_api_key:{}", provider_type))
-        .map(|entry| entry.get_password().is_ok())
-        .unwrap_or(false)
+    keyring_get_secret(&format!("llm_api_key:{}", provider_type)).is_some()
 }
 
 /// Start a new agent task
@@ -1802,9 +1877,7 @@ async fn start_agent_task(
     let key_provider = credential_provider.unwrap_or_else(|| provider_name.clone());
     let provider_api_key = match primary_provider {
         ProviderType::OpenAi | ProviderType::Claude => {
-            keyring_entry(&format!("llm_api_key:{}", key_provider))?
-                .get_password()
-                .ok()
+            keyring_get_secret(&format!("llm_api_key:{}", key_provider))
         }
         _ => None,
     };

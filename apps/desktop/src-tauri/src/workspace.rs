@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 
-// Workspace state - stored in memory, reset on app restart
+// Workspace state cache. The authoritative source is also persisted to disk.
 pub static WORKSPACE_ROOT: Mutex<Option<PathBuf>> = Mutex::new(None);
+const WORKSPACE_STATE_FILE_NAME: &str = "workspace.json";
 
 // ============================================================================
 // Workspace Configuration
@@ -24,74 +26,187 @@ pub struct ConfigureResult {
     state: WorkspaceState,
 }
 
-#[tauri::command]
-pub fn workspace_configure(path: String) -> ConfigureResult {
-    let path_buf = PathBuf::from(&path);
+#[derive(Deserialize, Serialize)]
+struct PersistedWorkspaceState {
+    root_path: String,
+}
 
-    // Validate path exists and is a directory
-    if !path_buf.exists() {
-        return ConfigureResult {
-            ok: false,
-            error: Some(format!("Path does not exist: {}", path)),
-            state: WorkspaceState {
-                configured: false,
-                root_name: None,
-            },
-        };
+#[cfg(test)]
+mod tests {
+    use super::{read_workspace_root_from_file, write_workspace_root_to_file};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn temp_state_file(name: &str) -> PathBuf {
+        let unique = format!(
+            "gorkh-workspace-test-{}-{}",
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        std::env::temp_dir().join(unique).join("workspace.json")
     }
 
-    if !path_buf.is_dir() {
-        return ConfigureResult {
-            ok: false,
-            error: Some(format!("Path is not a directory: {}", path)),
-            state: WorkspaceState {
-                configured: false,
-                root_name: None,
-            },
-        };
+    #[test]
+    fn workspace_state_round_trips_through_the_persisted_state_file() {
+        let state_file = temp_state_file("roundtrip");
+        let workspace_root = std::env::temp_dir().join("gorkh-workspace-root");
+
+        fs::create_dir_all(&workspace_root).unwrap();
+        write_workspace_root_to_file(&state_file, &workspace_root).unwrap();
+
+        assert_eq!(
+            read_workspace_root_from_file(&state_file),
+            Some(workspace_root.clone())
+        );
+
+        let _ = fs::remove_file(&state_file);
+        let _ = fs::remove_dir_all(workspace_root);
+        let _ = fs::remove_dir_all(state_file.parent().unwrap());
     }
 
-    // Get the root name (last component of path)
-    let root_name = path_buf
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|s| s.to_string());
+    #[test]
+    fn workspace_state_reader_ignores_missing_or_invalid_state_files() {
+        let missing_state_file = temp_state_file("missing");
+        assert_eq!(read_workspace_root_from_file(&missing_state_file), None);
 
-    // Store the workspace root
-    let mut guard = WORKSPACE_ROOT.lock().unwrap();
-    *guard = Some(path_buf);
+        fs::create_dir_all(missing_state_file.parent().unwrap()).unwrap();
+        fs::write(&missing_state_file, "{not valid json").unwrap();
+        assert_eq!(read_workspace_root_from_file(&missing_state_file), None);
 
-    ConfigureResult {
-        ok: true,
-        error: None,
-        state: WorkspaceState {
-            configured: true,
-            root_name,
-        },
+        let _ = fs::remove_file(&missing_state_file);
+        let _ = fs::remove_dir_all(missing_state_file.parent().unwrap());
     }
 }
 
-#[tauri::command]
-pub fn workspace_get_state() -> WorkspaceState {
-    let guard = WORKSPACE_ROOT.lock().unwrap();
+fn workspace_root_name(path: &Path) -> Option<String> {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
+}
 
-    match guard.as_ref() {
-        Some(path) => {
-            let root_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string());
-
-            WorkspaceState {
-                configured: true,
-                root_name,
-            }
-        }
+fn workspace_state_from_root(root: Option<&PathBuf>) -> WorkspaceState {
+    match root {
+        Some(path) => WorkspaceState {
+            configured: true,
+            root_name: workspace_root_name(path),
+        },
         None => WorkspaceState {
             configured: false,
             root_name: None,
         },
     }
+}
+
+fn validate_workspace_directory(path_buf: &Path) -> Result<(), String> {
+    if !path_buf.exists() {
+        return Err(format!("Path does not exist: {}", path_buf.display()));
+    }
+
+    if !path_buf.is_dir() {
+        return Err(format!("Path is not a directory: {}", path_buf.display()));
+    }
+
+    Ok(())
+}
+
+fn workspace_state_file_path() -> PathBuf {
+    dirs::data_local_dir()
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("GORKH")
+        .join(WORKSPACE_STATE_FILE_NAME)
+}
+
+fn write_workspace_root_to_file(state_file: &Path, root: &Path) -> Result<(), String> {
+    let parent = state_file
+        .parent()
+        .ok_or_else(|| "Workspace state path has no parent directory".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create workspace state directory: {}", e))?;
+
+    let payload = PersistedWorkspaceState {
+        root_path: root.to_string_lossy().to_string(),
+    };
+    let encoded =
+        serde_json::to_string(&payload).map_err(|e| format!("Failed to encode workspace state: {}", e))?;
+
+    fs::write(state_file, encoded).map_err(|e| format!("Failed to persist workspace state: {}", e))
+}
+
+fn read_workspace_root_from_file(state_file: &Path) -> Option<PathBuf> {
+    let encoded = fs::read_to_string(state_file).ok()?;
+    let persisted: PersistedWorkspaceState = serde_json::from_str(&encoded).ok()?;
+    let root = PathBuf::from(persisted.root_path);
+
+    if validate_workspace_directory(&root).is_ok() {
+        Some(root)
+    } else {
+        None
+    }
+}
+
+fn remove_workspace_state_file() -> Result<(), String> {
+    match fs::remove_file(&workspace_state_file_path()) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Failed to remove persisted workspace state: {}", e)),
+    }
+}
+
+pub(crate) fn current_workspace_root() -> Option<PathBuf> {
+    let mut guard = WORKSPACE_ROOT.lock().unwrap();
+
+    if let Some(root) = guard.as_ref() {
+        return Some(root.clone());
+    }
+
+    let state_file = workspace_state_file_path();
+    let persisted = read_workspace_root_from_file(&state_file);
+    if persisted.is_none() {
+        let _ = fs::remove_file(&state_file);
+    }
+
+    *guard = persisted.clone();
+    persisted
+}
+
+#[tauri::command]
+pub fn workspace_configure(path: String) -> ConfigureResult {
+    let path_buf = PathBuf::from(&path);
+
+    if let Err(error) = validate_workspace_directory(&path_buf) {
+        return ConfigureResult {
+            ok: false,
+            error: Some(error),
+            state: workspace_state_from_root(None),
+        };
+    }
+
+    if let Err(error) = write_workspace_root_to_file(&workspace_state_file_path(), &path_buf) {
+        return ConfigureResult {
+            ok: false,
+            error: Some(error),
+            state: workspace_state_from_root(None),
+        };
+    }
+
+    let mut guard = WORKSPACE_ROOT.lock().unwrap();
+    *guard = Some(path_buf.clone());
+
+    ConfigureResult {
+        ok: true,
+        error: None,
+        state: workspace_state_from_root(Some(&path_buf)),
+    }
+}
+
+#[tauri::command]
+pub fn workspace_get_state() -> WorkspaceState {
+    let root = current_workspace_root();
+    workspace_state_from_root(root.as_ref())
 }
 
 #[tauri::command]
@@ -114,11 +229,9 @@ pub async fn workspace_select_directory(app: tauri::AppHandle) -> Result<Option<
 pub fn workspace_clear() -> WorkspaceState {
     let mut guard = WORKSPACE_ROOT.lock().unwrap();
     *guard = None;
+    let _ = remove_workspace_state_file();
 
-    WorkspaceState {
-        configured: false,
-        root_name: None,
-    }
+    workspace_state_from_root(None)
 }
 
 // ============================================================================
@@ -200,9 +313,7 @@ const MAX_TRUNCATED_OUTPUT: usize = 10_000; // 10KB for preview
 
 /// Validate and resolve a relative path within the workspace
 fn resolve_workspace_path(rel_path: &str) -> Result<PathBuf, ToolError> {
-    let guard = WORKSPACE_ROOT.lock().unwrap();
-
-    let root = guard.as_ref().ok_or(ToolError {
+    let root = current_workspace_root().ok_or(ToolError {
         code: "WORKSPACE_NOT_CONFIGURED".to_string(),
         message: "Workspace not configured".to_string(),
     })?;
@@ -265,14 +376,12 @@ fn resolve_workspace_path(rel_path: &str) -> Result<PathBuf, ToolError> {
 
 #[allow(dead_code)]
 fn make_relative_path(path: &Path) -> Result<String, ToolError> {
-    let guard = WORKSPACE_ROOT.lock().unwrap();
-
-    let root = guard.as_ref().ok_or(ToolError {
+    let root = current_workspace_root().ok_or(ToolError {
         code: "WORKSPACE_NOT_CONFIGURED".to_string(),
         message: "Workspace not configured".to_string(),
     })?;
 
-    path.strip_prefix(root)
+    path.strip_prefix(&root)
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|_| ToolError {
             code: "PATH_NOT_IN_WORKSPACE".to_string(),
@@ -595,9 +704,7 @@ fn execute_terminal_exec(cmd: &str, args: &[String], cwd: Option<&str>) -> ToolR
             }
         },
         None => {
-            // Use workspace root as default
-            let guard = WORKSPACE_ROOT.lock().unwrap();
-            guard.clone()
+            current_workspace_root()
         }
     };
 

@@ -7,6 +7,7 @@ test('desktop-visible branding uses GORKH and includes the premium SVG wordmark'
   const chatOverlaySource = readFileSync('apps/desktop/src/components/ChatOverlay.tsx', 'utf8');
   const brandWordmarkSource = readFileSync('apps/desktop/src/components/BrandWordmark.tsx', 'utf8');
   const permissionsSource = readFileSync('apps/desktop/src/lib/permissions.ts', 'utf8');
+  const indexHtmlSource = readFileSync('apps/desktop/index.html', 'utf8');
   const tauriConfig = readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8');
   const svgPath = 'apps/desktop/src/assets/gorkh-wordmark.svg';
 
@@ -18,6 +19,7 @@ test('desktop-visible branding uses GORKH and includes the premium SVG wordmark'
   assert.match(chatOverlaySource, /BrandWordmark/, 'assistant chat shell should render the shared GORKH wordmark');
   assert.match(brandWordmarkSource, /\bGORKH\b/, 'shared wordmark component should expose the GORKH brand');
   assert.match(permissionsSource, /\bGORKH\b/, 'desktop permission guidance should use the GORKH brand');
+  assert.match(indexHtmlSource, /<title>\s*GORKH Desktop\s*<\/title>/, 'desktop HTML title should use the GORKH brand');
   assert.match(tauriConfig, /"productName":\s*"GORKH"/, 'desktop product name should be GORKH');
   assert.match(tauriConfig, /"title":\s*"GORKH"/, 'desktop window title should be GORKH');
 
@@ -28,4 +30,5 @@ test('desktop-visible branding uses GORKH and includes the premium SVG wordmark'
   assert.doesNotMatch(appSource, /AI Operator Desktop|AI Operator/, 'retail app shell should not show the old brand');
   assert.doesNotMatch(chatOverlaySource, /AI Operator Desktop|AI Operator/, 'chat shell should not show the old brand');
   assert.doesNotMatch(permissionsSource, /AI Operator Desktop|AI Operator/, 'permission guidance should not show the old brand');
+  assert.doesNotMatch(indexHtmlSource, /AI Operator Desktop|AI Operator/, 'desktop HTML title should not show the old brand');
 });

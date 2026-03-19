@@ -9,7 +9,7 @@ test('desktop download page treats desktop acquisition as part of the free local
 
   assert.match(
     source,
-    /Download GORKH|Download .*desktop app|Install the signed desktop app/i,
+    /Download GORKH|Download .*desktop app|Install the desktop app/i,
     'download page should present desktop acquisition as a normal product surface'
   );
 

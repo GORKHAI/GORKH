@@ -35,6 +35,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Validate checked-in version sync
+        run: node scripts/version-check.mjs
+
       - name: Resolve release context
         id: context
         shell: bash
@@ -44,6 +47,12 @@ jobs:
           RAW_REF="${GITHUB_REF_NAME:-}"
           EVENT_NAME="${GITHUB_EVENT_NAME}"
           INPUT_CHANNEL="${{ github.event.inputs.channel }}"
+          CHECKED_IN_VERSION="$(tr -d '\n' < VERSION)"
+
+          if [[ -z "$CHECKED_IN_VERSION" ]]; then
+            echo "::error::VERSION file is empty."
+            exit 1
+          fi
 
           if [[ "$EVENT_NAME" == "push" ]]; then
             if [[ "$RAW_REF" =~ ^v.+-beta\.[0-9]+$ ]]; then
@@ -54,10 +63,15 @@ jobs:
               echo "::error::Unsupported release tag '$RAW_REF'. Use vX.Y.Z for stable or vX.Y.Z-beta.N for beta."
               exit 1
             fi
-            VERSION="${RAW_REF#v}"
+            TAG_VERSION="${RAW_REF#v}"
+            if [[ "$TAG_VERSION" != "$CHECKED_IN_VERSION" ]]; then
+              echo "::error::Pushed tag '$RAW_REF' does not match checked-in VERSION '$CHECKED_IN_VERSION'. Update VERSION and synced package metadata before tagging."
+              exit 1
+            fi
+            VERSION="$CHECKED_IN_VERSION"
           else
             CHANNEL="${INPUT_CHANNEL:-beta}"
-            VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+            VERSION="$CHECKED_IN_VERSION"
           fi
 
           if [[ "$CHANNEL" == "stable" && "$VERSION" == *"-beta."* ]]; then
@@ -75,13 +89,13 @@ jobs:
             UPDATER_ENABLED="true"
             RELEASE_LABEL="SIGNED STABLE"
             TRUST_STATUS="Windows Authenticode signed; macOS Developer ID signed and notarized"
-            RELEASE_NAME="AI Operator Desktop v${VERSION}"
+            RELEASE_NAME="GORKH Desktop v${VERSION}"
           else
             PRERELEASE="true"
             UPDATER_ENABLED="false"
             RELEASE_LABEL="MACOS-SIGNED BETA"
             TRUST_STATUS="macOS Developer ID signed and notarized; Windows beta artifacts unsigned"
-            RELEASE_NAME="AI Operator Desktop v${VERSION} (beta)"
+            RELEASE_NAME="GORKH Desktop v${VERSION} (beta)"
           fi
 
           printf 'channel=%s\n' "$CHANNEL" >> "$GITHUB_OUTPUT"
