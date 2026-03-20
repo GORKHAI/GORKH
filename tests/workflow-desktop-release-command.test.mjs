@@ -159,3 +159,41 @@ test('desktop release workflow keeps beta macOS artifacts signed and notarized w
     'beta release notes should continue to state that updater promotion stays disabled'
   );
 });
+
+test('desktop release workflow verifies DMG integrity and captures notarization diagnostics', () => {
+  const source = readFileSync(workflowPath, 'utf8');
+
+  assert.match(
+    source,
+    /hdiutil verify "\$MACOS_ASSET_PATH"/,
+    'macOS release workflow should verify the DMG before submitting it for notarization'
+  );
+
+  assert.match(
+    source,
+    /NOTARY_SUBMISSION_ID=/,
+    'macOS release workflow should expose the notary submission ID so stuck notarization runs can be debugged'
+  );
+
+  assert.match(
+    source,
+    /xcrun notarytool log "\$NOTARY_SUBMISSION_ID"/,
+    'macOS release workflow should download the notarization log for diagnostics'
+  );
+});
+
+test('desktop release workflow stores the macOS asset path as an absolute workspace path before signer exec', () => {
+  const source = readFileSync(workflowPath, 'utf8');
+
+  assert.match(
+    source,
+    /TARGET_NAME="\$GITHUB_WORKSPACE\/release-assets\/ai-operator-desktop_\$\{RELEASE_VERSION\}_macos_\$\{RELEASE_ARCH\}\.dmg"/,
+    'macOS asset normalization should store the DMG under an absolute workspace path so later package-scoped commands resolve it correctly'
+  );
+
+  assert.match(
+    source,
+    /pnpm --filter @ai-operator\/desktop exec tauri signer sign "\$MACOS_ASSET_PATH"/,
+    'stable updater signing still runs through pnpm exec in the desktop package directory, so MACOS_ASSET_PATH must already be absolute'
+  );
+});

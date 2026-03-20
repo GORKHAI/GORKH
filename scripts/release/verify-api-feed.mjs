@@ -279,7 +279,7 @@ async function checkDownloads() {
     throw new Error('Downloads response missing version field');
   }
   
-  const requiredFields = ['windowsUrl', 'macIntelUrl', 'macArmUrl'];
+  const requiredFields = ['macIntelUrl', 'macArmUrl'];
   for (const field of requiredFields) {
     if (!data[field]) {
       throw new Error(`Downloads response missing ${field}`);
@@ -287,17 +287,24 @@ async function checkDownloads() {
   }
 
   const resolvedDownloads = {
-    windowsUrl: await assertAssetReachable(data.windowsUrl, 'Windows desktop download'),
     macIntelUrl: await assertAssetReachable(data.macIntelUrl, 'Intel macOS desktop download'),
     macArmUrl: await assertAssetReachable(data.macArmUrl, 'Apple Silicon macOS desktop download'),
   };
+
+  if (data.windowsUrl) {
+    resolvedDownloads.windowsUrl = await assertAssetReachable(data.windowsUrl, 'Windows desktop download');
+  }
 
   if (SKIP_SUBSCRIPTION_CHECK) {
     log('    ℹ️ Subscription-specific checks skipped; desktop acquisition remains public');
   }
   
   log(`    ✅ Downloads valid (version: ${data.version})`);
-  log(`       Windows: ${resolvedDownloads.windowsUrl.substring(0, 60)}...`);
+  if (resolvedDownloads.windowsUrl) {
+    log(`       Windows: ${resolvedDownloads.windowsUrl.substring(0, 60)}...`);
+  } else {
+    log('       Windows: not published for this release lane');
+  }
   CHECKS.downloads = true;
 }
 

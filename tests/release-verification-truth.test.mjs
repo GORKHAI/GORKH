@@ -7,6 +7,8 @@ const finalSmokeSource = readFileSync('scripts/final-smoke.sh', 'utf8');
 const httpSmokeSource = readFileSync('scripts/smoke/httpSmoke.sh', 'utf8');
 const wsSmokeSource = readFileSync('scripts/smoke/wsSmoke.sh', 'utf8');
 const dbCheckSource = readFileSync('scripts/smoke/dbCheck.js', 'utf8');
+const githubVerifySource = readFileSync('scripts/release/verify-github-release.mjs', 'utf8');
+const apiVerifySource = readFileSync('scripts/release/verify-api-feed.mjs', 'utf8');
 const darwinArmFeed = readFileSync('apps/api/updates/desktop-darwin-aarch64.json', 'utf8');
 const darwinIntelFeed = readFileSync('apps/api/updates/desktop-darwin-x86_64.json', 'utf8');
 const windowsFeed = readFileSync('apps/api/updates/desktop-windows-x86_64.json', 'utf8');
@@ -96,4 +98,29 @@ test('checked-in update feed fixtures do not use placeholder signatures', () => 
   for (const source of [darwinArmFeed, darwinIntelFeed, windowsFeed]) {
     assert.doesNotMatch(source, /replace-with-tauri-signature/);
   }
+});
+
+test('release verification truth allows stable GitHub releases to be mac-only', () => {
+  const stableAssetsBlock = githubVerifySource.match(/const REQUIRED_ASSETS_STABLE = \[(?<body>[\s\S]*?)\n\];/);
+  assert.ok(stableAssetsBlock?.groups?.body, 'stable asset verifier block should be present');
+
+  assert.doesNotMatch(
+    stableAssetsBlock.groups.body,
+    /windows_x86_64\.msi/,
+    'stable GitHub release verification should not require Windows assets when the stable lane is mac-only'
+  );
+
+  assert.match(
+    stableAssetsBlock.groups.body,
+    /macos_aarch64\.dmg[\s\S]*macos_x86_64\.dmg/s,
+    'stable GitHub release verification should still require both notarized macOS artifacts and their signatures'
+  );
+});
+
+test('API release verification tolerates an omitted Windows download URL for mac-only stable releases', () => {
+  assert.match(
+    apiVerifySource,
+    /if \(data\.windowsUrl\) \{/,
+    'API feed verification should only assert Windows download reachability when the API actually publishes a Windows URL'
+  );
 });

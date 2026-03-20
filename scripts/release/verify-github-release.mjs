@@ -23,8 +23,6 @@ const RELEASE_TAG = env.RELEASE_TAG || 'latest';
 const CHANNEL = env.CHANNEL || 'stable';
 
 const REQUIRED_ASSETS_STABLE = [
-  { name: 'ai-operator-desktop_{VERSION}_windows_x86_64.msi', type: 'installer' },
-  { name: 'ai-operator-desktop_{VERSION}_windows_x86_64.msi.sig', type: 'signature' },
   { name: 'ai-operator-desktop_{VERSION}_macos_aarch64.dmg', type: 'installer' },
   { name: 'ai-operator-desktop_{VERSION}_macos_aarch64.dmg.sig', type: 'signature' },
   { name: 'ai-operator-desktop_{VERSION}_macos_x86_64.dmg', type: 'installer' },

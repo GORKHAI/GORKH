@@ -25,7 +25,7 @@ export interface BillingStatus {
 
 export interface DesktopDownloadInfo {
   version: string;
-  windowsUrl: string;
+  windowsUrl: string | null;
   macIntelUrl: string;
   macArmUrl: string;
   notes?: string;

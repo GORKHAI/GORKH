@@ -25,10 +25,16 @@ test('desktop download page distinguishes beta trust between macOS and Windows i
     'download page should clearly state the Windows beta trust posture',
   );
 
-  assert.match(
+  assert.doesNotMatch(
     source,
     /Stable releases add signed Windows\s+installers|signed Windows\s+installers[\s\S]*stable/i,
-    'download page should set truthful expectations for stable release trust',
+    'download page must not promise stable Windows installers while the stable lane is macOS-only',
+  );
+
+  assert.match(
+    source,
+    /Stable releases currently publish macOS artifacts only|macOS-only stable release/i,
+    'download page should describe the current stable lane truthfully',
   );
 });
 
@@ -37,13 +43,17 @@ test('desktop download page scopes direct downloads separately from updater-feed
 
   assert.match(
     source,
-    /direct installer download|direct beta download/i,
-    'download page should describe the current website path as a direct download surface',
+    /Automatic updates are configured\s+separately|updater feeds are configured\s+separately|stable auto-update/i,
+    'download page should avoid implying the current direct-download path is the full stable updater truth',
   );
+});
+
+test('desktop download page only renders the Windows download action when a Windows URL exists', () => {
+  const source = readFileSync(downloadPagePath, 'utf8');
 
   assert.match(
     source,
-    /Automatic updates are configured\s+separately|updater feeds are configured\s+separately|stable auto-update/i,
-    'download page should avoid implying the current direct-download path is the full stable updater truth',
+    /downloads\.windowsUrl\s*\?/,
+    'download page should handle mac-only stable releases without rendering a broken Windows download button'
   );
 });

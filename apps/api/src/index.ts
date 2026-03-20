@@ -584,7 +584,7 @@ async function getDesktopUpdateManifest(platform: string, arch: string, currentV
   const resolved = await resolveDesktopAssets(releaseResult.release);
   const target = `${platform}-${arch}`;
   const platformMap: Record<string, { url: string; signature: string } | undefined> = {
-    'windows-x86_64': resolved.windows,
+    'windows-x86_64': resolved.windows ?? undefined,
     'macos-x86_64': resolved.macIntel,
     'macos-aarch64': resolved.macArm,
     'darwin-x86_64': resolved.macIntel,

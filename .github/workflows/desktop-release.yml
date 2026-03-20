@@ -534,8 +534,8 @@ jobs:
             exit 1
           fi
 
-          mkdir -p release-assets
-          TARGET_NAME="release-assets/ai-operator-desktop_${RELEASE_VERSION}_macos_${RELEASE_ARCH}.dmg"
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          TARGET_NAME="$GITHUB_WORKSPACE/release-assets/ai-operator-desktop_${RELEASE_VERSION}_macos_${RELEASE_ARCH}.dmg"
           cp "$DMG_SOURCE" "$TARGET_NAME"
           printf 'MACOS_ASSET_PATH=%s\n' "$TARGET_NAME" >> "$GITHUB_ENV"
 
@@ -551,12 +551,62 @@ jobs:
         run: |
           set -euo pipefail
 
+          hdiutil verify "$MACOS_ASSET_PATH"
+
+          NOTARY_SUBMIT_JSON="$RUNNER_TEMP/notary-submit.json"
+          NOTARY_INFO_JSON="$RUNNER_TEMP/notary-info.json"
+          NOTARY_LOG_JSON="$RUNNER_TEMP/notary-log.json"
+
           if [[ -n "${APPLE_API_KEY_ID:-}" && -n "${APPLE_API_ISSUER_ID:-}" && -n "${APPLE_API_KEY_P8_BASE64:-}" ]]; then
             API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
             printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 -D > "$API_KEY_PATH"
-            xcrun notarytool submit "$MACOS_ASSET_PATH" --wait --key "$API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID"
+            xcrun notarytool submit "$MACOS_ASSET_PATH" --key "$API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --output-format json > "$NOTARY_SUBMIT_JSON"
           else
-            xcrun notarytool submit "$MACOS_ASSET_PATH" --wait --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD"
+            xcrun notarytool submit "$MACOS_ASSET_PATH" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --output-format json > "$NOTARY_SUBMIT_JSON"
+          fi
+
+          NOTARY_SUBMISSION_ID="$(node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const id=payload.id || payload.submissionId || payload['submission-id']; if (!id) { process.exit(1); } process.stdout.write(String(id));" "$NOTARY_SUBMIT_JSON")"
+          if [[ -z "$NOTARY_SUBMISSION_ID" ]]; then
+            echo "::error::Failed to capture the notarization submission ID."
+            cat "$NOTARY_SUBMIT_JSON"
+            exit 1
+          fi
+
+          echo "NOTARY_SUBMISSION_ID=$NOTARY_SUBMISSION_ID"
+
+          NOTARY_STATUS="In Progress"
+          for attempt in {1..120}; do
+            if [[ -n "${APPLE_API_KEY_ID:-}" && -n "${APPLE_API_ISSUER_ID:-}" && -n "${APPLE_API_KEY_P8_BASE64:-}" ]]; then
+              xcrun notarytool info "$NOTARY_SUBMISSION_ID" --key "$API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --output-format json > "$NOTARY_INFO_JSON"
+            else
+              xcrun notarytool info "$NOTARY_SUBMISSION_ID" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --output-format json > "$NOTARY_INFO_JSON"
+            fi
+
+            NOTARY_STATUS="$(node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(payload.status || payload.statusSummary || 'unknown'));" "$NOTARY_INFO_JSON")"
+            echo "Current status [$attempt/120]: $NOTARY_STATUS"
+
+            if [[ "$NOTARY_STATUS" == "Accepted" ]]; then
+              break
+            fi
+
+            if [[ "$NOTARY_STATUS" == "Invalid" || "$NOTARY_STATUS" == "Rejected" ]]; then
+              break
+            fi
+
+            sleep 30
+          done
+
+          if [[ -n "${APPLE_API_KEY_ID:-}" && -n "${APPLE_API_ISSUER_ID:-}" && -n "${APPLE_API_KEY_P8_BASE64:-}" ]]; then
+            xcrun notarytool log "$NOTARY_SUBMISSION_ID" --key "$API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" "$NOTARY_LOG_JSON" || true
+          else
+            xcrun notarytool log "$NOTARY_SUBMISSION_ID" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" "$NOTARY_LOG_JSON" || true
+          fi
+
+          if [[ "$NOTARY_STATUS" != "Accepted" ]]; then
+            echo "::error::Notarization did not complete successfully for submission $NOTARY_SUBMISSION_ID (status: $NOTARY_STATUS)."
+            [[ -f "$NOTARY_INFO_JSON" ]] && cat "$NOTARY_INFO_JSON"
+            [[ -f "$NOTARY_LOG_JSON" ]] && cat "$NOTARY_LOG_JSON"
+            exit 1
           fi
 
           xcrun stapler staple "$MACOS_ASSET_PATH"

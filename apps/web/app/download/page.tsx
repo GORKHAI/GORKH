@@ -38,6 +38,8 @@ export default function Download() {
     };
   }, []);
 
+  const hasWindowsDownload = Boolean(downloads?.windowsUrl);
+
   return (
     <main className="page--narrow">
       <Link href="/" className="button button--ghost" style={{ width: 'fit-content' }}>
@@ -80,7 +82,7 @@ export default function Download() {
                 {downloads.notes ? <p className="copy">{downloads.notes}</p> : null}
               </div>
               <div className="stack" style={{ gap: 10, minWidth: 180 }}>
-                <Badge tone="warning">Mac-first beta</Badge>
+                <Badge tone="warning">{hasWindowsDownload ? 'Mac-first beta' : 'macOS-first release'}</Badge>
                 <Badge>Direct installer downloads</Badge>
                 {downloads.publishedAt ? (
                   <p className="small-note mono">Published {new Date(downloads.publishedAt).toLocaleString()}</p>
@@ -91,32 +93,35 @@ export default function Download() {
 
           <div className="stack" style={{ marginTop: 18, gap: 12 }}>
             <Banner tone="warning">
-              macOS beta builds are Developer ID signed and notarized. Windows beta builds are available
-              for early testing and may show SmartScreen warnings because they are not yet Authenticode signed.
+              macOS beta builds are Developer ID signed and notarized. {hasWindowsDownload
+                ? 'Windows beta builds are available for early testing and may show SmartScreen warnings because they are not yet Authenticode signed.'
+                : 'Stable releases currently publish macOS artifacts only.'}
             </Banner>
             <Banner tone="success">
-              These are direct installer downloads for the current beta. Stable releases add signed Windows
-              installers and updater-ready release feeds.
+              These are direct installer downloads for the current beta. Stable auto-update feeds are configured
+              separately from this download page.
             </Banner>
           </div>
 
           <section className="downloads-grid" style={{ marginTop: 24 }}>
-            <Card hover>
-              <MonitorCog size={22} />
-              <h2 className="section-heading" style={{ fontSize: 22, marginTop: 18 }}>
-                Windows
-              </h2>
-              <p className="copy" style={{ marginTop: 10 }}>
-                Early Windows beta build for 64-bit testers. Expect SmartScreen prompts until stable
-                signing is enabled.
-              </p>
-              <a href={downloads.windowsUrl} style={{ marginTop: 20 }}>
-                <Button className="button--wide">
-                  <DownloadIcon size={16} />
-                  Download for Windows
-                </Button>
-              </a>
-            </Card>
+            {downloads.windowsUrl ? (
+              <Card hover>
+                <MonitorCog size={22} />
+                <h2 className="section-heading" style={{ fontSize: 22, marginTop: 18 }}>
+                  Windows
+                </h2>
+                <p className="copy" style={{ marginTop: 10 }}>
+                  Early Windows beta build for 64-bit testers. Expect SmartScreen prompts until stable
+                  signing is enabled.
+                </p>
+                <a href={downloads.windowsUrl} style={{ marginTop: 20 }}>
+                  <Button className="button--wide">
+                    <DownloadIcon size={16} />
+                    Download for Windows
+                  </Button>
+                </a>
+              </Card>
+            ) : null}
 
             <Card hover>
               <Laptop size={22} />

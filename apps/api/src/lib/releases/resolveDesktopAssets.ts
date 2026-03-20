@@ -6,7 +6,7 @@ export interface ResolvedDesktopRelease {
   version: string;
   notes: string;
   publishedAt: string | null;
-  windows: { url: string; signature: string };
+  windows: { url: string; signature: string } | null;
   macIntel: { url: string; signature: string };
   macArm: { url: string; signature: string };
 }
@@ -15,7 +15,7 @@ export interface ResolvedDesktopDownloads {
   version: string;
   notes: string;
   publishedAt: string | null;
-  windowsUrl: string;
+  windowsUrl: string | null;
   macIntelUrl: string;
   macArmUrl: string;
 }
@@ -54,9 +54,40 @@ function getRequiredAsset(release: GitHubRelease, name: string): GitHubReleaseAs
   return asset;
 }
 
+function getOptionalAsset(release: GitHubRelease, name: string): GitHubReleaseAsset | null {
+  const asset = release.assets.find((entry) => entry.name === name);
+  if (!asset || !asset.browserDownloadUrl) {
+    return null;
+  }
+
+  return asset;
+}
+
 async function resolveSignedAsset(release: GitHubRelease, assetName: string) {
   const installerAsset = getRequiredAsset(release, assetName);
   const signatureAsset = getRequiredAsset(release, `${assetName}.sig`);
+  const signature = (await fetchReleaseAssetText(signatureAsset)).trim();
+
+  return {
+    url: validateDesktopAssetUrl(installerAsset.browserDownloadUrl, assetName, {
+      nodeEnv: 'production',
+      allowInsecureDev: false,
+    }),
+    signature: validateDesktopSignature(signature, assetName),
+  };
+}
+
+async function resolveOptionalSignedAsset(release: GitHubRelease, assetName: string) {
+  const installerAsset = getOptionalAsset(release, assetName);
+  const signatureAsset = getOptionalAsset(release, `${assetName}.sig`);
+  if (!installerAsset && !signatureAsset) {
+    return null;
+  }
+
+  if (!installerAsset || !signatureAsset) {
+    throw new Error(`Missing release asset: ${assetName}`);
+  }
+
   const signature = (await fetchReleaseAssetText(signatureAsset)).trim();
 
   return {
@@ -77,6 +108,18 @@ function resolveDownloadAsset(release: GitHubRelease, assetName: string) {
   });
 }
 
+function resolveOptionalDownloadAsset(release: GitHubRelease, assetName: string) {
+  const installerAsset = getOptionalAsset(release, assetName);
+  if (!installerAsset) {
+    return null;
+  }
+
+  return validateDesktopAssetUrl(installerAsset.browserDownloadUrl, assetName, {
+    nodeEnv: 'production',
+    allowInsecureDev: false,
+  });
+}
+
 export function resolveDesktopDownloadAssets(release: GitHubRelease): ResolvedDesktopDownloads {
   const version = stripLeadingV(release.tagName);
   const assetNames = buildDesktopAssetNames(version);
@@ -85,7 +128,7 @@ export function resolveDesktopDownloadAssets(release: GitHubRelease): ResolvedDe
     version,
     notes: truncateNotes(release.body),
     publishedAt: release.publishedAt,
-    windowsUrl: resolveDownloadAsset(release, assetNames['windows-x86_64']),
+    windowsUrl: resolveOptionalDownloadAsset(release, assetNames['windows-x86_64']),
     macIntelUrl: resolveDownloadAsset(release, assetNames['macos-x86_64']),
     macArmUrl: resolveDownloadAsset(release, assetNames['macos-aarch64']),
   };
@@ -99,7 +142,7 @@ export async function resolveDesktopAssets(release: GitHubRelease): Promise<Reso
     version: downloads.version,
     notes: downloads.notes,
     publishedAt: downloads.publishedAt,
-    windows: await resolveSignedAsset(release, assetNames['windows-x86_64']),
+    windows: await resolveOptionalSignedAsset(release, assetNames['windows-x86_64']),
     macIntel: await resolveSignedAsset(release, assetNames['macos-x86_64']),
     macArm: await resolveSignedAsset(release, assetNames['macos-aarch64']),
   };

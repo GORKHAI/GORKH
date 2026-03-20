@@ -189,3 +189,69 @@ test('updater manifests still require signature assets from GitHub releases', as
 
   await assert.rejects(() => resolveDesktopAssets(release), /Missing release asset/);
 });
+
+test('stable mac-only releases can still resolve downloads and signed macOS updater assets', async () => {
+  applyApiReleaseEnv();
+  const { resolveDesktopAssets, resolveDesktopDownloadAssets } = await import('../apps/api/src/lib/releases/resolveDesktopAssets.ts');
+
+  const signature = 'A'.repeat(64);
+  const release = {
+    tagName: 'v0.1.0',
+    publishedAt: '2026-03-20T00:00:00.000Z',
+    body: 'Stable release for macOS only.',
+    assets: [
+      {
+        name: 'ai-operator-desktop_0.1.0_macos_x86_64.dmg',
+        size: 10,
+        browserDownloadUrl: 'https://downloads.gorkh.app/ai-operator-desktop_0.1.0_macos_x86_64.dmg',
+        apiUrl: 'https://api.github.com/assets/macos-intel',
+      },
+      {
+        name: 'ai-operator-desktop_0.1.0_macos_x86_64.dmg.sig',
+        size: 10,
+        browserDownloadUrl: 'https://downloads.gorkh.app/ai-operator-desktop_0.1.0_macos_x86_64.dmg.sig',
+        apiUrl: 'https://api.github.com/assets/macos-intel-sig',
+      },
+      {
+        name: 'ai-operator-desktop_0.1.0_macos_aarch64.dmg',
+        size: 10,
+        browserDownloadUrl: 'https://downloads.gorkh.app/ai-operator-desktop_0.1.0_macos_aarch64.dmg',
+        apiUrl: 'https://api.github.com/assets/macos-arm',
+      },
+      {
+        name: 'ai-operator-desktop_0.1.0_macos_aarch64.dmg.sig',
+        size: 10,
+        browserDownloadUrl: 'https://downloads.gorkh.app/ai-operator-desktop_0.1.0_macos_aarch64.dmg.sig',
+        apiUrl: 'https://api.github.com/assets/macos-arm-sig',
+      },
+    ],
+  };
+
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input: string | URL | Request) => {
+    const url = String(input);
+    assert.match(url, /macos-(intel|arm)-sig/, 'resolver should only fetch macOS signature assets for a mac-only stable release');
+    return new Response(signature, { status: 200 });
+  };
+
+  try {
+    const downloads = resolveDesktopDownloadAssets(release);
+    assert.equal(downloads.version, '0.1.0');
+    assert.equal(downloads.windowsUrl, null);
+    assert.equal(downloads.macIntelUrl, 'https://downloads.gorkh.app/ai-operator-desktop_0.1.0_macos_x86_64.dmg');
+    assert.equal(downloads.macArmUrl, 'https://downloads.gorkh.app/ai-operator-desktop_0.1.0_macos_aarch64.dmg');
+
+    const assets = await resolveDesktopAssets(release);
+    assert.equal(assets.windows, null);
+    assert.deepEqual(assets.macIntel, {
+      url: 'https://downloads.gorkh.app/ai-operator-desktop_0.1.0_macos_x86_64.dmg',
+      signature,
+    });
+    assert.deepEqual(assets.macArm, {
+      url: 'https://downloads.gorkh.app/ai-operator-desktop_0.1.0_macos_aarch64.dmg',
+      signature,
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
