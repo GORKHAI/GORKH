@@ -5,9 +5,10 @@ interface ControlPanelProps {
   deviceId: string;
   enabled: boolean;
   onToggle: (enabled: boolean) => void;
+  embedded?: boolean;
 }
 
-export function ControlPanel({ wsClient, deviceId, enabled, onToggle }: ControlPanelProps) {
+export function ControlPanel({ wsClient, deviceId, enabled, onToggle, embedded = false }: ControlPanelProps) {
   // Log deviceId for debugging (marks it as used)
   console.debug('ControlPanel for device:', deviceId);
   void wsClient;
@@ -15,11 +16,14 @@ export function ControlPanel({ wsClient, deviceId, enabled, onToggle }: ControlP
   return (
     <div
       style={{
-        marginTop: '1.5rem',
+        marginTop: embedded ? 0 : '1.5rem',
         padding: '1rem',
-        background: enabled ? '#fef3c7' : 'white',
-        borderRadius: '8px',
-        border: enabled ? '2px solid #f59e0b' : '1px solid #e0e0e0',
+        background: enabled ? '#fef3c7' : embedded ? 'rgba(255,255,255,0.76)' : 'white',
+        borderRadius: embedded ? '18px' : '8px',
+        border: enabled ? '2px solid #f59e0b' : embedded ? '1px solid rgba(148,163,184,0.24)' : '1px solid #e0e0e0',
+        boxShadow: embedded ? '0 16px 36px rgba(15,23,42,0.08)' : undefined,
+        backdropFilter: embedded ? 'blur(22px) saturate(140%)' : undefined,
+        WebkitBackdropFilter: embedded ? 'blur(22px) saturate(140%)' : undefined,
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

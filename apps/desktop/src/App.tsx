@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { Effect, EffectState, getCurrentWindow } from '@tauri-apps/api/window';
 import type { ServerMessage, ServerChatMessage, RunWithSteps, ApprovalRequest, InputAction, AgentProposal } from '@ai-operator/shared';
 import { WsClient, type ConnectionStatus } from './lib/wsClient.js';
 import { executeAction } from './lib/actionExecutor.js';
@@ -284,6 +285,20 @@ function App() {
   const runtimeConfig = desktopRuntimeConfig.ok ? desktopRuntimeConfig.config : null;
   const runtimeConfigError = desktopRuntimeConfig.ok ? null : desktopRuntimeConfig.message;
   const isSignedIn = Boolean(sessionDeviceToken);
+
+  useEffect(() => {
+    const previousHtmlBackground = document.documentElement.style.background;
+    const previousBodyBackground = document.body.style.background;
+    const targetBackground = platform === 'macos' ? 'transparent' : '#eef2f7';
+
+    document.documentElement.style.background = targetBackground;
+    document.body.style.background = targetBackground;
+
+    return () => {
+      document.documentElement.style.background = previousHtmlBackground;
+      document.body.style.background = previousBodyBackground;
+    };
+  }, [platform]);
 
   const refreshPermissionStatus = useCallback(async () => {
     setPermissionStatusBusy(true);
@@ -1799,69 +1814,531 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (platform !== 'macos' || isOverlayActive) {
+      return;
+    }
+
+    const windowHandle = getCurrentWindow();
+    void windowHandle.setEffects({
+      effects: [Effect.UnderWindowBackground, Effect.Sidebar],
+      state: EffectState.Active,
+      radius: 28,
+    }).catch((error) => {
+      console.error('[App] Failed to apply macOS window effects:', error);
+    });
+
+    return () => {
+      void windowHandle.clearEffects().catch(() => {
+        // Ignore cleanup failures when the window is closing or overlay mode changes.
+      });
+    };
+  }, [isOverlayActive, platform]);
+
+  useEffect(() => {
     if (!isOverlayActive && overlayDetailsOpen) {
       setOverlayDetailsOpen(false);
     }
   }, [isOverlayActive, overlayDetailsOpen]);
+
+  const shellBlur = platform === 'macos' ? 'blur(28px) saturate(165%)' : 'blur(18px) saturate(135%)';
+  const homeTopInset = platform === 'macos' ? '4.25rem' : '1.5rem';
+  const frameStyle: CSSProperties = {
+    maxWidth: '1180px',
+    margin: '0 auto',
+    padding: '1.35rem',
+    borderRadius: '32px',
+    background: isOverlayActive
+      ? 'rgba(2, 3, 5, 0.92)'
+      : platform === 'macos'
+        ? 'linear-gradient(180deg, rgba(255,255,255,0.58) 0%, rgba(241,245,249,0.52) 100%)'
+        : 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.96) 100%)',
+    border: '1px solid rgba(255,255,255,0.38)',
+    boxShadow: '0 34px 90px rgba(15, 23, 42, 0.18)',
+    backdropFilter: shellBlur,
+    WebkitBackdropFilter: shellBlur,
+  };
+  const panelStyle: CSSProperties = {
+    padding: '1rem',
+    background: platform === 'macos' ? 'rgba(255,255,255,0.68)' : 'rgba(255,255,255,0.96)',
+    borderRadius: '22px',
+    border: '1px solid rgba(148,163,184,0.24)',
+    boxShadow: '0 18px 44px rgba(15, 23, 42, 0.08)',
+  };
+  const subPanelStyle: CSSProperties = {
+    padding: '0.9rem',
+    background: platform === 'macos' ? 'rgba(255,255,255,0.78)' : '#f9fafb',
+    borderRadius: '18px',
+    border: '1px solid rgba(148,163,184,0.18)',
+  };
+  const settingsOperationalPanels = isSignedIn ? (
+    <>
+      <section style={panelStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#111827' }}>Desktop overview</h3>
+            <p style={{ margin: '0.35rem 0 0', color: '#475569', fontSize: '0.875rem', maxWidth: '64ch' }}>
+              Readiness, signed-in desktops, and recent activity live here so the home screen can stay focused on chat and approvals.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.875rem', color: '#475569' }}>
+              Desktop ID: <code>{deviceId}</code>
+            </span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#475569' }}>
+              <span>Assistant engine</span>
+              <select
+                value={assistantEngineId}
+                onChange={(event) => setAssistantEngineId(event.target.value as AssistantEngineId)}
+                style={{ padding: '0.45rem 0.6rem', borderRadius: '10px', border: '1px solid rgba(148,163,184,0.28)', background: 'rgba(255,255,255,0.85)' }}
+              >
+                {assistantEngineCatalog.map((engine) => (
+                  <option key={engine.id} value={engine.id}>
+                    {engine.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: '1rem',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: '1rem',
+          }}
+        >
+          <section style={subPanelStyle}>
+            <h4 style={{ margin: 0, fontSize: '0.98rem' }}>Desktop readiness</h4>
+            <p style={{ margin: '0.35rem 0 0', color: '#64748b', fontSize: '0.875rem' }}>
+              Subscription, permissions, workspace, and Free AI setup for this desktop.
+            </p>
+
+            {desktopBootstrapBusy && (
+              <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#64748b' }}>
+                Loading desktop readiness...
+              </p>
+            )}
+
+            {desktopBootstrapError && (
+              <div
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '0.75rem',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '12px',
+                  fontSize: '0.875rem',
+                  color: '#991b1b',
+                }}
+              >
+                {desktopBootstrapError}
+              </div>
+            )}
+
+            <div style={{ marginTop: '1rem', display: 'grid', gap: '0.45rem' }}>
+              <div style={{ fontSize: '0.875rem' }}>
+                <strong>Plan:</strong> {localPlanPolicy.plan === 'plus' ? 'Plus' : 'Free local'}
+              </div>
+              <div style={{ fontSize: '0.875rem' }}>
+                <strong>Billing subscription:</strong> {subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
+              </div>
+              <div style={{ fontSize: '0.875rem' }}>
+                <strong>Screen Preview:</strong> {localSettings.screenPreviewEnabled ? 'Enabled' : 'Disabled'}
+              </div>
+              <div style={{ fontSize: '0.875rem' }}>
+                <strong>Screen Recording Permission:</strong> {permissionStatus.screenRecording}
+              </div>
+              <div style={{ fontSize: '0.875rem' }}>
+                <strong>Allow Control:</strong> {localSettings.allowControlEnabled ? 'Enabled' : 'Disabled'}
+              </div>
+              <div style={{ fontSize: '0.875rem' }}>
+                <strong>Accessibility Permission:</strong> {permissionStatus.accessibility}
+              </div>
+              <div style={{ fontSize: '0.875rem' }}>
+                <strong>Workspace:</strong> {workspaceState.configured ? workspaceState.rootName || 'Configured' : 'Not configured'}
+              </div>
+              <div style={{ fontSize: '0.875rem' }}>
+                <strong>Assistant engine:</strong> {providerCheckBusy
+                  ? 'Checking...'
+                  : llmSettings.provider === DEFAULT_LLM_PROVIDER
+                    ? providerConfigured
+                      ? 'Free AI ready'
+                      : 'Free AI not ready'
+                    : providerConfigured
+                      ? 'Custom model ready'
+                      : 'Custom model not ready'}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: '1rem',
+                padding: '0.75rem',
+                background: taskReadiness.ready ? '#ecfdf5' : '#fff7ed',
+                border: `1px solid ${taskReadiness.ready ? '#86efac' : '#fdba74'}`,
+                borderRadius: '12px',
+                fontSize: '0.875rem',
+                color: taskReadiness.ready ? '#166534' : '#9a3412',
+              }}
+            >
+              {taskReadiness.ready
+                ? 'This desktop is ready to launch work directly.'
+                : `Launching work is blocked by ${taskReadiness.requiredSetup.length} readiness item${taskReadiness.requiredSetup.length === 1 ? '' : 's'}.`}
+            </div>
+
+            {taskReadiness.requiredSetup.length > 0 && (
+              <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.5rem' }}>
+                {taskReadiness.requiredSetup.map((blocker) => (
+                  <div
+                    key={blocker.id}
+                    style={{
+                      padding: '0.75rem',
+                      background: 'rgba(255,255,255,0.72)',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(148,163,184,0.2)',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{blocker.label}</div>
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: '#64748b' }}>{blocker.detail}</div>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                      {blocker.id === 'screen-preview' && (
+                        <button
+                          onClick={() => handleScreenPreviewToggle(true)}
+                          style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                        >
+                          Enable Screen Preview
+                        </button>
+                      )}
+                      {blocker.id === 'control-toggle' && (
+                        <button
+                          onClick={() => handleControlToggle(true)}
+                          style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                        >
+                          Enable Allow Control
+                        </button>
+                      )}
+                      {(blocker.id === 'screen-permission' || blocker.id === 'accessibility-permission') && (
+                        <button
+                          onClick={() => void handleOpenPermissionSettings(blocker.id === 'screen-permission' ? 'screenRecording' : 'accessibility')}
+                          style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                        >
+                          Open Permission Settings
+                        </button>
+                      )}
+                      {(blocker.id === 'workspace' || blocker.id === 'provider') && (
+                        <button
+                          onClick={() => setSettingsOpen(true)}
+                          style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                        >
+                          Open Settings
+                        </button>
+                      )}
+                      {blocker.id === 'local-engine' && (
+                        <button
+                          onClick={() => {
+                            if (showFreeAiSetup) {
+                              void handleStartFreeAi(localAiRecommendation?.tier ?? 'light');
+                              return;
+                            }
+                            setSettingsOpen(true);
+                          }}
+                          style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                        >
+                          {showFreeAiSetup ? 'Set Up Free AI' : 'Open Settings'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section style={subPanelStyle}>
+            <h4 style={{ margin: 0, fontSize: '0.98rem' }}>Signed-in desktops</h4>
+            <p style={{ margin: '0.35rem 0 0', color: '#64748b', fontSize: '0.875rem' }}>
+              See this signed-in desktop and any others connected to your account.
+            </p>
+
+            {desktopAccountBusy && (
+              <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#64748b' }}>
+                Loading signed-in desktops...
+              </p>
+            )}
+
+            {desktopAccountError && (
+              <div
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '0.75rem',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '12px',
+                  fontSize: '0.875rem',
+                  color: '#991b1b',
+                }}
+              >
+                {desktopAccountError}
+              </div>
+            )}
+
+            {desktopAccount && (
+              <div
+                style={{
+                  marginTop: '1rem',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                  gap: '0.85rem',
+                }}
+              >
+                <div style={subPanelStyle}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>This desktop</div>
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>
+                    {desktopAccount.currentDevice?.deviceName || `Desktop-${deviceId.slice(0, 8)}`}
+                  </div>
+                  <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#64748b' }}>
+                    {desktopAccount.user.email} • {desktopAccount.billing.subscriptionStatus === 'active' ? 'Subscription active' : 'Subscription inactive'}
+                  </div>
+                  {desktopAccount.currentDevice && (
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#64748b' }}>
+                      {desktopAccount.currentDevice.platform} • {desktopAccount.currentDevice.connected ? 'Connected' : 'Offline'}
+                    </div>
+                  )}
+                </div>
+
+                <div style={subPanelStyle}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Other signed-in desktops</div>
+                  {siblingDevices.length === 0 ? (
+                    <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem', color: '#64748b' }}>
+                      No other signed-in desktops on this account.
+                    </p>
+                  ) : (
+                    <div style={{ marginTop: '0.5rem', display: 'grid', gap: '0.5rem' }}>
+                      {siblingDevices.map((device) => (
+                        <div
+                          key={device.deviceId}
+                          style={{
+                            padding: '0.75rem',
+                            background: 'rgba(255,255,255,0.8)',
+                            borderRadius: '12px',
+                            border: '1px solid rgba(148,163,184,0.18)',
+                          }}
+                        >
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                            {device.deviceName || `Desktop-${device.deviceId.slice(0, 8)}`}
+                          </div>
+                          <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#64748b' }}>
+                            {device.platform} • {device.connected ? 'Connected' : 'Offline'} • Last seen {new Date(device.lastSeenAt).toLocaleString()}
+                          </div>
+                          <button
+                            onClick={() => {
+                              void handleRevokeDesktopDevice(device.deviceId);
+                            }}
+                            disabled={deviceRevokeBusyId === device.deviceId}
+                            style={{
+                              marginTop: '0.5rem',
+                              padding: '0.45rem 0.65rem',
+                              borderRadius: '10px',
+                              border: '1px solid #fdba74',
+                              background: deviceRevokeBusyId === device.deviceId ? '#e5e7eb' : '#fff7ed',
+                              color: deviceRevokeBusyId === device.deviceId ? '#6b7280' : '#9a3412',
+                              cursor: deviceRevokeBusyId === device.deviceId ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            {deviceRevokeBusyId === device.deviceId ? 'Signing out...' : 'Sign out this desktop'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section style={subPanelStyle}>
+            <h4 style={{ margin: 0, fontSize: '0.98rem' }}>Recent activity</h4>
+            <p style={{ margin: '0.35rem 0 0', color: '#64748b', fontSize: '0.875rem' }}>
+              Previous assistant work on this desktop stays here for quick reference.
+            </p>
+
+            {recentRuns.length === 0 ? (
+              <p style={{ marginTop: '1rem', fontSize: '0.875rem', color: '#64748b' }}>
+                No recent assistant activity yet.
+              </p>
+            ) : (
+              <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem' }}>
+                {recentRuns.map((run) => (
+                  <button
+                    key={run.runId}
+                    onClick={() => handleSelectRecentRun(run.runId)}
+                    style={{
+                      textAlign: 'left',
+                      padding: '0.75rem',
+                      background: activeRun?.runId === run.runId ? '#eff6ff' : 'rgba(255,255,255,0.78)',
+                      border: activeRun?.runId === run.runId ? '1px solid #93c5fd' : '1px solid rgba(148,163,184,0.18)',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{run.goal}</div>
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#64748b' }}>
+                      {run.status} • {new Date(run.createdAt).toLocaleString()}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </section>
+
+      {client && (
+        <section style={{ ...panelStyle, marginTop: '1rem' }}>
+          <div style={{ marginBottom: '0.9rem' }}>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#111827' }}>Live desktop controls</h3>
+            <p style={{ margin: '0.35rem 0 0', color: '#475569', fontSize: '0.875rem' }}>
+              Screen preview and remote control stay available here when you need them, without crowding the main chat surface.
+            </p>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+              gap: '1rem',
+            }}
+          >
+            <ScreenPanel
+              wsClient={client}
+              deviceId={deviceId}
+              enabled={localSettings.screenPreviewEnabled}
+              onToggle={handleScreenPreviewToggle}
+              onDisplayChange={setPrimaryDisplayId}
+              permissionStatus={permissionStatus}
+              onOpenPermissionSettings={handleOpenPermissionSettings}
+              onPermissionIssue={(message) => notePermissionIssue('screenRecording', message)}
+              embedded
+            />
+            <ControlPanel
+              wsClient={client}
+              deviceId={deviceId}
+              enabled={localSettings.allowControlEnabled}
+              onToggle={handleControlToggle}
+              embedded
+            />
+          </div>
+        </section>
+      )}
+    </>
+  ) : null;
 
   return (
     <div
       style={{
         width: '100vw',
         height: '100vh',
-        background: isOverlayActive ? '#020305' : '#f5f5f5',
+        background: isOverlayActive ? '#020305' : platform === 'macos' ? 'transparent' : '#eef2f7',
         display: 'flex',
         position: 'relative',
         overflow: 'hidden',
       }}
     >
+      {!isOverlayActive && (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: platform === 'macos'
+                ? 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(226,232,240,0.06) 100%)'
+                : 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(241,245,249,0.92) 100%)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              top: '-18%',
+              right: '-10%',
+              width: '34rem',
+              height: '34rem',
+              borderRadius: '9999px',
+              background: 'radial-gradient(circle, rgba(148,163,184,0.26) 0%, rgba(148,163,184,0) 70%)',
+              filter: 'blur(18px)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '-24%',
+              left: '-8%',
+              width: '30rem',
+              height: '30rem',
+              borderRadius: '9999px',
+              background: 'radial-gradient(circle, rgba(226,232,240,0.32) 0%, rgba(226,232,240,0) 72%)',
+              filter: 'blur(20px)',
+            }}
+          />
+        </>
+      )}
+
       {/* Main Content */}
       <div
         style={{
           flex: 1,
-          padding: '1.5rem',
+          padding: `${homeTopInset} 1.5rem 2rem`,
           overflow: 'auto',
           opacity: isOverlayActive ? 0 : 1,
           pointerEvents: isOverlayActive ? 'none' : 'auto',
           filter: isOverlayActive ? 'blur(18px)' : 'none',
           transform: isOverlayActive ? 'scale(1.015)' : 'scale(1)',
           transition: 'opacity 220ms ease, filter 220ms ease, transform 220ms ease',
+          position: 'relative',
+          zIndex: 1,
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <BrandWordmark width={220} subtitle="Desktop intelligence layer" />
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button
-              onClick={handleStopAll}
-              disabled={approvalItems.every((item) => item.state !== 'pending') && !aiState?.isRunning}
-              style={{
-                padding: '0.5rem 1rem',
-                background: '#ef4444',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-                opacity: approvalItems.every((item) => item.state !== 'pending') && !aiState?.isRunning ? 0.5 : 1,
-              }}
-            >
-              Stop All
-            </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              style={{
-                padding: '0.5rem 1rem',
-                background: '#f3f4f6',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-              }}
-            >
-              ⚙️ Settings
-            </button>
+        <div style={frameStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+            <div data-tauri-drag-region style={{ paddingLeft: platform === 'macos' ? '5.5rem' : 0, minHeight: platform === 'macos' ? '2.25rem' : undefined }}>
+              <BrandWordmark width={220} subtitle="Desktop intelligence layer" />
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleStopAll}
+                disabled={approvalItems.every((item) => item.state !== 'pending') && !aiState?.isRunning}
+                style={{
+                  padding: '0.6rem 1rem',
+                  background: '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '9999px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  opacity: approvalItems.every((item) => item.state !== 'pending') && !aiState?.isRunning ? 0.5 : 1,
+                  boxShadow: '0 14px 32px rgba(239,68,68,0.24)',
+                }}
+              >
+                Stop All
+              </button>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                style={{
+                  padding: '0.6rem 1rem',
+                  background: 'rgba(255,255,255,0.8)',
+                  border: '1px solid rgba(148,163,184,0.24)',
+                  borderRadius: '9999px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: '#0f172a',
+                }}
+              >
+                Settings
+              </button>
+            </div>
           </div>
-        </div>
         {runtimeConfigError && (
           <div
             style={{
@@ -1958,7 +2435,17 @@ function App() {
         )}
 
         {/* Desktop Sign-In */}
-        <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'white', borderRadius: '8px', maxWidth: '400px' }}>
+        <div
+          style={{
+            ...panelStyle,
+            marginTop: '1.5rem',
+            maxWidth: isSignedIn ? 'unset' : '460px',
+            display: isSignedIn ? 'flex' : 'block',
+            justifyContent: isSignedIn ? 'space-between' : undefined,
+            alignItems: isSignedIn ? 'center' : undefined,
+            gap: isSignedIn ? '1rem' : undefined,
+          }}
+        >
           <h3 style={{ marginTop: 0 }}>Desktop Sign In</h3>
 
           {!isSignedIn ? (
@@ -2020,10 +2507,7 @@ function App() {
             <section
               style={{
                 marginTop: '1.5rem',
-                padding: '1rem',
-                background: 'white',
-                borderRadius: '12px',
-                border: '1px solid #e5e7eb',
+                ...panelStyle,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -2198,389 +2682,38 @@ function App() {
               </div>
             </section>
 
-            <details
+            <section
               style={{
+                ...panelStyle,
                 marginTop: '1rem',
-                padding: '1rem',
-                background: 'white',
-                borderRadius: '10px',
-                border: '1px solid #e5e7eb',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '1rem',
+                flexWrap: 'wrap',
               }}
             >
-              <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#1f2937' }}>Advanced</summary>
-              <div style={{ marginTop: '1rem' }}>
-                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem' }}>
-                  <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                    Desktop ID: <code>{deviceId}</code>
-                  </span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#4b5563' }}>
-                    <span>Assistant engine</span>
-                    <select
-                      value={assistantEngineId}
-                      onChange={(event) => setAssistantEngineId(event.target.value as AssistantEngineId)}
-                      style={{ padding: '0.4rem 0.55rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white' }}
-                    >
-                      {assistantEngineCatalog.map((engine) => (
-                        <option key={engine.id} value={engine.id}>
-                          {engine.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    onClick={() => setSettingsOpen(true)}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      background: 'white',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '0.875rem',
-                      color: '#111827',
-                    }}
-                  >
-                    Open Settings
-                  </button>
+              <div>
+                <div style={{ fontWeight: 600, color: '#0f172a' }}>The home screen now stays focused on the assistant.</div>
+                <div style={{ marginTop: '0.35rem', fontSize: '0.875rem', color: '#475569', maxWidth: '58ch' }}>
+                  Screen preview, remote control, connected desktops, diagnostics, and update checks live inside Settings.
                 </div>
-                <p style={{ margin: '0 0 1rem', fontSize: '0.8125rem', color: '#6b7280', maxWidth: '72ch' }}>
-                  The assistant chat is the primary product surface. This area keeps setup details, signed-in desktops, screen controls, and diagnostics out of the way unless you need them.
-                </p>
-
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-                    gap: '1rem',
-                  }}
-                >
-                  <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                    <h2 style={{ margin: 0, fontSize: '1rem' }}>Desktop readiness</h2>
-                    <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
-                      Subscription, permissions, workspace, and Free AI setup for this desktop.
-                    </p>
-
-                    {desktopBootstrapBusy && (
-                      <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#6b7280' }}>
-                        Loading desktop readiness...
-                      </p>
-                    )}
-
-                    {desktopBootstrapError && (
-                      <div
-                        style={{
-                          marginTop: '0.75rem',
-                          padding: '0.75rem',
-                          background: '#fef2f2',
-                          border: '1px solid #fecaca',
-                          borderRadius: '6px',
-                          fontSize: '0.875rem',
-                          color: '#991b1b',
-                        }}
-                      >
-                        {desktopBootstrapError}
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem' }}>
-                      <div style={{ fontSize: '0.875rem' }}>
-                        <strong>Plan:</strong> {localPlanPolicy.plan === 'plus' ? 'Plus' : 'Free local'}
-                      </div>
-                      <div style={{ fontSize: '0.875rem' }}>
-                        <strong>Billing subscription:</strong> {subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
-                      </div>
-                      <div style={{ fontSize: '0.875rem' }}>
-                        <strong>Screen Preview:</strong> {localSettings.screenPreviewEnabled ? 'Enabled' : 'Disabled'}
-                      </div>
-                      <div style={{ fontSize: '0.875rem' }}>
-                        <strong>Screen Recording Permission:</strong> {permissionStatus.screenRecording}
-                      </div>
-                      <div style={{ fontSize: '0.875rem' }}>
-                        <strong>Allow Control:</strong> {localSettings.allowControlEnabled ? 'Enabled' : 'Disabled'}
-                      </div>
-                      <div style={{ fontSize: '0.875rem' }}>
-                        <strong>Accessibility Permission:</strong> {permissionStatus.accessibility}
-                      </div>
-                      <div style={{ fontSize: '0.875rem' }}>
-                        <strong>Workspace:</strong> {workspaceState.configured ? workspaceState.rootName || 'Configured' : 'Not configured'}
-                      </div>
-                      <div style={{ fontSize: '0.875rem' }}>
-                        <strong>Assistant engine:</strong> {providerCheckBusy
-                          ? 'Checking...'
-                          : llmSettings.provider === DEFAULT_LLM_PROVIDER
-                            ? providerConfigured
-                              ? 'Free AI ready'
-                              : 'Free AI not ready'
-                            : providerConfigured
-                              ? 'Custom model ready'
-                              : 'Custom model not ready'}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: '1rem',
-                        padding: '0.75rem',
-                        background: taskReadiness.ready ? '#ecfdf5' : '#fff7ed',
-                        border: `1px solid ${taskReadiness.ready ? '#86efac' : '#fdba74'}`,
-                        borderRadius: '6px',
-                        fontSize: '0.875rem',
-                        color: taskReadiness.ready ? '#166534' : '#9a3412',
-                      }}
-                    >
-                      {taskReadiness.ready
-                        ? 'This desktop is ready to launch work directly.'
-                        : `Launching work is blocked by ${taskReadiness.requiredSetup.length} readiness item${taskReadiness.requiredSetup.length === 1 ? '' : 's'}.`}
-                    </div>
-
-                    {taskReadiness.requiredSetup.length > 0 && (
-                      <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.5rem' }}>
-                        {taskReadiness.requiredSetup.map((blocker) => (
-                          <div
-                            key={blocker.id}
-                            style={{
-                              padding: '0.75rem',
-                              background: '#f9fafb',
-                              borderRadius: '6px',
-                              border: '1px solid #e5e7eb',
-                            }}
-                          >
-                            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{blocker.label}</div>
-                            <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: '#6b7280' }}>{blocker.detail}</div>
-                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-                              {blocker.id === 'screen-preview' && (
-                                <button
-                                  onClick={() => handleScreenPreviewToggle(true)}
-                                  style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
-                                >
-                                  Enable Screen Preview
-                                </button>
-                              )}
-                              {blocker.id === 'control-toggle' && (
-                                <button
-                                  onClick={() => handleControlToggle(true)}
-                                  style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
-                                >
-                                  Enable Allow Control
-                                </button>
-                              )}
-                              {(blocker.id === 'screen-permission' || blocker.id === 'accessibility-permission') && (
-                                <button
-                                  onClick={() => void handleOpenPermissionSettings(blocker.id === 'screen-permission' ? 'screenRecording' : 'accessibility')}
-                                  style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
-                                >
-                                  Open Permission Settings
-                                </button>
-                              )}
-                              {(blocker.id === 'workspace' || blocker.id === 'provider') && (
-                                <button
-                                  onClick={() => setSettingsOpen(true)}
-                                  style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
-                                >
-                                  Open Settings
-                                </button>
-                              )}
-                              {blocker.id === 'local-engine' && (
-                                <button
-                                  onClick={() => {
-                                    if (showFreeAiSetup) {
-                                      void handleStartFreeAi(localAiRecommendation?.tier ?? 'light');
-                                      return;
-                                    }
-                                    setSettingsOpen(true);
-                                  }}
-                                  style={{ padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
-                                >
-                                  {showFreeAiSetup ? 'Set Up Free AI' : 'Open Settings'}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-
-                  <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                    <h2 style={{ margin: 0, fontSize: '1rem' }}>Signed-in desktops</h2>
-                    <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
-                      See this signed-in desktop and any others connected to your account.
-                    </p>
-
-                    {desktopAccountBusy && (
-                      <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#6b7280' }}>
-                        Loading signed-in desktops...
-                      </p>
-                    )}
-
-                    {desktopAccountError && (
-                      <div
-                        style={{
-                          marginTop: '0.75rem',
-                          padding: '0.75rem',
-                          background: '#fef2f2',
-                          border: '1px solid #fecaca',
-                          borderRadius: '6px',
-                          fontSize: '0.875rem',
-                          color: '#991b1b',
-                        }}
-                      >
-                        {desktopAccountError}
-                      </div>
-                    )}
-
-                    {desktopAccount && (
-                      <div
-                        style={{
-                          marginTop: '1rem',
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                          gap: '1rem',
-                        }}
-                      >
-                        <div
-                          style={{
-                            padding: '0.75rem',
-                            background: '#f9fafb',
-                            borderRadius: '6px',
-                            border: '1px solid #e5e7eb',
-                          }}
-                        >
-                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>This desktop</div>
-                          <div style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>
-                            {desktopAccount.currentDevice?.deviceName || `Desktop-${deviceId.slice(0, 8)}`}
-                          </div>
-                          <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
-                            {desktopAccount.user.email} • {desktopAccount.billing.subscriptionStatus === 'active' ? 'Subscription active' : 'Subscription inactive'}
-                          </div>
-                          {desktopAccount.currentDevice && (
-                            <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
-                              {desktopAccount.currentDevice.platform} • {desktopAccount.currentDevice.connected ? 'Connected' : 'Offline'}
-                            </div>
-                          )}
-                        </div>
-
-                        <div
-                          style={{
-                            padding: '0.75rem',
-                            background: '#f9fafb',
-                            borderRadius: '6px',
-                            border: '1px solid #e5e7eb',
-                          }}
-                        >
-                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Other signed-in desktops</div>
-                          {siblingDevices.length === 0 ? (
-                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>
-                              No other signed-in desktops on this account.
-                            </p>
-                          ) : (
-                            <div style={{ marginTop: '0.5rem', display: 'grid', gap: '0.5rem' }}>
-                              {siblingDevices.map((device) => (
-                                <div
-                                  key={device.deviceId}
-                                  style={{
-                                    padding: '0.75rem',
-                                    background: 'white',
-                                    borderRadius: '6px',
-                                    border: '1px solid #e5e7eb',
-                                  }}
-                                >
-                                  <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
-                                    {device.deviceName || `Desktop-${device.deviceId.slice(0, 8)}`}
-                                  </div>
-                                  <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
-                                    {device.platform} • {device.connected ? 'Connected' : 'Offline'} • Last seen {new Date(device.lastSeenAt).toLocaleString()}
-                                  </div>
-                                  <button
-                                    onClick={() => {
-                                      void handleRevokeDesktopDevice(device.deviceId);
-                                    }}
-                                    disabled={deviceRevokeBusyId === device.deviceId}
-                                    style={{
-                                      marginTop: '0.5rem',
-                                      padding: '0.45rem 0.65rem',
-                                      borderRadius: '6px',
-                                      border: '1px solid #fdba74',
-                                      background: deviceRevokeBusyId === device.deviceId ? '#e5e7eb' : '#fff7ed',
-                                      color: deviceRevokeBusyId === device.deviceId ? '#6b7280' : '#9a3412',
-                                      cursor: deviceRevokeBusyId === device.deviceId ? 'not-allowed' : 'pointer',
-                                    }}
-                                  >
-                                    {deviceRevokeBusyId === device.deviceId ? 'Signing out...' : 'Sign out this desktop'}
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </section>
-
-                  <section style={{ padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                    <h2 style={{ margin: 0, fontSize: '1rem' }}>Recent activity</h2>
-                    <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
-                      Previous assistant work on this desktop stays here for quick reference, while chat remains the main surface.
-                    </p>
-
-                    {recentRuns.length === 0 ? (
-                      <p style={{ marginTop: '1rem', fontSize: '0.875rem', color: '#6b7280' }}>
-                        No recent assistant activity yet.
-                      </p>
-                    ) : (
-                      <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem' }}>
-                        {recentRuns.map((run) => (
-                          <button
-                            key={run.runId}
-                            onClick={() => handleSelectRecentRun(run.runId)}
-                            style={{
-                              textAlign: 'left',
-                              padding: '0.75rem',
-                              background: activeRun?.runId === run.runId ? '#eff6ff' : '#f9fafb',
-                              border: activeRun?.runId === run.runId ? '1px solid #93c5fd' : '1px solid #e5e7eb',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{run.goal}</div>
-                            <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
-                              {run.status} • {new Date(run.createdAt).toLocaleString()}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                </div>
-
-                {client && (
-                  <div
-                    style={{
-                      marginTop: '1rem',
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-                      gap: '1rem',
-                    }}
-                  >
-                    <ScreenPanel
-                      wsClient={client}
-                      deviceId={deviceId}
-                      enabled={localSettings.screenPreviewEnabled}
-                      onToggle={handleScreenPreviewToggle}
-                      onDisplayChange={setPrimaryDisplayId}
-                      permissionStatus={permissionStatus}
-                      onOpenPermissionSettings={handleOpenPermissionSettings}
-                      onPermissionIssue={(message) => notePermissionIssue('screenRecording', message)}
-                    />
-                    <ControlPanel
-                      wsClient={client}
-                      deviceId={deviceId}
-                      enabled={localSettings.allowControlEnabled}
-                      onToggle={handleControlToggle}
-                    />
-                  </div>
-                )}
               </div>
-            </details>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                style={{
+                  padding: '0.65rem 1rem',
+                  borderRadius: '9999px',
+                  border: '1px solid rgba(148,163,184,0.24)',
+                  background: 'rgba(255,255,255,0.84)',
+                  color: '#0f172a',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Open Settings
+              </button>
+            </section>
           </>
         )}
 
@@ -2663,10 +2796,7 @@ function App() {
           <section
             style={{
               marginTop: '1rem',
-              padding: '1rem',
-              background: 'white',
-              borderRadius: '8px',
-              border: '1px solid #e5e7eb',
+              ...panelStyle,
             }}
           >
             <h2 style={{ margin: 0, fontSize: '1rem' }}>Pending approvals</h2>
@@ -2712,6 +2842,7 @@ function App() {
             🤖 <strong>Assistant safety:</strong> The desktop observes what is on screen, proposes one step at a time, and waits for your explicit approval before privileged actions.
           </p>
         )}
+        </div>
       </div>
 
       {isOverlayActive && (
@@ -2812,6 +2943,7 @@ function App() {
           permissionHintMessage={permissionHintMessage}
           onExportDiagnostics={handleExportDiagnostics}
           diagnosticsStatus={diagnosticsStatus}
+          overviewPanels={settingsOperationalPanels}
         />
       )}
     </div>

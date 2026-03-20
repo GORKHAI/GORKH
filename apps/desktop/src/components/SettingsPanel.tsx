@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import {
@@ -56,6 +56,7 @@ interface SettingsPanelProps {
   permissionHintMessage?: string | null;
   onExportDiagnostics: () => void | Promise<void>;
   diagnosticsStatus?: string | null;
+  overviewPanels?: ReactNode;
 }
 
 export function SettingsPanel({
@@ -82,6 +83,7 @@ export function SettingsPanel({
   permissionHintMessage,
   onExportDiagnostics,
   diagnosticsStatus,
+  overviewPanels,
 }: SettingsPanelProps) {
   const settings = llmSettings;
   const providerDefinition = getLlmProviderDefinition(settings.provider);
@@ -337,7 +339,9 @@ export function SettingsPanel({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
+        background: 'rgba(7, 12, 20, 0.28)',
+        backdropFilter: 'blur(22px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(22px) saturate(140%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -347,13 +351,17 @@ export function SettingsPanel({
     >
       <div
         style={{
-          background: 'white',
-          borderRadius: '12px',
-          padding: '2rem',
-          width: '90%',
-          maxWidth: '500px',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.82) 100%)',
+          borderRadius: '28px',
+          border: '1px solid rgba(255,255,255,0.46)',
+          boxShadow: '0 36px 90px rgba(15, 23, 42, 0.28)',
+          padding: '1.5rem',
+          width: '92%',
+          maxWidth: '1080px',
           maxHeight: '90vh',
           overflow: 'auto',
+          backdropFilter: 'blur(28px) saturate(155%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(155%)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -374,6 +382,12 @@ export function SettingsPanel({
             ×
           </button>
         </div>
+
+        {overviewPanels ? (
+          <div style={{ marginBottom: '2rem' }}>
+            {overviewPanels}
+          </div>
+        ) : null}
 
         {/* AI Assist Section */}
         <div style={{ marginBottom: '2rem' }}>

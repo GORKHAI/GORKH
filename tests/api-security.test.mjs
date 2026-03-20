@@ -42,6 +42,7 @@ test('production security validation rejects insecure origins unless explicitly 
   const {
     DEFAULT_JSON_BODY_LIMIT,
     WEBHOOK_RAW_BODY_LIMIT,
+    isAllowedCorsOrigin,
     validateSecurityRuntimeConfig,
   } = await import('../apps/api/dist/lib/security.js');
 
@@ -74,4 +75,11 @@ test('production security validation rejects insecure origins unless explicitly 
       webOrigins: ['http://web.example.com'],
     });
   });
+
+  assert.equal(isAllowedCorsOrigin(undefined, ['https://web.example.com']), true);
+  assert.equal(isAllowedCorsOrigin('https://web.example.com', ['https://web.example.com']), true);
+  assert.equal(isAllowedCorsOrigin('tauri://localhost', ['https://web.example.com']), true);
+  assert.equal(isAllowedCorsOrigin('https://tauri.localhost', ['https://web.example.com']), true);
+  assert.equal(isAllowedCorsOrigin('http://tauri.localhost', ['https://web.example.com']), true);
+  assert.equal(isAllowedCorsOrigin('https://evil.example.com', ['https://web.example.com']), false);
 });

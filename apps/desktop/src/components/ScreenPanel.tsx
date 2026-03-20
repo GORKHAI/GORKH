@@ -19,6 +19,7 @@ interface ScreenPanelProps {
   permissionStatus: NativePermissionStatus;
   onOpenPermissionSettings: (target: PermissionTarget) => void;
   onPermissionIssue?: (message: string) => void;
+  embedded?: boolean;
 }
 
 export function ScreenPanel({
@@ -30,6 +31,7 @@ export function ScreenPanel({
   permissionStatus,
   onOpenPermissionSettings,
   onPermissionIssue,
+  embedded = false,
 }: ScreenPanelProps) {
   const [streamer, setStreamer] = useState<ScreenStreamer | null>(null);
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
@@ -144,11 +146,14 @@ export function ScreenPanel({
   return (
     <div
       style={{
-        marginTop: '1.5rem',
+        marginTop: embedded ? 0 : '1.5rem',
         padding: '1rem',
-        background: 'white',
-        borderRadius: '8px',
-        border: '1px solid #e0e0e0',
+        background: embedded ? 'rgba(255,255,255,0.76)' : 'white',
+        borderRadius: embedded ? '18px' : '8px',
+        border: embedded ? '1px solid rgba(148,163,184,0.24)' : '1px solid #e0e0e0',
+        boxShadow: embedded ? '0 16px 36px rgba(15,23,42,0.08)' : undefined,
+        backdropFilter: embedded ? 'blur(22px) saturate(140%)' : undefined,
+        WebkitBackdropFilter: embedded ? 'blur(22px) saturate(140%)' : undefined,
       }}
     >
       <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Screen Preview</h3>

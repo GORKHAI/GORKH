@@ -47,7 +47,12 @@ import { buildDesktopAccountSnapshot } from './lib/desktop-account.js';
 import { createRunForOwnedDevice } from './lib/run-creation.js';
 import { authenticateDesktopDeviceSession, revokeDesktopSession } from './lib/desktop-session.js';
 import { startRetentionScheduler } from './lib/retention.js';
-import { createSecurityOnSendHook, DEFAULT_JSON_BODY_LIMIT, WEBHOOK_RAW_BODY_LIMIT } from './lib/security.js';
+import {
+  createSecurityOnSendHook,
+  DEFAULT_JSON_BODY_LIMIT,
+  isAllowedCorsOrigin,
+  WEBHOOK_RAW_BODY_LIMIT,
+} from './lib/security.js';
 import { dispatchDeviceCommand, isDeviceCommandQueueEnabled } from './lib/device-commands.js';
 import {
   counterLabelsFromRateLimitKey,
@@ -131,12 +136,7 @@ const versionDriftWarnings = getVersionDriftWarnings();
 await fastify.register(cookie);
 await fastify.register(cors, {
   origin(origin, callback) {
-    if (!origin) {
-      callback(null, true);
-      return;
-    }
-
-    if (config.WEB_ORIGINS.includes(origin)) {
+    if (isAllowedCorsOrigin(origin, config.WEB_ORIGINS)) {
       callback(null, true);
       return;
     }

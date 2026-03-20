@@ -1,5 +1,6 @@
 import type { Device, RunMode, RunWithSteps } from '@ai-operator/shared';
 import type { DesktopApiRuntimeConfig } from './desktopRuntimeConfig.js';
+import { fetchDesktopApiJson } from './desktopApi.js';
 
 export interface DesktopBillingSnapshot {
   subscriptionStatus: 'active' | 'inactive';
@@ -25,37 +26,15 @@ export interface DesktopTaskBootstrap {
   };
 }
 
-async function desktopTaskFetchJson<T>(
-  runtimeConfig: DesktopApiRuntimeConfig,
-  deviceToken: string,
-  path: '/desktop/me' | '/desktop/runs',
-  init?: RequestInit
-): Promise<T> {
-  const response = await fetch(`${runtimeConfig.httpBase}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${deviceToken}`,
-      ...(init?.headers || {}),
-    },
-  });
-
-  const data = await response.json().catch(() => ({ error: 'Request failed' }));
-  if (!response.ok) {
-    throw new Error(typeof data?.error === 'string' ? data.error : 'Request failed');
-  }
-
-  return data as T;
-}
-
 export async function getDesktopTaskBootstrap(
   runtimeConfig: DesktopApiRuntimeConfig,
   deviceToken: string
 ): Promise<DesktopTaskBootstrap> {
-  const data = await desktopTaskFetchJson<{ ok: true } & DesktopTaskBootstrap>(
+  const data = await fetchDesktopApiJson<{ ok: true } & DesktopTaskBootstrap>(
     runtimeConfig,
     deviceToken,
-    '/desktop/me'
+    '/desktop/me',
+    'Desktop readiness',
   );
 
   return {
@@ -76,10 +55,11 @@ export async function createDesktopRun(
     mode: RunMode;
   }
 ): Promise<RunWithSteps> {
-  const data = await desktopTaskFetchJson<{ ok: true; run: RunWithSteps }>(
+  const data = await fetchDesktopApiJson<{ ok: true; run: RunWithSteps }>(
     runtimeConfig,
     deviceToken,
     '/desktop/runs',
+    'Desktop run creation',
     {
       method: 'POST',
       body: JSON.stringify(input),

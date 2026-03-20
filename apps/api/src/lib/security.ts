@@ -22,6 +22,12 @@ const BASE_HEADERS = {
   'permissions-policy': 'accelerometer=(), camera=(), geolocation=(), microphone=(), payment=(), usb=()',
 } as const;
 
+const BUILTIN_DESKTOP_WEBVIEW_ORIGINS = new Set([
+  'tauri://localhost',
+  'https://tauri.localhost',
+  'http://tauri.localhost',
+]);
+
 function normalizeRouteUrl(routeUrl: string): string {
   return routeUrl.split('?')[0] || routeUrl;
 }
@@ -74,6 +80,19 @@ export function createSecurityOnSendHook(options: { nodeEnv: string }) {
       reply.header(name, value);
     }
   };
+}
+
+export function isAllowedCorsOrigin(origin: string | undefined, webOrigins: string[]): boolean {
+  if (!origin) {
+    return true;
+  }
+
+  const normalizedOrigin = origin.trim();
+  if (!normalizedOrigin) {
+    return true;
+  }
+
+  return webOrigins.includes(normalizedOrigin) || BUILTIN_DESKTOP_WEBVIEW_ORIGINS.has(normalizedOrigin);
 }
 
 export function validateSecurityRuntimeConfig(config: SecurityRuntimeConfig): void {
