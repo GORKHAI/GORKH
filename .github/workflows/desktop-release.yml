@@ -505,7 +505,7 @@ jobs:
 
       - name: Build macOS bundle
         shell: bash
-        run: pnpm --filter @ai-operator/desktop tauri:build --config "$MACOS_TAURI_CONFIG" --bundles dmg
+        run: pnpm --filter @ai-operator/desktop tauri:build --config "$MACOS_TAURI_CONFIG" --bundles app,dmg
 
       - name: Verify macOS app signature
         shell: bash

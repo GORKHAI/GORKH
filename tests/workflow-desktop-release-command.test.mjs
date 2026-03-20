@@ -15,20 +15,30 @@ test('desktop release workflow invokes Tauri through the desktop package script'
 
   assert.match(
     source,
-    /pnpm --filter @ai-operator\/desktop tauri:build --config "\$MACOS_TAURI_CONFIG" --bundles dmg/,
-    'Stable macOS release job must build via the desktop package script'
-  );
-
-  assert.match(
-    source,
-    /pnpm --filter @ai-operator\/desktop tauri:build --config "\$MACOS_TAURI_CONFIG" --bundles dmg/,
-    'Beta macOS release job must build via the desktop package script'
+    /pnpm --filter @ai-operator\/desktop tauri:build --config "\$MACOS_TAURI_CONFIG" --bundles app,dmg/,
+    'macOS release jobs must build both the app bundle and the DMG via the desktop package script'
   );
 
   assert.doesNotMatch(
     source,
     /pnpm --filter @ai-operator\/desktop exec tauri build/,
     'Release workflow must not rely on recursive pnpm exec for the Tauri CLI'
+  );
+});
+
+test('desktop release workflow requests the macOS app bundle before verifying it exists', () => {
+  const source = readFileSync(workflowPath, 'utf8');
+
+  assert.match(
+    source,
+    /find apps\/desktop\/src-tauri\/target\/release\/bundle\/macos -maxdepth 1 -type d -name '\*\.app'/,
+    'desktop release workflow should verify the produced macOS .app bundle before notarizing the DMG'
+  );
+
+  assert.match(
+    source,
+    /pnpm --filter @ai-operator\/desktop tauri:build --config "\$MACOS_TAURI_CONFIG" --bundles app,dmg/,
+    'desktop release workflow must request the app bundle whenever it later verifies bundle\/macos\/\*.app'
   );
 });
 
