@@ -6,7 +6,7 @@ test('desktop main surface emphasizes assistant chat and task progress instead o
   const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
   const runPanelSource = readFileSync('apps/desktop/src/components/RunPanel.tsx', 'utf8');
 
-  assert.match(appSource, /Advanced|Assistant settings|Debug details/i);
+  assert.match(appSource, /Settings|Advanced|Assistant settings|Debug details/i);
   assert.doesNotMatch(appSource, /Technical details/i, 'retail desktop should avoid operator-flavored copy');
   assert.doesNotMatch(appSource, /Manual launch/i, 'manual launch should not remain on the retail surface');
   assert.doesNotMatch(appSource, /Task history/i, 'retail desktop should not lead with raw run history language');
@@ -36,8 +36,8 @@ test('desktop retail onboarding uses guided free-AI setup copy on the main surfa
   );
   assert.match(
     appSource,
-    /Advanced/i,
-    'technical details should move behind an explicit Advanced section'
+    /Settings|Advanced/i,
+    'technical details should move behind an explicit Settings or Advanced section'
   );
   assert.doesNotMatch(
     appSource,

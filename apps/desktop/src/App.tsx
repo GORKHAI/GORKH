@@ -227,6 +227,7 @@ function App() {
   const [desktopAccount, setDesktopAccount] = useState<DesktopAccountSnapshot | null>(null);
   const [desktopAccountBusy, setDesktopAccountBusy] = useState(false);
   const [desktopAccountError, setDesktopAccountError] = useState<string | null>(null);
+  const [desktopOverviewRefreshNonce, setDesktopOverviewRefreshNonce] = useState(0);
   const [deviceRevokeBusyId, setDeviceRevokeBusyId] = useState<string | null>(null);
   const [recentRuns, setRecentRuns] = useState<RunWithSteps[]>([]);
   const [localSettings, setLocalSettingsState] = useState<LocalSettingsState>(() => getSettings());
@@ -944,7 +945,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [authState, runtimeConfig, sessionDeviceToken]);
+  }, [authState, runtimeConfig, sessionDeviceToken, status, desktopOverviewRefreshNonce]);
 
   useEffect(() => {
     if (!runtimeConfig || !sessionDeviceToken || authState !== 'signed_in') {
@@ -979,7 +980,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [authState, runtimeConfig, sessionDeviceToken]);
+  }, [authState, runtimeConfig, sessionDeviceToken, status, desktopOverviewRefreshNonce]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1498,6 +1499,10 @@ function App() {
     }
   }, [recentRuns]);
 
+  const handleRefreshDesktopOverview = useCallback(() => {
+    setDesktopOverviewRefreshNonce((current) => current + 1);
+  }, []);
+
   const handleRevokeDesktopDevice = useCallback(async (targetDeviceId: string) => {
     if (!runtimeConfig || !sessionDeviceToken) {
       setDesktopAccountError('Desktop sign-in is required before managing signed-in desktops.');
@@ -1933,7 +1938,23 @@ function App() {
                   color: '#991b1b',
                 }}
               >
-                {desktopBootstrapError}
+                <div>{desktopBootstrapError}</div>
+                <button
+                  onClick={handleRefreshDesktopOverview}
+                  disabled={desktopBootstrapBusy}
+                  style={{
+                    marginTop: '0.65rem',
+                    padding: '0.45rem 0.7rem',
+                    borderRadius: '10px',
+                    border: '1px solid #fca5a5',
+                    background: '#ffffff',
+                    color: '#991b1b',
+                    cursor: desktopBootstrapBusy ? 'not-allowed' : 'pointer',
+                    opacity: desktopBootstrapBusy ? 0.7 : 1,
+                  }}
+                >
+                  Retry now
+                </button>
               </div>
             )}
 
@@ -2080,7 +2101,23 @@ function App() {
                   color: '#991b1b',
                 }}
               >
-                {desktopAccountError}
+                <div>{desktopAccountError}</div>
+                <button
+                  onClick={handleRefreshDesktopOverview}
+                  disabled={desktopAccountBusy}
+                  style={{
+                    marginTop: '0.65rem',
+                    padding: '0.45rem 0.7rem',
+                    borderRadius: '10px',
+                    border: '1px solid #fca5a5',
+                    background: '#ffffff',
+                    color: '#991b1b',
+                    cursor: desktopAccountBusy ? 'not-allowed' : 'pointer',
+                    opacity: desktopAccountBusy ? 0.7 : 1,
+                  }}
+                >
+                  Retry now
+                </button>
               </div>
             )}
 

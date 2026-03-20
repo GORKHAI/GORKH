@@ -36,6 +36,31 @@ test('desktop retains desktop account and device session management helpers whil
   assert.match(helperSource, /\/desktop\/devices\/\$\{deviceId\}\/revoke/, 'desktop should support remote desktop session revoke');
 });
 
+test('desktop overview can retry account and readiness loading after transient API failures', () => {
+  const appSource = readFileSync(appPath, 'utf8');
+
+  assert.match(
+    appSource,
+    /const \[desktopOverviewRefreshNonce, setDesktopOverviewRefreshNonce\] = useState\(0\);/,
+    'desktop should track an explicit refresh nonce for overview API retries'
+  );
+  assert.match(
+    appSource,
+    /const handleRefreshDesktopOverview = useCallback\(\(\) => \{\s*setDesktopOverviewRefreshNonce\(\(current\) => current \+ 1\);\s*\}, \[\]\);/,
+    'desktop should expose a dedicated overview refresh handler'
+  );
+  assert.match(
+    appSource,
+    /\[authState, runtimeConfig, sessionDeviceToken, status, desktopOverviewRefreshNonce\]/,
+    'desktop readiness/account loaders should rerun when connectivity changes or the user retries'
+  );
+  assert.match(
+    appSource,
+    />\s*Retry now\s*</,
+    'desktop overview errors should offer a direct retry action instead of staying stale'
+  );
+});
+
 test('desktop routes the selected display through preview and assistant execution paths', () => {
   const appSource = readFileSync(appPath, 'utf8');
   const screenPanelSource = readFileSync(screenPanelPath, 'utf8');
