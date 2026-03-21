@@ -117,9 +117,29 @@ pub struct ActionHistory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunConstraints {
+    #[serde(alias = "max_actions")]
     pub max_actions: u32,
+    #[serde(alias = "max_runtime_minutes")]
     pub max_runtime_minutes: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RunConstraints;
+
+    #[test]
+    fn run_constraints_deserialize_from_camel_case_fields() {
+        let parsed: RunConstraints = serde_json::from_value(serde_json::json!({
+            "maxActions": 1,
+            "maxRuntimeMinutes": 2
+        }))
+        .expect("camelCase constraints should deserialize");
+
+        assert_eq!(parsed.max_actions, 1);
+        assert_eq!(parsed.max_runtime_minutes, 2);
+    }
 }
 
 /// Error type for LLM operations
@@ -204,7 +224,7 @@ NOTE: All file paths must be relative to the workspace root."#
         r#"You are an AI assistant helping a user accomplish tasks on their computer.
 
 SAFETY RULES:
-1. NEVER perform actions that could be harmful (deleting files, making payments, changing passwords, etc.) without explicit user confirmation
+1. NEVER perform actions that could be harmful (deleting files, making payments, signing in to accounts, changing passwords, etc.) without explicit user confirmation
 2. When uncertain, use "ask_user" to request clarification
 3. Respect user privacy - do not read or transmit sensitive information
 4. Prefer asking over assuming

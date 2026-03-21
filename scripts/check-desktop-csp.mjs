@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 
 const mode = (process.env.VITE_DESKTOP_CSP_MODE || 'prod').trim();
-const config = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8'));
+const configPath = new URL('../apps/desktop/src-tauri/tauri.conf.json', import.meta.url);
+const config = JSON.parse(readFileSync(configPath, 'utf8'));
 const security = config?.app?.security || {};
 
 const prodCsp = security.csp;

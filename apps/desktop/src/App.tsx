@@ -34,8 +34,14 @@ import {
 import { desktopRuntimeConfig } from './lib/desktopRuntimeConfig.js';
 import { logoutDesktopSession, startDesktopSignIn } from './lib/desktopAuth.js';
 import { getDesktopAccount, revokeDesktopDevice, type DesktopAccountSnapshot } from './lib/desktopAccount.js';
-import { getDesktopTaskBootstrap, type DesktopTaskBootstrap } from './lib/desktopTasks.js';
-import { ensureAssistantRunForMessage } from './lib/chatTaskFlow.js';
+import { createDesktopRun, getDesktopTaskBootstrap, type DesktopTaskBootstrap } from './lib/desktopTasks.js';
+import {
+  ASSISTANT_OPENING_GOAL,
+  ensureAssistantRunForMessage,
+  getAssistantDisplayGoal,
+  isAssistantOpeningGoal,
+  isAssistantRunActive,
+} from './lib/chatTaskFlow.js';
 import {
   enableLocalAiVisionBoost,
   getLocalAiHardwareProfile,
@@ -76,7 +82,10 @@ import {
 } from './lib/permissions.js';
 import { getWorkspaceState, type LocalWorkspaceState } from './lib/workspace.js';
 import { getSettings, setSetting, subscribe, updateSettings, type LocalSettingsState } from './lib/localSettings.js';
-import { evaluateDesktopTaskReadiness } from './lib/taskReadiness.js';
+import {
+  evaluateDesktopTaskReadiness,
+  getDesktopControlExecutionBlocker,
+} from './lib/taskReadiness.js';
 import { ChatOverlay } from './components/ChatOverlay.js';
 import { RunPanel } from './components/RunPanel.js';
 import { ApprovalModal } from './components/ApprovalModal.js';
@@ -280,6 +289,10 @@ function App() {
   const [visionBoostRequested, setVisionBoostRequested] = useState(false);
   const controlEnabledRef = useRef(localSettings.allowControlEnabled);
   const workspaceConfiguredRef = useRef(workspaceState.configured);
+  const assistantAutoStartAttemptedRef = useRef(false);
+  const assistantAutoStartInFlightRef = useRef(false);
+  const assistantStartingRunIdRef = useRef<string | null>(null);
+  const assistantConsumedWarmupRunIdsRef = useRef(new Set<string>());
   const clientRef = useRef<WsClient | null>(null);
   const controlApprovalPayloadsRef = useRef(new Map<string, PendingControlApprovalPayload>());
   const proposalApprovalPayloadsRef = useRef(new Map<string, PendingProposalPayload>());
@@ -353,6 +366,13 @@ function App() {
     setPermissionHintMessage(message);
     void refreshPermissionStatus();
   }, [refreshPermissionStatus]);
+
+  const noteControlExecutionBlocker = useCallback((blocker: { id: string; detail: string }) => {
+    setInputPermissionError(blocker.detail);
+    if (blocker.id === 'accessibility-permission') {
+      notePermissionIssue('accessibility', blocker.detail);
+    }
+  }, [notePermissionIssue]);
 
   const handleOpenPermissionSettings = useCallback(async (target: PermissionTarget) => {
     try {
@@ -458,6 +478,17 @@ function App() {
   useEffect(() => {
     workspaceConfiguredRef.current = workspaceState.configured;
   }, [workspaceState.configured]);
+
+  useEffect(() => {
+    if (isSignedIn) {
+      return;
+    }
+
+    assistantAutoStartAttemptedRef.current = false;
+    assistantAutoStartInFlightRef.current = false;
+    assistantStartingRunIdRef.current = null;
+    assistantConsumedWarmupRunIdsRef.current.clear();
+  }, [isSignedIn]);
 
   useEffect(() => {
     persistLlmSettings(llmSettings);
@@ -813,6 +844,7 @@ function App() {
             return { ...prev, status: 'canceled' };
           });
           // Stop AI if running
+          assistantStartingRunIdRef.current = null;
           assistantEngineRef.current?.stop('Run canceled');
         },
         onDeviceToken: (nextDeviceToken) => {
@@ -861,7 +893,7 @@ function App() {
           console.log('[App] Run started:', runId, 'mode:', mode);
           if (mode === 'ai_assist') {
             // Start AI Assist controller
-            startAssistantEngine(runId, goal);
+            void startAssistantEngine(runId, goal);
           }
           return { ok: true as const };
         },
@@ -884,6 +916,7 @@ function App() {
     return () => {
       disposed = true;
       wsClient?.disconnect();
+      assistantStartingRunIdRef.current = null;
       assistantEngineRef.current?.stop('Component unmounting');
     };
   }, [platform]);
@@ -1144,8 +1177,25 @@ function App() {
   }, [aiState?.status]);
 
   // Start the unified assistant engine for the current run
-  const startAssistantEngine = async (runId: string, goal: string) => {
+  const startAssistantEngine = useCallback(async (runId: string, goal: string) => {
     if (!client) return;
+
+    if (assistantStartingRunIdRef.current === runId) {
+      return;
+    }
+
+    if (
+      assistantStartingRunIdRef.current &&
+      assistantStartingRunIdRef.current !== runId &&
+      assistantEngineRef.current
+    ) {
+      assistantEngineRef.current.stop('Switching assistant runs');
+      setAssistantEngine(null);
+      setAiState(null);
+      setCurrentProposal(undefined);
+    }
+
+    assistantStartingRunIdRef.current = runId;
 
     const effectiveSettings: LlmSettings = llmSettings.provider === DEFAULT_LLM_PROVIDER
       ? (() => {
@@ -1203,9 +1253,20 @@ function App() {
     const started = await engine.start(effectiveSettings);
     
     if (!started) {
+      if (assistantStartingRunIdRef.current === runId) {
+        assistantStartingRunIdRef.current = null;
+      }
       setAssistantEngine(null);
     }
-  };
+  }, [
+    assistantEngineId,
+    client,
+    deviceId,
+    llmSettings,
+    localAiRecommendation,
+    localAiStatus,
+    primaryDisplayId,
+  ]);
 
   // Handle server messages
   const handleServerMessage = useCallback((message: ServerMessage) => {
@@ -1260,6 +1321,7 @@ function App() {
         workspaceConfigured: workspaceState.configured,
         providerConfigured,
         isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
+        requireControl: false,
       });
 
       if (!assistantReadiness.ready) {
@@ -1280,6 +1342,15 @@ function App() {
 
       const localPlanPolicy = getLocalAiPlanPolicy(desktopBootstrap?.billing ?? desktopAccount?.billing);
       const startingNewTask = !activeRun || !['queued', 'running', 'waiting_for_user'].includes(activeRun.status);
+      const isWarmupRun = Boolean(
+        activeRun
+        && llmSettings.provider === DEFAULT_LLM_PROVIDER
+        && isAssistantOpeningGoal(activeRun.goal)
+        && !assistantConsumedWarmupRunIdsRef.current.has(activeRun.runId)
+      );
+      const canUseWarmupRun = Boolean(isWarmupRun && assistantEngine && aiState?.status === 'asking_user');
+      const shouldReplaceWarmupRun = Boolean(isWarmupRun && !canUseWarmupRun);
+      const shouldCountManagedLocalTaskStart = startingNewTask || isWarmupRun;
 
       if (llmSettings.provider === DEFAULT_LLM_PROVIDER) {
         const localTaskBinding = resolveManagedLocalTaskBinding(localAiStatus, localAiRecommendation, trimmed);
@@ -1295,7 +1366,7 @@ function App() {
           return;
         }
 
-        if (startingNewTask) {
+        if (shouldCountManagedLocalTaskStart) {
           const usage = readLocalAiTaskUsage(window.localStorage);
           const taskAllowance = canStartManagedLocalTask(localPlanPolicy, usage);
           if (!taskAllowance.allowed) {
@@ -1310,17 +1381,37 @@ function App() {
 
       void (async () => {
         try {
+          let runToReuse = activeRun;
+          if (shouldReplaceWarmupRun && activeRun) {
+            assistantStartingRunIdRef.current = null;
+            assistantEngine?.stop('Replacing warmup session with a direct task run');
+            setAssistantEngine(null);
+            setAiState(null);
+            setCurrentProposal(undefined);
+            client.sendRunCancel(activeRun.runId);
+            runToReuse = null;
+          }
+
           const run = await ensureAssistantRunForMessage({
             message: trimmed,
-            activeRun,
+            activeRun: runToReuse,
             runtimeConfig,
             deviceToken: sessionDeviceToken,
           });
+          const displayRun = isWarmupRun
+            ? {
+                ...run,
+                goal: trimmed,
+              }
+            : run;
 
-          setActiveRun(run);
-          setRecentRuns((currentRuns) => upsertRunHistory(currentRuns, run));
-          if (llmSettings.provider === DEFAULT_LLM_PROVIDER && startingNewTask) {
+          setActiveRun(displayRun);
+          setRecentRuns((currentRuns) => upsertRunHistory(currentRuns, displayRun));
+          if (llmSettings.provider === DEFAULT_LLM_PROVIDER && shouldCountManagedLocalTaskStart) {
             setLocalAiTaskUsage(recordManagedLocalTaskStart(window.localStorage));
+            if (isWarmupRun && activeRun) {
+              assistantConsumedWarmupRunIdsRef.current.add(activeRun.runId);
+            }
           }
 
           const sent = client.sendChat(trimmed, run.runId);
@@ -1332,7 +1423,7 @@ function App() {
             return;
           }
 
-          if (assistantEngine && aiState?.status === 'asking_user') {
+          if (canUseWarmupRun && assistantEngine) {
             assistantEngine.userResponse(trimmed);
           }
         } catch (err) {
@@ -1486,6 +1577,7 @@ function App() {
     approvalController.cancelAllPending('Desktop signed out');
     controlApprovalPayloadsRef.current.clear();
     proposalApprovalPayloadsRef.current.clear();
+    assistantStartingRunIdRef.current = null;
     assistantEngineRef.current?.stop('Desktop signed out');
     setAssistantEngine(null);
     setAiState(null);
@@ -1533,6 +1625,7 @@ function App() {
   // Handle cancel run
   const handleCancelRun = useCallback(() => {
     if (!activeRun) return;
+    assistantStartingRunIdRef.current = null;
     assistantEngine?.stop('User canceled');
     client?.sendRunCancel(activeRun.runId);
   }, [client, activeRun, assistantEngine]);
@@ -1550,8 +1643,15 @@ function App() {
       return;
     }
 
-    if (!controlEnabledRef.current) {
-      approvalController.cancel(approval.id, 'Allow Control disabled');
+    const controlBlocker = getDesktopControlExecutionBlocker({
+      platform,
+      permissionStatus,
+      localSettings: {
+        allowControlEnabled: localSettings.allowControlEnabled,
+      },
+    });
+    if (controlBlocker) {
+      noteControlExecutionBlocker(controlBlocker);
       return;
     }
 
@@ -1572,7 +1672,7 @@ function App() {
     }
 
     activeClient.sendActionResult(payload.actionId, result.ok, result.error);
-  }, [approvalItems, notePermissionIssue]);
+  }, [approvalItems, localSettings.allowControlEnabled, noteControlExecutionBlocker, notePermissionIssue, permissionStatus, platform]);
 
   const handleActionDeny = useCallback(() => {
     const approval = getNextPendingApproval(approvalItems, 'control_action');
@@ -1626,6 +1726,18 @@ function App() {
       return;
     }
 
+    const controlBlocker = getDesktopControlExecutionBlocker({
+      platform,
+      permissionStatus,
+      localSettings: {
+        allowControlEnabled: localSettings.allowControlEnabled,
+      },
+    });
+    if (controlBlocker) {
+      noteControlExecutionBlocker(controlBlocker);
+      return;
+    }
+
     approvalController.approve(approval.id);
     approvalController.markExecuting(approval.id);
     const result = await assistantEngineRef.current.approveAction();
@@ -1638,7 +1750,7 @@ function App() {
       notePermissionIssue('accessibility', result.error);
     }
     approvalController.markFailed(approval.id, 'EXECUTION_FAILED');
-  }, [approvalItems, notePermissionIssue]);
+  }, [approvalItems, localSettings.allowControlEnabled, noteControlExecutionBlocker, notePermissionIssue, permissionStatus, platform]);
 
   const handleAiRejectAction = useCallback(() => {
     const approval = getNextPendingApproval(approvalItems, 'ai_proposal');
@@ -1690,6 +1802,7 @@ function App() {
     approvalController.cancelAllPending('AI Assist stopped', (item) =>
       item.kind === 'ai_proposal' || item.kind === 'tool_call'
     );
+    assistantStartingRunIdRef.current = null;
     assistantEngine?.stop('User stopped');
     if (activeRun) {
       client?.sendRunUpdate(activeRun.runId, 'canceled', 'AI Assist stopped by user');
@@ -1764,6 +1877,7 @@ function App() {
     workspaceConfigured: workspaceState.configured,
     providerConfigured,
     isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
+    requireControl: false,
   });
   const taskReadiness = evaluateDesktopTaskReadiness({
     mode: 'ai_assist',
@@ -1774,7 +1888,24 @@ function App() {
     workspaceConfigured: workspaceState.configured,
     providerConfigured,
     isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
+    requireControl: false,
   });
+  const controlReadiness = evaluateDesktopTaskReadiness({
+    mode: 'ai_assist',
+    subscriptionStatus,
+    platform,
+    permissionStatus,
+    localSettings,
+    workspaceConfigured: workspaceState.configured,
+    providerConfigured,
+    isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
+    requireControl: true,
+  });
+  const controlSetupItems = controlReadiness.requiredSetup.filter(
+    (item) => !taskReadiness.requiredSetup.some((existing) => existing.id === item.id)
+  );
+  const overlayReadinessBlockers =
+    controlSetupItems.length > 0 ? controlReadiness.blockers : assistantReadiness.blockers;
   const showFreeAiSetup =
     isSignedIn
     && llmSettings.provider === DEFAULT_LLM_PROVIDER
@@ -1800,9 +1931,94 @@ function App() {
           ? 'GORKH is working…'
           : 'GORKH is thinking…';
   const userMessages = messages.filter((item) => item.role === 'user');
-  const overlayGoal = activeRun?.goal ?? userMessages[userMessages.length - 1]?.text ?? null;
+  const latestUserMessageText = userMessages[userMessages.length - 1]?.text ?? null;
+  const activeRunDisplayGoal = activeRun
+    ? getAssistantDisplayGoal(activeRun.goal, latestUserMessageText)
+    : null;
+  const overlayGoal = activeRun
+    ? getAssistantDisplayGoal(activeRun.goal, latestUserMessageText)
+    : latestUserMessageText;
   const overlayPreviewMessages = messages.slice(-4);
   const overlayWorkspaceLabel = workspaceState.configured ? workspaceState.rootName || 'Configured' : 'Not configured';
+
+  useEffect(() => {
+    if (!client || !assistantReadiness.ready) {
+      return;
+    }
+
+    if (!activeRun || activeRun.mode !== 'ai_assist' || !isAssistantRunActive(activeRun)) {
+      return;
+    }
+
+    if (assistantStartingRunIdRef.current === activeRun.runId) {
+      return;
+    }
+
+    void startAssistantEngine(activeRun.runId, activeRun.goal);
+  }, [
+    activeRun,
+    assistantReadiness.ready,
+    client,
+    startAssistantEngine,
+  ]);
+
+  useEffect(() => {
+    if (!runtimeConfig || !sessionDeviceToken || authState !== 'signed_in' || status !== 'connected') {
+      return;
+    }
+
+    if (llmSettings.provider !== DEFAULT_LLM_PROVIDER) {
+      return;
+    }
+
+    if (!assistantReadiness.ready) {
+      return;
+    }
+
+    if (desktopBootstrapBusy || (!desktopBootstrap && !desktopBootstrapError)) {
+      return;
+    }
+
+    if (assistantAutoStartAttemptedRef.current || assistantAutoStartInFlightRef.current) {
+      return;
+    }
+
+    if (activeRun && isAssistantRunActive(activeRun)) {
+      if (activeRun.mode === 'ai_assist') {
+        assistantAutoStartAttemptedRef.current = true;
+      }
+      return;
+    }
+
+    assistantAutoStartInFlightRef.current = true;
+    void createDesktopRun(runtimeConfig, sessionDeviceToken, {
+      goal: ASSISTANT_OPENING_GOAL,
+      mode: 'ai_assist',
+    })
+      .then((run) => {
+        assistantAutoStartAttemptedRef.current = true;
+        setActiveRun(run);
+        setRecentRuns((currentRuns) => upsertRunHistory(currentRuns, run));
+      })
+      .catch((err) => {
+        console.error('[App] Failed to auto-start assistant session:', err);
+      })
+      .finally(() => {
+        assistantAutoStartInFlightRef.current = false;
+      });
+  }, [
+    activeRun,
+    assistantReadiness.ready,
+    authState,
+    desktopBootstrap,
+    desktopBootstrapBusy,
+    desktopBootstrapError,
+    llmSettings.provider,
+    runtimeConfig,
+    sessionDeviceToken,
+    status,
+  ]);
+
   const handleToggleAiPause = useCallback(() => {
     const engine = assistantEngineRef.current;
     if (!engine) {
@@ -2075,6 +2291,60 @@ function App() {
                 ))}
               </div>
             )}
+
+            {controlSetupItems.length > 0 && (
+              <div
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '0.85rem',
+                  background: '#eff6ff',
+                  border: '1px solid #93c5fd',
+                  borderRadius: '12px',
+                  color: '#1d4ed8',
+                }}
+              >
+                <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                  Desktop control needs {controlSetupItems.length} more item{controlSetupItems.length === 1 ? '' : 's'}.
+                </div>
+                <div style={{ marginTop: '0.35rem', fontSize: '0.8125rem', color: '#475569' }}>
+                  Chat and planning can start now. GORKH will only click, type, and control other apps after this desktop is ready.
+                </div>
+                <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.5rem' }}>
+                  {controlSetupItems.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        padding: '0.75rem',
+                        background: 'rgba(255,255,255,0.72)',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(148,163,184,0.2)',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{item.label}</div>
+                      <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: '#64748b' }}>{item.detail}</div>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                        {item.id === 'control-toggle' && (
+                          <button
+                            onClick={() => handleControlToggle(true)}
+                            style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                          >
+                            Enable Allow Control
+                          </button>
+                        )}
+                        {item.id === 'accessibility-permission' && (
+                          <button
+                            onClick={() => void handleOpenPermissionSettings('accessibility')}
+                            style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
+                          >
+                            Open Permission Settings
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           <section style={subPanelStyle}>
@@ -2220,7 +2490,9 @@ function App() {
                       cursor: 'pointer',
                     }}
                   >
-                    <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{run.goal}</div>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                      {getAssistantDisplayGoal(run.goal)}
+                    </div>
                     <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#64748b' }}>
                       {run.status} • {new Date(run.createdAt).toLocaleString()}
                     </div>
@@ -2668,6 +2940,58 @@ function App() {
                 </div>
               )}
 
+              {assistantReadiness.ready && controlSetupItems.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '1rem',
+                    padding: '0.9rem 1rem',
+                    background: '#eff6ff',
+                    border: '1px solid #93c5fd',
+                    borderRadius: '10px',
+                    color: '#1d4ed8',
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>AI chat is ready. Desktop control still needs setup.</div>
+                  <div style={{ marginTop: '0.35rem', fontSize: '0.875rem' }}>
+                    GORKH can chat and plan now, but clicks, typing, and app control stay paused until these items are ready.
+                  </div>
+                  <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.5rem' }}>
+                    {controlSetupItems.map((item) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: '0.75rem',
+                          background: 'rgba(255,255,255,0.82)',
+                          borderRadius: '10px',
+                          border: '1px solid rgba(59,130,246,0.25)',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e3a8a' }}>{item.label}</div>
+                        <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: '#475569' }}>{item.detail}</div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                          {item.id === 'control-toggle' && (
+                            <button
+                              onClick={() => handleControlToggle(true)}
+                              style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #bfdbfe', background: 'white', cursor: 'pointer' }}
+                            >
+                              Enable Allow Control
+                            </button>
+                          )}
+                          {item.id === 'accessibility-permission' && (
+                            <button
+                              onClick={() => void handleOpenPermissionSettings('accessibility')}
+                              style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #bfdbfe', background: 'white', cursor: 'pointer' }}
+                            >
+                              Open Permission Settings
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {(showFreeAiSetup || showVisionBoostSetup) && (
                 <FreeAiSetupCard
                   status={localAiStatus}
@@ -2809,6 +3133,7 @@ function App() {
             )}
             <RunPanel 
               run={activeRun} 
+              displayGoal={activeRunDisplayGoal ?? undefined}
               onCancel={handleCancelRun}
               // AI Assist props
               isAiAssist={isAiAssist}
@@ -2896,7 +3221,7 @@ function App() {
               runStatus={activeRun?.status ?? null}
               providerLabel={getLlmProviderLabel(llmSettings.provider)}
               workspaceLabel={overlayWorkspaceLabel}
-              readinessBlockers={assistantReadiness.blockers}
+              readinessBlockers={overlayReadinessBlockers}
               pendingApprovals={pendingApprovals}
               onClose={() => setOverlayDetailsOpen(false)}
               onOpenSettings={() => {

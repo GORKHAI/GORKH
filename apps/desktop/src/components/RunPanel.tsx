@@ -5,6 +5,7 @@ import type { LocalToolEvent } from '../lib/aiAssist.js';
 
 interface RunPanelProps {
   run: RunWithSteps | null;
+  displayGoal?: string;
   onCancel?: () => void;
   // Iteration 6: AI Assist props
   isAiAssist?: boolean;
@@ -26,6 +27,7 @@ interface RunPanelProps {
 
 export function RunPanel({
   run,
+  displayGoal,
   onCancel,
   isAiAssist,
   aiState,
@@ -128,7 +130,7 @@ export function RunPanel({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.125rem' }}>Task progress</h2>
-          <p style={{ margin: '0.25rem 0 0', color: '#666', fontSize: '0.875rem' }}>{run.goal}</p>
+          <p style={{ margin: '0.25rem 0 0', color: '#666', fontSize: '0.875rem' }}>{displayGoal || run.goal}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <span

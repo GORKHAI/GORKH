@@ -34,6 +34,12 @@ export interface DesktopTaskReadiness {
   optionalUpgrades: DesktopTaskSetupItem[];
 }
 
+interface DesktopControlExecutionBlockerInput {
+  platform?: PermissionPlatform;
+  permissionStatus: NativePermissionStatus;
+  localSettings: Pick<LocalSettingsState, 'allowControlEnabled'>;
+}
+
 interface EvaluateDesktopTaskReadinessInput {
   mode: RunMode;
   subscriptionStatus: 'active' | 'inactive';
@@ -43,6 +49,7 @@ interface EvaluateDesktopTaskReadinessInput {
   workspaceConfigured: boolean;
   providerConfigured: boolean;
   isManagedLocalProvider?: boolean;
+  requireControl?: boolean;
 }
 
 function isPermissionBlocked(
@@ -75,10 +82,35 @@ function getPermissionBlockerDetail(
     : 'Grant accessibility/input permission for approved desktop actions.';
 }
 
+export function getDesktopControlExecutionBlocker(
+  input: DesktopControlExecutionBlockerInput
+): DesktopTaskBlocker | null {
+  const platform = input.platform ?? 'unknown';
+
+  if (!input.localSettings.allowControlEnabled) {
+    return {
+      id: 'control-toggle',
+      label: 'Allow Control disabled',
+      detail: 'Enable Allow Control so approved actions can execute locally.',
+    };
+  }
+
+  if (isPermissionBlocked(input.permissionStatus.accessibility, platform)) {
+    return {
+      id: 'accessibility-permission',
+      label: 'Accessibility permission missing',
+      detail: getPermissionBlockerDetail('accessibility', platform),
+    };
+  }
+
+  return null;
+}
+
 export function evaluateDesktopTaskReadiness(
   input: EvaluateDesktopTaskReadinessInput
 ): DesktopTaskReadiness {
   const platform = input.platform ?? 'unknown';
+  const requireControl = input.requireControl ?? true;
   const blockers: DesktopTaskBlocker[] = [];
   const requiredSetup: DesktopTaskSetupItem[] = [];
   const optionalUpgrades: DesktopTaskSetupItem[] = [];
@@ -103,24 +135,26 @@ export function evaluateDesktopTaskReadiness(
     requiredSetup.push(item);
   }
 
-  if (!input.localSettings.allowControlEnabled) {
-    const item = {
-      id: 'control-toggle',
-      label: 'Allow Control disabled',
-      detail: 'Enable Allow Control so approved actions can execute locally.',
-    } satisfies DesktopTaskBlocker;
-    blockers.push(item);
-    requiredSetup.push(item);
-  }
+  if (requireControl) {
+    if (!input.localSettings.allowControlEnabled) {
+      const controlBlocker = {
+        id: 'control-toggle',
+        label: 'Allow Control disabled',
+        detail: 'Enable Allow Control so approved actions can execute locally.',
+      } satisfies DesktopTaskBlocker;
+      blockers.push(controlBlocker);
+      requiredSetup.push(controlBlocker);
+    }
 
-  if (isPermissionBlocked(input.permissionStatus.accessibility, platform)) {
-    const item = {
-      id: 'accessibility-permission',
-      label: 'Accessibility permission missing',
-      detail: getPermissionBlockerDetail('accessibility', platform),
-    } satisfies DesktopTaskBlocker;
-    blockers.push(item);
-    requiredSetup.push(item);
+    if (isPermissionBlocked(input.permissionStatus.accessibility, platform)) {
+      const accessibilityBlocker = {
+        id: 'accessibility-permission',
+        label: 'Accessibility permission missing',
+        detail: getPermissionBlockerDetail('accessibility', platform),
+      } satisfies DesktopTaskBlocker;
+      blockers.push(accessibilityBlocker);
+      requiredSetup.push(accessibilityBlocker);
+    }
   }
 
   if (input.mode === 'ai_assist' && !input.workspaceConfigured) {
