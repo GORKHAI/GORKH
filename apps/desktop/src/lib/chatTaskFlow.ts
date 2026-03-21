@@ -8,11 +8,25 @@ const ACTIVE_RUN_STATUSES = new Set<RunWithSteps['status']>([
   'waiting_for_user',
 ]);
 
+// Marker prefix used to identify any GORKH opening goal variant (regardless of app state)
+const OPENING_GOAL_MARKER = '[GORKH_OPENING]';
+
 export const ASSISTANT_OPENING_GOAL =
-  'Ask the user what they want done on this desktop, then wait for their reply before taking any action.';
+  `${OPENING_GOAL_MARKER} Greet the user as GORKH. Briefly explain that you can automate tasks, explain your settings and features, and guide setup. Ask what they would like help with today, then wait for their reply before taking any action.`;
+
+/**
+ * Build a context-aware opening goal that tailors the greeting based on whether
+ * Free AI is ready. When not ready, the assistant proactively offers to set it up.
+ */
+export function buildAssistantOpeningGoal(freeAiReady: boolean): string {
+  if (!freeAiReady) {
+    return `${OPENING_GOAL_MARKER} Greet the user as GORKH. Let them know that Free AI (the free local model) is not set up yet and offer to set it up directly from this chat using your tools. Briefly explain your key features. Ask if they would like to set up Free AI now or if you can help with something else. Wait for their reply before taking any action.`;
+  }
+  return ASSISTANT_OPENING_GOAL;
+}
 
 export function isAssistantOpeningGoal(goal: string | null | undefined): boolean {
-  return (goal ?? '').trim() === ASSISTANT_OPENING_GOAL;
+  return (goal ?? '').trim().startsWith(OPENING_GOAL_MARKER);
 }
 
 export function getAssistantDisplayGoal(

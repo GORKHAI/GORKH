@@ -36,6 +36,8 @@ export interface AssistantEngineOptions {
   onProposal?: (proposal: AgentProposal) => void;
   onToolEvent?: (event: LocalToolEvent) => void;
   onError?: (error: string) => void;
+  /** Structured GORKH app state for grounding — injected into LLM system prompt. */
+  appContext?: string;
 }
 
 export interface AssistantEngineState extends AiAssistState {
@@ -110,6 +112,7 @@ class LegacyAiAssistEngineAdapter implements AssistantEngineHandle {
       goal: options.goal,
       constraints: options.constraints,
       displayId: options.displayId,
+      gorkhContext: options.appContext,
       onStateChange: (state) => {
         options.onStateChange?.(attachEngineMeta(this.id, this.label, state));
       },
@@ -307,6 +310,7 @@ class AdvancedAssistantEngineAdapter implements AssistantEngineHandle {
         providerBaseUrl: settings.baseUrl,
         providerModel: settings.model,
         displayId: this.options.displayId,
+        appContext: this.options.appContext,
       });
       return true;
     } catch (error) {

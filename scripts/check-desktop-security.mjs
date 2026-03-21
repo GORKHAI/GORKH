@@ -32,6 +32,8 @@ const expectedCommands = [
   'desktop_auth_listen_start',
   'deny_agent_proposal',
   'get_agent_task_status',
+  'gorkh_app_snapshot',
+  'gorkh_settings_set',
   'has_llm_api_key',
   'has_provider_api_key',
   'input_click',

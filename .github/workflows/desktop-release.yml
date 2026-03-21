@@ -111,12 +111,14 @@ jobs:
         env:
           VITE_API_HTTP_BASE: ${{ vars.VITE_API_HTTP_BASE }}
           VITE_API_WS_URL: ${{ vars.VITE_API_WS_URL }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
         run: |
           set -euo pipefail
 
           node <<'NODE'
           const httpBase = process.env.VITE_API_HTTP_BASE?.trim() ?? '';
           const wsUrl = process.env.VITE_API_WS_URL?.trim() ?? '';
+          const appBaseUrl = process.env.APP_BASE_URL?.trim() ?? '';
 
           const fail = (message) => {
             console.error(`::error::${message}`);
@@ -131,8 +133,13 @@ jobs:
             fail('Desktop packaged builds require the VITE_API_WS_URL GitHub Actions variable.');
           }
 
+          if (!appBaseUrl) {
+            fail('Desktop packaged builds require the APP_BASE_URL GitHub Actions variable (the web portal URL, used to allowlist the browser sign-in redirect).');
+          }
+
           let http;
           let ws;
+          let appBase;
 
           try {
             http = new URL(httpBase);
@@ -146,12 +153,22 @@ jobs:
             fail(`Desktop packaged builds require VITE_API_WS_URL to be an absolute URL. Received: ${wsUrl}`);
           }
 
+          try {
+            appBase = new URL(appBaseUrl);
+          } catch {
+            fail(`Desktop packaged builds require APP_BASE_URL to be an absolute URL. Received: ${appBaseUrl}`);
+          }
+
           if (http.protocol !== 'https:') {
             fail(`Desktop packaged builds require VITE_API_HTTP_BASE to use https://. Received: ${httpBase}`);
           }
 
           if (ws.protocol !== 'wss:') {
             fail(`Desktop packaged builds require VITE_API_WS_URL to use wss://. Received: ${wsUrl}`);
+          }
+
+          if (appBase.protocol !== 'https:') {
+            fail(`Desktop packaged builds require APP_BASE_URL to use https://. Received: ${appBaseUrl}`);
           }
 
           const effectivePort = (url) =>
@@ -162,6 +179,7 @@ jobs:
           }
 
           console.log(`Validated packaged desktop API host ${http.host}`);
+          console.log(`Validated packaged desktop web portal host ${appBase.host}`);
           NODE
 
       - name: Validate stable signing and notarization secrets
@@ -416,6 +434,7 @@ jobs:
       VITE_API_WS_URL: ${{ vars.VITE_API_WS_URL }}
       VITE_DESKTOP_UPDATER_ENABLED: ${{ needs.prepare.outputs.updater_enabled }}
       VITE_DESKTOP_UPDATER_PUBLIC_KEY: ${{ vars.VITE_DESKTOP_UPDATER_PUBLIC_KEY }}
+      APP_BASE_URL: ${{ vars.APP_BASE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

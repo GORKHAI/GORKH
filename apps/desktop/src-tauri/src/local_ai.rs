@@ -871,7 +871,7 @@ fn ensure_runtime_binary(
         Err(download_error) => {
             let source = find_system_ollama_binary().ok_or_else(|| {
                 format!(
-                    "Managed local runtime download failed: {} Existing Ollama binary was also not found locally, so Free AI cannot finish setup yet.",
+                    "Managed local runtime download failed: {} An existing local AI engine binary was also not found on this device, so Free AI cannot finish setup yet.",
                     download_error
                 )
             })?;

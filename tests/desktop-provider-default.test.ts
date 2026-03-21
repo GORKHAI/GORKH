@@ -21,7 +21,7 @@ test('desktop defaults to native local Qwen via Ollama for the main assistant fl
   assert.equal(imported.providerRequiresApiKey('openai'), true);
 });
 
-test('desktop source makes local Ollama the obvious default instead of OpenAI', () => {
+test('desktop source makes Free AI the obvious default instead of OpenAI', () => {
   const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
   const settingsSource = readFileSync('apps/desktop/src/components/SettingsPanel.tsx', 'utf8');
   const llmConfigSource = readFileSync('apps/desktop/src/lib/llmConfig.ts', 'utf8');
@@ -29,12 +29,12 @@ test('desktop source makes local Ollama the obvious default instead of OpenAI', 
   assert.match(appSource, /DEFAULT_LLM_PROVIDER/, 'desktop app should source its default provider from the shared desktop llm config');
   assert.match(
     settingsSource,
-    /Local Qwen|Qwen via Ollama|Ollama/i,
-    'desktop settings should present local Qwen/Ollama as a real provider option'
+    /Free AI|native_qwen_ollama/i,
+    'desktop settings should present Free AI (local) as a real provider option'
   );
   assert.match(
     llmConfigSource,
-    /Start Free AI|managed local runtime|app-managed/i,
-    'native local provider copy should describe the managed desktop flow instead of only manual Ollama setup'
+    /Set Up Free AI|managed.*local.*runtime|app-managed/i,
+    'native local provider copy should describe the managed desktop flow'
   );
 });

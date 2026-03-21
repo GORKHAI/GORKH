@@ -221,3 +221,21 @@ test('frontend local AI helper exposes a conservative tier recommendation model'
   assert.equal(imported.isLocalAiInstallActive('ready'), false);
   assert.equal(imported.isLocalAiInstallActive('error'), false);
 });
+
+test('getLocalAiGpuExecutionLabel returns honest CPU/GPU labels', async () => {
+  const { getLocalAiGpuExecutionLabel } = await import('../apps/desktop/src/lib/localAi.ts');
+
+  // Discrete GPU → GPU acceleration (has dedicated VRAM)
+  assert.equal(getLocalAiGpuExecutionLabel('discrete'), 'GPU acceleration');
+
+  // Integrated graphics (including Apple Silicon) → CPU only
+  assert.match(getLocalAiGpuExecutionLabel('integrated'), /cpu only/i);
+  assert.match(getLocalAiGpuExecutionLabel('integrated'), /integrated/i);
+
+  // Unknown GPU → CPU only (no overclaiming)
+  assert.match(getLocalAiGpuExecutionLabel('unknown'), /cpu only/i);
+  assert.doesNotMatch(getLocalAiGpuExecutionLabel('unknown'), /gpu acceleration/i);
+
+  // unknown and integrated should never claim GPU acceleration
+  assert.doesNotMatch(getLocalAiGpuExecutionLabel('integrated'), /gpu acceleration/i);
+});

@@ -18,7 +18,6 @@ import {
 import {
   getLlmDefaults,
   getLlmProviderDefinition,
-  getLlmProviderLabel,
   getSupportedLlmProviders,
   isLaunchLlmProvider,
   isPaidLlmProvider,
@@ -255,7 +254,7 @@ export function SettingsPanel({
         setTestResult({ 
           success: false, 
           message: settings.provider === 'native_qwen_ollama'
-            ? `Free AI is not ready at ${settings.baseUrl}. Use Start Free AI in the main assistant view, or ensure your existing local Ollama service is running with ${settings.model}.`
+            ? `Free AI is not ready. Use "Set Up Free AI" in the main assistant view, or check that your local AI engine is running at ${settings.baseUrl}.`
             : settings.provider === 'openai_compat'
               ? 'Local server not reachable. Ensure your local LLM server is running at ' + settings.baseUrl + ' and try again.'
               : `Connection failed: ${msg}`
@@ -579,9 +578,9 @@ export function SettingsPanel({
               fontSize: '0.875rem',
               color: '#155e75',
             }}>
-              <strong>{getLlmProviderLabel(settings.provider)} setup</strong>
+              <strong>Free AI setup</strong>
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
-                Install and start Ollama, then run <code>ollama pull {settings.model}</code>. The desktop will connect directly to your local Ollama server at {settings.baseUrl}.
+                GORKH manages the local AI engine for you. Use "Set Up Free AI" in the main assistant view to install and start it automatically. You can also connect to an existing local AI service at {settings.baseUrl}.
               </p>
             </div>
           )}

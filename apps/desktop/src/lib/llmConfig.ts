@@ -33,14 +33,14 @@ export const DEFAULT_LLM_PROVIDER: LlmProvider = 'native_qwen_ollama';
 const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
   native_qwen_ollama: {
     provider: 'native_qwen_ollama',
-    label: 'Local Qwen via Ollama',
-    shortLabel: 'Local Qwen/Ollama',
+    label: 'Free AI',
+    shortLabel: 'Free AI',
     baseUrl: 'http://127.0.0.1:11434',
     model: 'qwen2.5:1.5b',
     runtimeProvider: 'native_qwen_ollama',
     requiresApiKey: false,
     paid: false,
-    setupHint: 'Use Start Free AI in the desktop app to let the app prepare and run the managed local runtime. You can still point it at an existing Ollama service if you prefer.',
+    setupHint: 'GORKH manages the local AI engine for you. Use "Set Up Free AI" in the main assistant view to install and start it automatically.',
   },
   openai: {
     provider: 'openai',

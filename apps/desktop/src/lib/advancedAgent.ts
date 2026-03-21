@@ -89,6 +89,8 @@ export interface StartAgentTaskOptions {
   providerBaseUrl?: string;
   providerModel?: string;
   displayId?: string;
+  /** Structured GORKH app state injected for grounding. No sensitive data. */
+  appContext?: string;
 }
 
 // Start a new agent task
@@ -103,6 +105,7 @@ export async function startAgentTask(
     providerBaseUrl: options?.providerBaseUrl,
     providerModel: options?.providerModel,
     displayId: options?.displayId,
+    appContext: options?.appContext,
   });
 }
 

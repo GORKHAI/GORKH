@@ -64,6 +64,7 @@ impl LlmProvider for OpenAiCompatProvider {
         let system_prompt = super::build_system_prompt(
             &params.constraints,
             params.workspace_configured.unwrap_or(false),
+            params.app_context.as_deref(),
         );
         let user_prompt = super::build_user_prompt(
             &params.goal,

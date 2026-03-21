@@ -1014,6 +1014,12 @@ fn summarize_retail_tool(tool_call: &RetailToolCall) -> String {
         RetailToolCall::TerminalExec { .. } => {
             "Run a terminal command in the workspace".to_string()
         }
+        // GORKH internal app tools — handled in the TypeScript layer, not via workspace dispatch
+        RetailToolCall::AppGetState => "Read GORKH app state".to_string(),
+        RetailToolCall::SettingsSet { key, .. } => format!("Update GORKH setting: {}", key),
+        RetailToolCall::FreeAiInstall { tier } => {
+            format!("Start Free AI installation (tier: {})", tier)
+        }
     }
 }
 
@@ -1208,6 +1214,13 @@ fn retail_tool_to_workspace(tool_call: &RetailToolCall) -> workspace::ToolCall {
             args: args.clone(),
             cwd: cwd.clone(),
         },
+        // GORKH internal app tools are handled in the TypeScript layer (parse_tool_call rejects
+        // them before they reach this function). These arms are required for exhaustiveness.
+        RetailToolCall::AppGetState
+        | RetailToolCall::SettingsSet { .. }
+        | RetailToolCall::FreeAiInstall { .. } => {
+            unreachable!("GORKH app tools must not reach workspace dispatch")
+        }
     }
 }
 

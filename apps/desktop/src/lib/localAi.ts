@@ -232,12 +232,18 @@ export function getLocalAiInstallProgressSummary(
   return parts.length > 0 ? parts.join(' • ') : null;
 }
 
+export function getLocalAiGpuExecutionLabel(gpuClass: LocalAiGpuClass): string {
+  if (gpuClass === 'discrete') return 'GPU acceleration';
+  if (gpuClass === 'integrated') return 'CPU only (integrated graphics)';
+  return 'CPU only (GPU not detected)';
+}
+
 export function getLocalAiRuntimeSourceLabel(source: LocalAiRuntimeStatus['runtimeSource']): string {
   if (source === 'managed') {
     return 'Managed by GORKH';
   }
   if (source === 'existingInstall' || source === 'existing_install') {
-    return 'Adopted existing Ollama install';
+    return 'Adopted existing local AI install';
   }
   if (source === 'existingService' || source === 'existing_service') {
     return 'Using existing local AI service';

@@ -283,6 +283,10 @@ export const ToolName = {
   FS_WRITE_TEXT: 'fs.write_text',
   FS_APPLY_PATCH: 'fs.apply_patch',
   TERMINAL_EXEC: 'terminal.exec',
+  // GORKH internal app tools (STEP 2)
+  APP_GET_STATE: 'app.get_state',
+  SETTINGS_SET: 'settings.set',
+  FREE_AI_INSTALL: 'free_ai.install',
 } as const;
 export type ToolName = (typeof ToolName)[keyof typeof ToolName];
 
@@ -316,7 +320,43 @@ export interface TerminalExecToolCall {
   cwd?: string;
 }
 
-export type ToolCall = FsListToolCall | FsReadTextToolCall | FsWriteTextToolCall | FsApplyPatchToolCall | TerminalExecToolCall;
+// GORKH internal app tools — safe reads and approval-gated writes
+export interface AppGetStateToolCall {
+  tool: 'app.get_state';
+}
+
+export type GorkhSettingKey = 'autostart';
+
+export interface AppSettingsSetToolCall {
+  tool: 'settings.set';
+  /** Currently settable: "autostart" (bool). */
+  key: GorkhSettingKey;
+  value: boolean;
+}
+
+export interface AppFreeAiInstallToolCall {
+  tool: 'free_ai.install';
+  tier: 'light' | 'standard' | 'vision';
+}
+
+export type GorkhToolCall = AppGetStateToolCall | AppSettingsSetToolCall | AppFreeAiInstallToolCall;
+
+export type ToolCall = FsListToolCall | FsReadTextToolCall | FsWriteTextToolCall | FsApplyPatchToolCall | TerminalExecToolCall | GorkhToolCall;
+
+/** Returns true for GORKH internal read-only tools (no approval needed). */
+export function isGorkhReadOnlyToolCall(toolCall: ToolCall): toolCall is AppGetStateToolCall {
+  return toolCall.tool === 'app.get_state';
+}
+
+/** Returns true for GORKH internal write tools (require approval). */
+export function isGorkhWriteToolCall(toolCall: ToolCall): toolCall is AppSettingsSetToolCall | AppFreeAiInstallToolCall {
+  return toolCall.tool === 'settings.set' || toolCall.tool === 'free_ai.install';
+}
+
+/** Returns true for any GORKH internal tool. */
+export function isGorkhToolCall(toolCall: ToolCall): toolCall is GorkhToolCall {
+  return isGorkhReadOnlyToolCall(toolCall) || isGorkhWriteToolCall(toolCall);
+}
 
 // Tool result entry types
 export interface FsListEntry {
@@ -451,6 +491,11 @@ export function sanitizeToolCallForPersistence(toolCall: ToolCall): ToolCall {
         args: [],
         cwd: undefined,
       };
+    // GORKH app tools contain no sensitive paths or content
+    case 'app.get_state':
+    case 'settings.set':
+    case 'free_ai.install':
+      return toolCall;
     default:
       return toolCall;
   }
@@ -468,6 +513,11 @@ export function redactToolCallForLog(toolCall: ToolCall): { tool: ToolName; path
       return { tool: t, pathRel: (sanitized as { path: string }).path };
     case 'terminal.exec':
       return { tool: t, cmd: (sanitized as { cmd: string }).cmd };
+    // GORKH tools: tool name only, no sensitive metadata
+    case 'app.get_state':
+    case 'settings.set':
+    case 'free_ai.install':
+      return { tool: t };
     default:
       return { tool: t as ToolName };
   }
@@ -996,12 +1046,31 @@ const terminalExecToolCallSchema = z.object({
   cwd: z.string().max(260).optional(),
 });
 
+// GORKH internal app tool schemas (STEP 2)
+const appGetStateToolCallSchema = z.object({
+  tool: z.literal('app.get_state'),
+});
+
+const appSettingsSetToolCallSchema = z.object({
+  tool: z.literal('settings.set'),
+  key: z.enum(['autostart']),
+  value: z.boolean(),
+});
+
+const appFreeAiInstallToolCallSchema = z.object({
+  tool: z.literal('free_ai.install'),
+  tier: z.enum(['light', 'standard', 'vision']),
+});
+
 const toolCallSchema = z.union([
   fsListToolCallSchema,
   fsReadTextToolCallSchema,
   fsWriteTextToolCallSchema,
   fsApplyPatchToolCallSchema,
   terminalExecToolCallSchema,
+  appGetStateToolCallSchema,
+  appSettingsSetToolCallSchema,
+  appFreeAiInstallToolCallSchema,
 ]);
 
 const proposeToolProposalSchema = z.object({

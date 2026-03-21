@@ -682,9 +682,8 @@ fn is_allowed_webview_url(url: &tauri::Url) -> bool {
 }
 
 fn app_base_origin() -> Option<(String, String, u16)> {
-    std::env::var("APP_BASE_URL")
-        .ok()
-        .and_then(|value| tauri::Url::parse(&value).ok())
+    option_env!("APP_BASE_URL")
+        .and_then(|value| tauri::Url::parse(value).ok())
         .and_then(|url| {
             Some((
                 url.scheme().to_string(),
@@ -1543,6 +1542,9 @@ struct ProposalRequest {
     constraints: llm::RunConstraints,
     #[serde(skip_serializing_if = "Option::is_none")]
     workspace_configured: Option<bool>,
+    /// Structured GORKH app state for grounding — no sensitive data.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    app_context: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1589,6 +1591,7 @@ async fn llm_propose_next_action(params: ProposalRequest) -> Result<ProposalResu
         history: params.history,
         constraints: params.constraints,
         workspace_configured,
+        app_context: params.app_context,
     };
 
     let provider = llm::create_provider(&proposal_params.provider).map_err(|e| ProposalError {
@@ -1871,6 +1874,9 @@ async fn start_agent_task(
     provider_base_url: Option<String>,
     provider_model: Option<String>,
     display_id: Option<String>,
+    // Structured GORKH app state for grounding — injected before the goal so the planner
+    // sees current app state without the model needing to guess.
+    app_context: Option<String>,
 ) -> Result<String, String> {
     let provider_name = preferred_provider.unwrap_or_else(|| "native_qwen_ollama".to_string());
     let primary_provider = agent_provider_kind(&provider_name)?;
@@ -1899,7 +1905,12 @@ async fn start_agent_task(
     });
 
     let agent = AdvancedAgent::new(config, state.router.clone(), callback);
-    let task_id = agent.start_task(goal).await.map_err(|e| e.to_string())?;
+    // Prepend structured GORKH app context so the planner sees current app state.
+    let grounded_goal = match app_context.as_deref() {
+        Some(ctx) if !ctx.trim().is_empty() => format!("{}\n\n{}", ctx, goal),
+        _ => goal,
+    };
+    let task_id = agent.start_task(grounded_goal).await.map_err(|e| e.to_string())?;
 
     // Store agent
     let mut guard = state.agent.write().await;
@@ -1972,6 +1983,59 @@ async fn submit_agent_user_response(
             .map_err(|error| error.to_string());
     }
     Err("No active agent task".to_string())
+}
+
+// ============================================================================
+// GORKH App Tools — STEP 2
+// ============================================================================
+
+/// Aggregated snapshot of GORKH app state readable by the assistant.
+/// Contains no sensitive data: no API keys, no file contents, no typed text, no absolute paths.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GorkhAppSnapshot {
+    free_ai: local_ai::LocalAiRuntimeStatus,
+    permissions: PermissionStatusPayload,
+    workspace_configured: bool,
+    workspace_root_name: Option<String>,
+    autostart_enabled: bool,
+}
+
+/// Read a unified snapshot of safe GORKH app state for the assistant.
+#[tauri::command]
+async fn gorkh_app_snapshot(
+    local_ai_state: State<'_, local_ai::LocalAiRuntimeState>,
+) -> Result<GorkhAppSnapshot, String> {
+    let free_ai = local_ai::runtime_status(&local_ai_state).await?;
+    let permissions = PermissionStatusPayload {
+        screen_recording: detect_screen_recording_status(),
+        accessibility: detect_accessibility_status(),
+    };
+    let workspace_root = workspace::WORKSPACE_ROOT.lock().unwrap().clone();
+    let workspace_configured = workspace_root.is_some();
+    let workspace_root_name = workspace_root
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()));
+    let autostart_enabled = autostart_is_enabled().unwrap_or(false);
+
+    Ok(GorkhAppSnapshot {
+        free_ai,
+        permissions,
+        workspace_configured,
+        workspace_root_name,
+        autostart_enabled,
+    })
+}
+
+/// Set a safe GORKH setting. Currently supports: "autostart" (bool).
+#[tauri::command]
+fn gorkh_settings_set(key: String, value: bool) -> KeyResult {
+    match key.as_str() {
+        "autostart" => autostart_set_enabled(value),
+        _ => KeyResult {
+            ok: false,
+            error: Some(format!("Unknown setting key '{}'. Settable: autostart", key)),
+        },
+    }
 }
 
 /// Start recording a demonstration
@@ -2066,6 +2130,9 @@ pub fn run() {
             deny_agent_proposal,
             submit_agent_user_response,
             start_recording,
+            // GORKH App Tools (STEP 2)
+            gorkh_app_snapshot,
+            gorkh_settings_set,
         ])
         .setup(|app| {
             let app_handle = app.app_handle();

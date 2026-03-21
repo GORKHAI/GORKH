@@ -283,7 +283,7 @@ export function AgentTaskDialog({ trigger }: AgentTaskDialogProps) {
             onChange={setSelectedProvider}
           />
           <p style={styles.helperText}>
-            Select &quot;Local Qwen (Ollama)&quot; for free, private execution on your GPU.
+            Select &quot;Free AI&quot; for free, private execution on your Mac.
           </p>
         </div>
 

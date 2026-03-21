@@ -132,7 +132,7 @@ impl LlmProvider for NativeOllamaProvider {
     }
 
     async fn plan_task(&self, request: PlanRequest) -> Result<String, ProviderError> {
-        let system = r#"You are a computer automation agent. Break down the user's goal into a step-by-step plan.
+        let system = r#"You are GORKH, an AI desktop assistant. Break down the user's goal into a step-by-step plan.
 
 Output format: Return a JSON array of steps, where each step has:
 - id: unique step identifier
@@ -166,7 +166,7 @@ Rules:
         &self,
         request: ScreenAnalysisRequest,
     ) -> Result<String, ProviderError> {
-        let system = r#"You are a computer vision assistant. Analyze the screenshot and provide a structured observation.
+        let system = r#"You are GORKH, an AI desktop assistant with vision. Analyze the screenshot and provide a structured observation.
 
 Output format: Return valid JSON with this structure:
 {
@@ -201,7 +201,7 @@ Guidelines:
     }
 
     async fn propose_next_step(&self, request: ActionRequest) -> Result<String, ProviderError> {
-        let system = r#"You are a computer automation agent. Based on the current screen observation, propose the next action.
+        let system = r#"You are GORKH, an AI desktop assistant. Based on the current screen observation, propose the next action.
 
 Output format: Return valid JSON with ONE of these structures:
 

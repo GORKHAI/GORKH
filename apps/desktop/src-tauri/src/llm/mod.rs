@@ -9,6 +9,7 @@ pub mod openai_compat;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "tool")]
 pub enum ToolCall {
+    // Workspace file-system tools
     #[serde(rename = "fs.list")]
     FsList { path: String },
     #[serde(rename = "fs.read_text")]
@@ -23,10 +24,17 @@ pub enum ToolCall {
         args: Vec<String>,
         cwd: Option<String>,
     },
+    // GORKH internal app tools (STEP 2)
+    #[serde(rename = "app.get_state")]
+    AppGetState,
+    #[serde(rename = "settings.set")]
+    SettingsSet { key: String, value: serde_json::Value },
+    #[serde(rename = "free_ai.install")]
+    FreeAiInstall { tier: String },
 }
 
 impl ToolCall {
-    /// Returns true if this tool modifies files or executes commands
+    /// Returns true if this tool modifies state or executes commands (requires approval)
     #[allow(dead_code)]
     pub fn is_destructive(&self) -> bool {
         matches!(
@@ -34,6 +42,8 @@ impl ToolCall {
             ToolCall::FsWriteText { .. }
                 | ToolCall::FsApplyPatch { .. }
                 | ToolCall::TerminalExec { .. }
+                | ToolCall::SettingsSet { .. }
+                | ToolCall::FreeAiInstall { .. }
         )
     }
 
@@ -46,6 +56,9 @@ impl ToolCall {
             ToolCall::FsWriteText { path, .. } => path,
             ToolCall::FsApplyPatch { path, .. } => path,
             ToolCall::TerminalExec { cmd, .. } => cmd,
+            ToolCall::AppGetState => "app",
+            ToolCall::SettingsSet { key, .. } => key,
+            ToolCall::FreeAiInstall { tier } => tier,
         }
     }
 }
@@ -106,6 +119,10 @@ pub struct ProposalParams {
     pub constraints: RunConstraints,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_configured: Option<bool>,
+    /// Structured GORKH app state injected into the system prompt for grounding.
+    /// Contains no sensitive data (no keys, paths, file contents, or typed text).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,8 +217,13 @@ pub fn build_anthropic_messages_url(base_url: &str) -> String {
     }
 }
 
-/// Build the system prompt for the AI agent
-pub fn build_system_prompt(constraints: &RunConstraints, workspace_configured: bool) -> String {
+/// Build the system prompt for the AI agent.
+/// `app_context` is an optional structured GORKH app state block injected for grounding.
+pub fn build_system_prompt(
+    constraints: &RunConstraints,
+    workspace_configured: bool,
+    app_context: Option<&str>,
+) -> String {
     let workspace_section = if workspace_configured {
         r#"
 WORKSPACE TOOLS (sandboxed to workspace directory):
@@ -220,8 +242,13 @@ NOTE: All file paths must be relative to the workspace root."#
         "\nNOTE: No workspace configured. Tools are not available."
     };
 
+    let app_context_section = match app_context {
+        Some(ctx) if !ctx.trim().is_empty() => format!("\n\n{}", ctx),
+        _ => String::new(),
+    };
+
     format!(
-        r#"You are an AI assistant helping a user accomplish tasks on their computer.
+        r#"You are GORKH, an AI desktop assistant. You help users automate tasks on their computer, explain your own features and settings, and guide them through setup. Every action you propose requires the user's explicit approval before it runs — you never take action without their confirmation. You are honest about what you can and cannot do.{}
 
 SAFETY RULES:
 1. NEVER perform actions that could be harmful (deleting files, making payments, signing in to accounts, changing passwords, etc.) without explicit user confirmation
@@ -241,6 +268,12 @@ AVAILABLE ACTIONS (GUI automation):
 - scroll: {{ "kind": "scroll", "dx": 0, "dy": -100 }}  // dy negative = scroll down
 - type: {{ "kind": "type", "text": "hello world" }}  // max 500 chars
 - hotkey: {{ "kind": "hotkey", "key": "enter", "modifiers": ["ctrl"] }}  // keys: enter, tab, escape, backspace, up, down, left, right
+
+GORKH APP TOOLS (always available — use these to read or change GORKH settings):
+- app.get_state: {{ "tool": "app.get_state" }}  // Fetch current GORKH state (Free AI, permissions, workspace, autostart)
+- settings.set: {{ "tool": "settings.set", "key": "autostart", "value": true }}  // Change a GORKH setting; key must be "autostart" (bool)
+- free_ai.install: {{ "tool": "free_ai.install", "tier": "standard" }}  // Start Free AI installation; tier: "light" | "standard" | "vision"
+Use these when the user asks about their GORKH configuration or asks you to change a setting or set up Free AI.
 {}{}
 
 OUTPUT FORMAT:
@@ -251,6 +284,7 @@ Return STRICT JSON with exactly one of these structures:
 4. {{ "kind": "done", "summary": "Task completed successfully because..." }}
 
 Use confidence 0.0-1.0 to indicate certainty. Ask for help when confidence is low."#,
+        app_context_section,
         constraints.max_actions,
         constraints.max_runtime_minutes,
         workspace_section,

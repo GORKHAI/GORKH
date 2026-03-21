@@ -11,11 +11,15 @@ import {
   buildRedactedToolSummary,
   getRedactedToolMetadata,
 } from './privacy.js';
-import { sanitizeRunLogLine } from '@ai-operator/shared';
-import type { 
-  AgentProposal, 
-  InputAction, 
-  RunConstraints, 
+import {
+  executeGorkhReadTool,
+  executeGorkhWriteTool,
+} from './gorkhTools.js';
+import { sanitizeRunLogLine, isGorkhReadOnlyToolCall, isGorkhWriteToolCall } from '@ai-operator/shared';
+import type {
+  AgentProposal,
+  InputAction,
+  RunConstraints,
   LogLine,
   ToolCall,
   ToolName,
@@ -29,6 +33,8 @@ export interface AiAssistOptions {
   goal: string;
   constraints: RunConstraints;
   displayId: string;
+  /** Structured GORKH app state for grounding — passed to every LLM proposal call. */
+  gorkhContext?: string;
   onStateChange?: (state: AiAssistState) => void;
   onProposal?: (proposal: AgentProposal) => void;
   onToolEvent?: (event: LocalToolEvent) => void;
@@ -182,9 +188,23 @@ export class AiAssistController {
     });
 
     try {
-      // Execute the tool locally
+      // GORKH write tools dispatch differently (no workspace execution, no tool_execute IPC)
+      if (isGorkhWriteToolCall(toolCall)) {
+        const resultText = await executeGorkhWriteTool(toolCall);
+        this.actionResults.push(`${toolCall.tool} result: ${resultText}`);
+        this.sendSafeRunLog(`GORKH tool executed: ${toolCall.tool}`, 'info');
+        this.state.actionCount++;
+        this.state.status = 'capturing';
+        this.state.currentProposal = undefined;
+        this.state.currentProposalId = undefined;
+        this.notifyStateChange();
+        this.resumeLoop();
+        return { ok: true };
+      }
+
+      // Execute the workspace tool locally
       const result = await this.executeTool(toolCall);
-      
+
       // Create summary for server
       const summary = this.buildToolSummary(toolEventId, toolCallId, toolCall, result);
       
@@ -663,14 +683,36 @@ export class AiAssistController {
           }
 
           case 'propose_tool': {
+            const toolName = proposal.toolCall.tool;
+
+            // GORKH read-only tools are auto-approved: execute silently, inject result into history
+            if (isGorkhReadOnlyToolCall(proposal.toolCall)) {
+              this.log('info', `Auto-executing GORKH read tool: ${toolName}`);
+              try {
+                const result = await executeGorkhReadTool(proposal.toolCall);
+                this.actionResults.push(`app.get_state result:\n${result}`);
+                this.sendSafeRunLog(`GORKH state refreshed`, 'info');
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : 'Failed to read GORKH state';
+                this.actionResults.push(`app.get_state failed: ${msg}`);
+                this.sendSafeRunLog(`GORKH state read failed`, 'warn');
+              }
+              // Continue the loop — no approval gate for reads
+              this.state.currentProposal = undefined;
+              this.state.currentProposalId = undefined;
+              this.state.status = 'capturing';
+              this.notifyStateChange();
+              // Loop continues naturally in the while loop
+              break;
+            }
+
             this.state.status = 'awaiting_approval';
             this.notifyStateChange();
-            
-            const toolName = proposal.toolCall.tool;
+
             this.log('info', `Proposed tool: ${toolName}`);
             this.options.wsClient.sendAgentProposal(this.options.runId, proposal);
             this.options.onProposal?.(proposal);
-            
+
             // Wait for user approval (handled by approveTool/rejectAction methods)
             return;
           }
@@ -738,6 +780,7 @@ export class AiAssistController {
           maxActions: this.options.constraints.maxActions,
           maxRuntimeMinutes: this.options.constraints.maxRuntimeMinutes,
         },
+        appContext: this.options.gorkhContext,
       },
     });
 

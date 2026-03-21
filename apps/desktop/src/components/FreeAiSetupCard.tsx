@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   formatLocalAiByteCount,
+  getLocalAiGpuExecutionLabel,
   getLocalAiInstallStageLabel,
   getLocalAiInstallProgressSummary,
   getLocalAiRuntimeSourceLabel,
@@ -50,7 +51,7 @@ function summarizeHardware(profile: LocalAiHardwareProfile | null): string | nul
   if (profile.gpuSummary) {
     parts.push(profile.gpuSummary);
   } else {
-    parts.push('GPU unknown');
+    parts.push(getLocalAiGpuExecutionLabel(profile.gpuClass));
   }
   return parts.join(' • ');
 }

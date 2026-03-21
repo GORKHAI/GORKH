@@ -36,7 +36,7 @@ import { logoutDesktopSession, startDesktopSignIn } from './lib/desktopAuth.js';
 import { getDesktopAccount, revokeDesktopDevice, type DesktopAccountSnapshot } from './lib/desktopAccount.js';
 import { createDesktopRun, getDesktopTaskBootstrap, type DesktopTaskBootstrap } from './lib/desktopTasks.js';
 import {
-  ASSISTANT_OPENING_GOAL,
+  buildAssistantOpeningGoal,
   ensureAssistantRunForMessage,
   getAssistantDisplayGoal,
   isAssistantOpeningGoal,
@@ -86,6 +86,13 @@ import {
   evaluateDesktopTaskReadiness,
   getDesktopControlExecutionBlocker,
 } from './lib/taskReadiness.js';
+import {
+  buildGorkhContextBlock,
+  type GorkhInstallStage,
+  type GorkhLocalAiTier,
+  type GorkhPermissionStatus,
+  type GorkhGpuClass,
+} from './lib/gorkhContext.js';
 import { ChatOverlay } from './components/ChatOverlay.js';
 import { RunPanel } from './components/RunPanel.js';
 import { ApprovalModal } from './components/ApprovalModal.js';
@@ -1216,6 +1223,39 @@ function App() {
       return;
     }
 
+    // Build structured GORKH app context for LLM grounding.
+    const gorkhAppContext = buildGorkhContextBlock({
+      authState,
+      provider: llmSettings.provider,
+      providerConfigured,
+      freeAi: localAiStatus
+        ? {
+            installStage: localAiStatus.installStage as GorkhInstallStage,
+            runtimeRunning: localAiStatus.runtimeRunning,
+            selectedTier: localAiStatus.selectedTier as GorkhLocalAiTier | null,
+            selectedModel: localAiStatus.selectedModel,
+            externalServiceDetected: localAiStatus.externalServiceDetected,
+            lastError: localAiStatus.lastError,
+          }
+        : null,
+      permissions: {
+        screenRecordingStatus: permissionStatus.screenRecording as GorkhPermissionStatus,
+        accessibilityStatus: permissionStatus.accessibility as GorkhPermissionStatus,
+        screenPreviewEnabled: localSettings.screenPreviewEnabled,
+        controlEnabled: localSettings.allowControlEnabled,
+      },
+      workspaceConfigured: workspaceState.configured,
+      workspaceRootName: workspaceState.rootName ?? null,
+      hardware: localAiHardwareProfile
+        ? {
+            gpuClass: localAiHardwareProfile.gpuClass as GorkhGpuClass,
+            ramGb: localAiHardwareProfile.ramBytes !== null
+              ? Math.round(localAiHardwareProfile.ramBytes / (1024 * 1024 * 1024))
+              : null,
+          }
+        : null,
+    });
+
     const engine = createAssistantEngine(assistantEngineId, {
       wsClient: client,
       deviceId,
@@ -1223,6 +1263,7 @@ function App() {
       goal,
       constraints: { maxActions: 20, maxRuntimeMinutes: 20 },
       displayId: primaryDisplayId,
+      appContext: gorkhAppContext ?? undefined,
       onStateChange: (state) => {
         setAiState(state);
         setCurrentProposal(state.currentProposal);
@@ -1991,8 +2032,9 @@ function App() {
     }
 
     assistantAutoStartInFlightRef.current = true;
+    const freeAiReady = localAiStatus?.runtimeRunning === true && localAiStatus?.installStage === 'ready';
     void createDesktopRun(runtimeConfig, sessionDeviceToken, {
-      goal: ASSISTANT_OPENING_GOAL,
+      goal: buildAssistantOpeningGoal(freeAiReady),
       mode: 'ai_assist',
     })
       .then((run) => {
@@ -2014,6 +2056,7 @@ function App() {
     desktopBootstrapBusy,
     desktopBootstrapError,
     llmSettings.provider,
+    localAiStatus,
     runtimeConfig,
     sessionDeviceToken,
     status,
