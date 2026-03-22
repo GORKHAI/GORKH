@@ -1,6 +1,7 @@
 import type { RunWithSteps } from '@ai-operator/shared';
 import type { DesktopApiRuntimeConfig } from './desktopRuntimeConfig.js';
 import { createDesktopRun } from './desktopTasks.js';
+import { GORKH_FREE_AI_SETUP_COPY } from './gorkhKnowledge.js';
 
 const ACTIVE_RUN_STATUSES = new Set<RunWithSteps['status']>([
   'queued',
@@ -11,6 +12,13 @@ const ACTIVE_RUN_STATUSES = new Set<RunWithSteps['status']>([
 export interface AssistantTaskConfirmation {
   goal: string;
   summary: string;
+  prompt: string;
+}
+
+export interface FreeAiSetupPreflightReport {
+  title: string;
+  summary: string;
+  details: string;
   prompt: string;
 }
 
@@ -47,6 +55,53 @@ export function interpretAssistantTaskConfirmationResponse(text: string): 'confi
   }
 
   return null;
+}
+
+export function interpretFreeAiSetupResponse(text: string): 'confirm' | 'cancel' | null {
+  const normalized = text.trim().toLowerCase().replace(/[.!?]+$/g, '');
+
+  if ([
+    'yes',
+    'y',
+    'ok',
+    'okay',
+    'sure',
+    'confirm',
+    'proceed',
+    'go ahead',
+    'approve',
+    'approved',
+  ].includes(normalized)) {
+    return 'confirm';
+  }
+
+  if ([
+    'no',
+    'n',
+    'cancel',
+    'stop',
+    'dont',
+    "don't",
+    'do not',
+    'not now',
+  ].includes(normalized)) {
+    return 'cancel';
+  }
+
+  return null;
+}
+
+export function buildFreeAiSetupPreflightReport(
+  input?: { providerConfigured?: boolean }
+): FreeAiSetupPreflightReport {
+  void input;
+
+  return {
+    title: GORKH_FREE_AI_SETUP_COPY.title,
+    summary: GORKH_FREE_AI_SETUP_COPY.summary,
+    details: GORKH_FREE_AI_SETUP_COPY.details,
+    prompt: GORKH_FREE_AI_SETUP_COPY.prompt,
+  };
 }
 
 interface EnsureAssistantRunForMessageInput {

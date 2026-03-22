@@ -218,6 +218,16 @@ export const GORKH_ONBOARDING = {
     "You can grant it in System Settings > Privacy & Security > Accessibility.",
 };
 
+export const GORKH_FREE_AI_SETUP_COPY = {
+  title: 'Free AI setup',
+  summary:
+    'Free AI is required on the free plan. GORKH will check for an existing local engine first, then install or download what is missing.',
+  details:
+    'GORKH will keep this setup on your device, prepare the local engine, and download the AI model if it is not already available.',
+  prompt:
+    'Do you approve setting up Free AI now?',
+};
+
 // ---------------------------------------------------------------------------
 // Common Q&A used in grounded responses
 // ---------------------------------------------------------------------------
