@@ -69,8 +69,6 @@ export function interpretFreeAiSetupResponse(text: string): 'confirm' | 'cancel'
     'confirm',
     'proceed',
     'go ahead',
-    'approve',
-    'approved',
   ].includes(normalized)) {
     return 'confirm';
   }
@@ -83,7 +81,6 @@ export function interpretFreeAiSetupResponse(text: string): 'confirm' | 'cancel'
     'dont',
     "don't",
     'do not',
-    'not now',
   ].includes(normalized)) {
     return 'cancel';
   }

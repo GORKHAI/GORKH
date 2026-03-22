@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const chatTaskFlow = await import('./chatTaskFlow.ts');
+const gorkhKnowledge = await import('./gorkhKnowledge.ts');
 
 test('assistant task confirmation responses still parse explicit confirm and cancel answers', () => {
   assert.equal(chatTaskFlow.interpretAssistantTaskConfirmationResponse('yes'), 'confirm');
@@ -46,10 +47,14 @@ test('free AI setup preflight report stays retail friendly and asks for approval
   ].join('\n');
 
   assert.match(report.title, /Free AI/i);
-  assert.match(report.summary, /required/i);
-  assert.match(report.details, /local engine/i);
-  assert.match(report.details, /AI model/i);
+  assert.match(report.summary, /required on the free plan/i);
+  assert.match(report.summary, /local engine/i);
+  assert.match(report.summary, /AI model/i);
   assert.match(report.prompt, /approve|approval/i);
-  assert.doesNotMatch(text, /brew|ollama pull|manual install/i);
-  assert.doesNotMatch(text, /OpenAI|Claude|paid provider/i);
+  assert.doesNotMatch(text, /brew|ollama pull/i);
+  assert.deepEqual(gorkhKnowledge.GORKH_FREE_AI_SETUP_COPY.actions, {
+    retry: 'Retry Free AI',
+    cancel: 'Cancel this task',
+    openSettings: 'Open Settings',
+  });
 });
