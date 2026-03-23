@@ -26,6 +26,7 @@ export interface LocalAiRuntimeStatus {
   installedModels: string[];
   runtimeSource: string | null;
   runtimeVersion: string | null;
+  compatibilityMode: boolean;
   lastError: string | null;
 }
 
@@ -281,6 +282,10 @@ export function getLocalAiTroubleshootingHint(
 
   if (progress?.stage === 'starting') {
     return 'The local runtime is starting on this desktop. If this takes longer than a minute, refresh status once before retrying.';
+  }
+
+  if (status?.compatibilityMode) {
+    return 'Free AI is using Mac compatibility mode on this desktop. Replies may be slower, but this avoids the graphics-path crash.';
   }
 
   if (status?.externalServiceDetected && status.installStage !== 'ready') {

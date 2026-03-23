@@ -80,6 +80,7 @@ pub struct LocalAiRuntimeStatus {
     pub installed_models: Vec<String>,
     pub runtime_source: Option<LocalAiRuntimeSource>,
     pub runtime_version: Option<String>,
+    pub compatibility_mode: bool,
     pub last_error: Option<String>,
 }
 
@@ -134,7 +135,17 @@ struct LocalAiInstallMetadata {
     selected_model: String,
     installed_models: Vec<String>,
     optional_vision_model: Option<String>,
+    #[serde(default)]
+    compatibility_mode: bool,
     updated_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalAiCompatibilityDisposition {
+    NotApplicable,
+    RetryManagedRuntime,
+    ManagedRuntimeAlreadyCompatible,
+    ExternalService,
 }
 
 #[derive(Debug, Clone)]
@@ -209,12 +220,84 @@ pub async fn runtime_status(state: &LocalAiRuntimeState) -> Result<LocalAiRuntim
             .unwrap_or_default(),
         runtime_source: metadata.as_ref().map(|value| value.runtime_source),
         runtime_version: metadata.as_ref().map(|value| value.runtime_version.clone()),
+        compatibility_mode: metadata
+            .as_ref()
+            .map(|value| value.compatibility_mode)
+            .unwrap_or(false),
         last_error,
     })
 }
 
 pub fn install_progress(state: &LocalAiRuntimeState) -> LocalAiInstallProgress {
     state.install_progress.lock().unwrap().clone()
+}
+
+pub fn remember_runtime_error(state: &LocalAiRuntimeState, error: String) {
+    set_last_error(state, error);
+}
+
+pub fn clear_runtime_error(state: &LocalAiRuntimeState) {
+    clear_last_error(state);
+}
+
+pub fn is_local_ai_service_url(base_url: &str) -> bool {
+    base_url.trim().trim_end_matches('/') == LOCAL_AI_SERVICE_URL
+}
+
+pub fn is_macos_metal_compatibility_error(message: &str) -> bool {
+    let normalized = message.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+
+    let has_runner_failure = normalized.contains("llama runner process has terminated")
+        || normalized.contains("ollama error 500");
+    let has_metal_signature = normalized.contains("mtllibraryerrordomain")
+        || normalized.contains("ggml_metal_init: error: failed to initialize the metal library")
+        || normalized.contains("ggml_backend_metal_device_init: error: failed to allocate context")
+        || normalized.contains("input types must match cooperative tensor types");
+
+    has_runner_failure && has_metal_signature
+}
+
+pub async fn compatibility_disposition(
+    state: &LocalAiRuntimeState,
+    base_url: &str,
+    error_message: &str,
+) -> Result<LocalAiCompatibilityDisposition, String> {
+    if !is_local_ai_service_url(base_url) || !is_macos_metal_compatibility_error(error_message) {
+        return Ok(LocalAiCompatibilityDisposition::NotApplicable);
+    }
+
+    let status = runtime_status(state).await?;
+    if status.external_service_detected && !managed_child_running(state) {
+        return Ok(LocalAiCompatibilityDisposition::ExternalService);
+    }
+
+    if status.compatibility_mode {
+        return Ok(LocalAiCompatibilityDisposition::ManagedRuntimeAlreadyCompatible);
+    }
+
+    if managed_child_running(state) || status.managed_by_app {
+        return Ok(LocalAiCompatibilityDisposition::RetryManagedRuntime);
+    }
+
+    Ok(LocalAiCompatibilityDisposition::ExternalService)
+}
+
+pub fn managed_runtime_compatibility_failure_message() -> String {
+    "Free AI hit a Mac graphics compatibility problem. GORKH switched the managed local runtime into compatibility mode, but the model still could not start. Try Test Connection again. If it still fails, use Repair Free AI from the main assistant view.".to_string()
+}
+
+pub fn managed_runtime_still_incompatible_message() -> String {
+    "Free AI is already running in Mac compatibility mode, but the model still could not start. Use Repair Free AI from the main assistant view, or switch providers for now.".to_string()
+}
+
+pub fn external_service_compatibility_message(base_url: &str) -> String {
+    format!(
+        "Free AI reached a Mac graphics compatibility problem inside the local AI service at {}. Restart or reconfigure that Ollama service outside GORKH, or let GORKH manage Free AI instead.",
+        base_url.trim()
+    )
 }
 
 pub async fn install_start(
@@ -417,6 +500,10 @@ pub async fn start_runtime(state: &LocalAiRuntimeState) -> Result<LocalAiRuntime
         .as_ref()
         .map(|value| value.selected_tier)
         .unwrap_or(LocalAiTier::Light);
+    let compatibility_mode = metadata
+        .as_ref()
+        .map(|value| value.compatibility_mode)
+        .unwrap_or(false);
     let plan = tier_runtime_plan(selected_tier);
     let runtime_binary = ensure_runtime_binary(
         &managed_dir,
@@ -440,7 +527,12 @@ pub async fn start_runtime(state: &LocalAiRuntimeState) -> Result<LocalAiRuntime
     );
     clear_last_error(state);
 
-    let _ = ensure_service_running(state, &managed_dir, &runtime_binary.path)?;
+    let _ = ensure_service_running(
+        state,
+        &managed_dir,
+        &runtime_binary.path,
+        compatibility_mode,
+    )?;
 
     set_install_progress(
         state,
@@ -503,6 +595,44 @@ pub async fn stop_runtime(state: &LocalAiRuntimeState) -> Result<LocalAiRuntimeS
     }
 
     runtime_status(state).await
+}
+
+pub async fn enable_managed_runtime_compatibility_mode(
+    state: &LocalAiRuntimeState,
+) -> Result<LocalAiRuntimeStatus, String> {
+    let managed_dir = managed_runtime_dir();
+    ensure_managed_dirs(&managed_dir)?;
+    let mut metadata = read_metadata(&managed_dir).ok_or_else(|| {
+        "Free AI compatibility mode could not start because the managed runtime metadata is missing."
+            .to_string()
+    })?;
+
+    if !metadata.compatibility_mode {
+        metadata.compatibility_mode = true;
+        metadata.updated_at_ms = unix_time_ms();
+        write_metadata(&managed_dir, &metadata)?;
+    }
+
+    if managed_child_running(state) {
+        let _ = stop_runtime(state).await?;
+    }
+
+    set_install_progress(
+        state,
+        LocalAiInstallProgress {
+            stage: LocalAiInstallStage::Starting,
+            selected_tier: Some(metadata.selected_tier),
+            selected_model: Some(metadata.selected_model.clone()),
+            progress_percent: Some(92),
+            downloaded_bytes: None,
+            total_bytes: None,
+            message: Some("Restarting Free AI in Mac compatibility mode...".to_string()),
+            updated_at_ms: unix_time_ms(),
+        },
+    );
+    clear_last_error(state);
+
+    start_runtime(state).await
 }
 
 pub fn hardware_profile() -> Result<LocalAiHardwareProfile, String> {
@@ -625,7 +755,7 @@ fn run_install_worker(
     );
 
     let started_managed_service =
-        ensure_service_running(&state, &managed_dir, &runtime_binary.path)?;
+        ensure_service_running(&state, &managed_dir, &runtime_binary.path, false)?;
 
     let metadata_before = read_metadata(&managed_dir);
     let already_installed = metadata_before
@@ -669,6 +799,7 @@ fn run_install_worker(
         selected_model: plan.default_model.to_string(),
         installed_models: vec![plan.default_model.to_string()],
         optional_vision_model: Some(plan.optional_vision_model.to_string()),
+        compatibility_mode: false,
         updated_at_ms: unix_time_ms(),
     };
     write_metadata(&managed_dir, &metadata)?;
@@ -720,7 +851,12 @@ fn run_enable_vision_boost_worker(
         Some(selected_tier),
         Some(vision_model),
     )?;
-    let _ = ensure_service_running(&state, &managed_dir, &runtime_binary.path)?;
+    let _ = ensure_service_running(
+        &state,
+        &managed_dir,
+        &runtime_binary.path,
+        existing_metadata.compatibility_mode,
+    )?;
 
     set_install_progress(
         &state,
@@ -759,6 +895,7 @@ fn run_enable_vision_boost_worker(
         selected_model: existing_metadata.selected_model,
         installed_models,
         optional_vision_model: Some(vision_model.to_string()),
+        compatibility_mode: existing_metadata.compatibility_mode,
         updated_at_ms: unix_time_ms(),
     };
     write_metadata(&managed_dir, &metadata)?;
@@ -1349,12 +1486,13 @@ fn ensure_service_running(
     state: &LocalAiRuntimeState,
     managed_dir: &Path,
     runtime_binary: &Path,
+    compatibility_mode: bool,
 ) -> Result<bool, String> {
     if managed_child_running(state) || is_service_port_open() {
         return Ok(false);
     }
 
-    let mut command = managed_ollama_command(runtime_binary, managed_dir);
+    let mut command = managed_ollama_command(runtime_binary, managed_dir, compatibility_mode);
     command
         .arg("serve")
         .stdin(Stdio::null())
@@ -1387,7 +1525,7 @@ fn ensure_service_running(
 }
 
 fn pull_model(runtime_binary: &Path, managed_dir: &Path, model: &str) -> Result<(), String> {
-    let status = managed_ollama_command(runtime_binary, managed_dir)
+    let status = managed_ollama_command(runtime_binary, managed_dir, false)
         .arg("pull")
         .arg(model)
         .stdin(Stdio::null())
@@ -1408,13 +1546,16 @@ fn pull_model(runtime_binary: &Path, managed_dir: &Path, model: &str) -> Result<
     Ok(())
 }
 
-fn managed_ollama_command(runtime_binary: &Path, managed_dir: &Path) -> Command {
+fn managed_ollama_command(runtime_binary: &Path, managed_dir: &Path, compatibility_mode: bool) -> Command {
     let mut command = Command::new(runtime_binary);
     command
         .env("OLLAMA_HOST", LOCAL_AI_HOST)
         .env("OLLAMA_MODELS", models_dir(managed_dir))
         .env("OLLAMA_KEEP_ALIVE", "10m")
         .env("NO_COLOR", "1");
+    if compatibility_mode {
+        command.env("OLLAMA_LLM_LIBRARY", "cpu");
+    }
     command
 }
 
@@ -1843,5 +1984,52 @@ fn run_path_command_capture(program: &Path, args: &[&str]) -> Option<String> {
         None
     } else {
         Some(trimmed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_macos_metal_compatibility_failures_from_ollama_error_text() {
+        let error = r#"Ollama error 500 Internal Server Error: {"error":"llama runner process has terminated: error:Error Domain=MTLLibraryErrorDomain Code=3 \"Input types must match cooperative tensor types\"\nggml_metal_init: error: failed to initialize the Metal library\nggml_backend_metal_device_init: error: failed to allocate context"}"#;
+
+        assert!(
+            is_macos_metal_compatibility_error(error),
+            "known macOS Metal runner crashes should be classified for compatibility fallback"
+        );
+
+        assert!(
+            !is_macos_metal_compatibility_error(
+                "Ollama error 500 Internal Server Error: model not found"
+            ),
+            "generic Ollama failures must not trigger compatibility fallback"
+        );
+    }
+
+    #[test]
+    fn managed_runtime_command_uses_cpu_safe_env_in_compatibility_mode() {
+        let command = managed_ollama_command(
+            Path::new("/tmp/ollama"),
+            Path::new("/tmp/local-ai"),
+            true,
+        );
+        let envs = command
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().to_string(),
+                    value.map(|entry| entry.to_string_lossy().to_string()),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            envs.iter().any(|(key, value)| {
+                key == "OLLAMA_LLM_LIBRARY" && value.as_deref() == Some("cpu")
+            }),
+            "compatibility mode should force the managed runtime onto the CPU-safe backend"
+        );
     }
 }

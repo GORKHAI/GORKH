@@ -289,6 +289,7 @@ export function FreeAiSetupCard({
           <div><strong>Available disk:</strong> {availableDiskLabel ?? 'Unknown'}</div>
           <div><strong>Runtime source:</strong> {runtimeSourceLabel}</div>
           <div><strong>Runtime version:</strong> {status?.runtimeVersion ?? 'Not installed yet'}</div>
+          <div><strong>Compatibility mode:</strong> {status?.compatibilityMode ? 'On (CPU-safe)' : 'Off'}</div>
           <div><strong>Selected model:</strong> {selectedModel ?? 'Not selected yet'}</div>
           <div><strong>Managed runtime folder:</strong> {status?.managedRuntimeDir ?? hardwareProfile?.managedRuntimeDir ?? 'Unavailable'}</div>
           {lastUpdatedLabel && <div><strong>Last status update:</strong> {lastUpdatedLabel}</div>}

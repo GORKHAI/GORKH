@@ -48,6 +48,31 @@ test('desktop local AI helper exposes retail-friendly tier guidance and install 
     }),
     '42% • 2.0 GB of 5.0 GB'
   );
+
+  assert.match(
+    imported.getLocalAiTroubleshootingHint(
+      {
+        managedByApp: true,
+        managedRuntimeDir: '/tmp/gorkh/local-ai',
+        runtimeBinaryPath: '/tmp/gorkh/local-ai/runtime/ollama',
+        runtimePresent: true,
+        runtimeRunning: true,
+        externalServiceDetected: false,
+        serviceUrl: 'http://127.0.0.1:11434',
+        installStage: 'ready',
+        selectedTier: 'light',
+        selectedModel: 'qwen2.5:1.5b',
+        installedModels: ['qwen2.5:1.5b'],
+        runtimeSource: 'managed',
+        runtimeVersion: '0.17.7',
+        compatibilityMode: true,
+        lastError: null,
+      },
+      null,
+      null
+    ) ?? '',
+    /compatibility mode|slower|graphics-path crash/i
+  );
 });
 
 test('desktop retail shell includes a visible Set Up Free AI onboarding surface', () => {
@@ -63,6 +88,7 @@ test('desktop retail shell includes a visible Set Up Free AI onboarding surface'
   assert.match(componentSource, /Install progress|Download progress/i);
   assert.match(componentSource, /Available disk|disk free/i);
   assert.match(componentSource, /Runtime source/i);
+  assert.match(componentSource, /Compatibility mode/i);
   assert.match(componentSource, /Managed runtime folder/i);
   assert.match(componentSource, /Selected model/i);
   assert.doesNotMatch(componentSource, /Light recommended|Standard recommended|Vision Boost optional/i);

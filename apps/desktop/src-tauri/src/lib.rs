@@ -1692,6 +1692,20 @@ struct ProposalError {
     message: String,
 }
 
+fn proposal_error_from_llm(error: llm::LlmError) -> ProposalError {
+    ProposalError {
+        code: error.code,
+        message: error.message,
+    }
+}
+
+fn compatibility_proposal_error(message: String) -> ProposalError {
+    ProposalError {
+        code: "LOCAL_AI_COMPATIBILITY_ERROR".to_string(),
+        message,
+    }
+}
+
 fn resolve_llm_api_key(provider: &str) -> Result<String, ProposalError> {
     match provider {
         "native_qwen_ollama" | "openai_compat" => {
@@ -1708,7 +1722,10 @@ fn resolve_llm_api_key(provider: &str) -> Result<String, ProposalError> {
 }
 
 #[tauri::command]
-async fn llm_propose_next_action(params: ProposalRequest) -> Result<ProposalResult, ProposalError> {
+async fn llm_propose_next_action(
+    params: ProposalRequest,
+    local_ai_state: State<'_, local_ai::LocalAiRuntimeState>,
+) -> Result<ProposalResult, ProposalError> {
     let api_key = resolve_llm_api_key(&params.provider)?;
 
     // Get workspace configuration status
@@ -1729,18 +1746,75 @@ async fn llm_propose_next_action(params: ProposalRequest) -> Result<ProposalResu
         app_context: params.app_context,
     };
 
-    let provider = llm::create_provider(&proposal_params.provider).map_err(|e| ProposalError {
-        code: e.code,
-        message: e.message,
-    })?;
+    let provider = llm::create_provider(&proposal_params.provider).map_err(proposal_error_from_llm)?;
 
-    let proposal = provider
-        .propose_next_action(&proposal_params)
-        .await
-        .map_err(|e| ProposalError {
-            code: e.code,
-            message: e.message,
-        })?;
+    let proposal = match provider.propose_next_action(&proposal_params).await {
+        Ok(proposal) => {
+            if proposal_params.provider == "native_qwen_ollama" {
+                local_ai::clear_runtime_error(&local_ai_state);
+            }
+            proposal
+        }
+        Err(error) if proposal_params.provider == "native_qwen_ollama" => {
+            match local_ai::compatibility_disposition(
+                &local_ai_state,
+                &proposal_params.base_url,
+                &error.message,
+            )
+            .await
+            .map_err(|state_error| {
+                compatibility_proposal_error(format!(
+                    "Free AI hit a Mac graphics compatibility problem, but GORKH could not inspect the local runtime state: {}",
+                    state_error
+                ))
+            })? {
+                local_ai::LocalAiCompatibilityDisposition::NotApplicable => {
+                    return Err(proposal_error_from_llm(error));
+                }
+                local_ai::LocalAiCompatibilityDisposition::ExternalService => {
+                    let message = local_ai::external_service_compatibility_message(
+                        &proposal_params.base_url,
+                    );
+                    local_ai::remember_runtime_error(&local_ai_state, message.clone());
+                    return Err(compatibility_proposal_error(message));
+                }
+                local_ai::LocalAiCompatibilityDisposition::ManagedRuntimeAlreadyCompatible => {
+                    let message = local_ai::managed_runtime_still_incompatible_message();
+                    local_ai::remember_runtime_error(&local_ai_state, message.clone());
+                    return Err(compatibility_proposal_error(message));
+                }
+                local_ai::LocalAiCompatibilityDisposition::RetryManagedRuntime => {
+                    local_ai::enable_managed_runtime_compatibility_mode(&local_ai_state)
+                        .await
+                        .map_err(|restart_error| {
+                            let message = format!(
+                                "Free AI hit a Mac graphics compatibility problem. GORKH could not restart the managed local runtime in compatibility mode: {}",
+                                restart_error
+                            );
+                            local_ai::remember_runtime_error(&local_ai_state, message.clone());
+                            compatibility_proposal_error(message)
+                        })?;
+
+                    match provider.propose_next_action(&proposal_params).await {
+                        Ok(proposal) => {
+                            local_ai::clear_runtime_error(&local_ai_state);
+                            proposal
+                        }
+                        Err(retry_error) => {
+                            if local_ai::is_macos_metal_compatibility_error(&retry_error.message) {
+                                let message =
+                                    local_ai::managed_runtime_compatibility_failure_message();
+                                local_ai::remember_runtime_error(&local_ai_state, message.clone());
+                                return Err(compatibility_proposal_error(message));
+                            }
+                            return Err(proposal_error_from_llm(retry_error));
+                        }
+                    }
+                }
+            }
+        }
+        Err(error) => return Err(proposal_error_from_llm(error)),
+    };
 
     Ok(ProposalResult { proposal })
 }
@@ -1765,6 +1839,7 @@ struct ConversationTurnResponse {
 #[tauri::command]
 async fn assistant_conversation_turn(
     params: ConversationTurnRequest,
+    local_ai_state: State<'_, local_ai::LocalAiRuntimeState>,
 ) -> Result<ConversationTurnResponse, ProposalError> {
     let api_key = resolve_llm_api_key(&params.provider)?;
     let conversation_params = llm::ConversationTurnParams {
@@ -1776,18 +1851,75 @@ async fn assistant_conversation_turn(
         app_context: params.app_context,
     };
 
-    let provider = llm::create_provider(&conversation_params.provider).map_err(|e| ProposalError {
-        code: e.code,
-        message: e.message,
-    })?;
+    let provider = llm::create_provider(&conversation_params.provider).map_err(proposal_error_from_llm)?;
 
-    let result = provider
-        .conversation_turn(&conversation_params)
-        .await
-        .map_err(|e| ProposalError {
-            code: e.code,
-            message: e.message,
-        })?;
+    let result = match provider.conversation_turn(&conversation_params).await {
+        Ok(result) => {
+            if conversation_params.provider == "native_qwen_ollama" {
+                local_ai::clear_runtime_error(&local_ai_state);
+            }
+            result
+        }
+        Err(error) if conversation_params.provider == "native_qwen_ollama" => {
+            match local_ai::compatibility_disposition(
+                &local_ai_state,
+                &conversation_params.base_url,
+                &error.message,
+            )
+            .await
+            .map_err(|state_error| {
+                compatibility_proposal_error(format!(
+                    "Free AI hit a Mac graphics compatibility problem, but GORKH could not inspect the local runtime state: {}",
+                    state_error
+                ))
+            })? {
+                local_ai::LocalAiCompatibilityDisposition::NotApplicable => {
+                    return Err(proposal_error_from_llm(error));
+                }
+                local_ai::LocalAiCompatibilityDisposition::ExternalService => {
+                    let message = local_ai::external_service_compatibility_message(
+                        &conversation_params.base_url,
+                    );
+                    local_ai::remember_runtime_error(&local_ai_state, message.clone());
+                    return Err(compatibility_proposal_error(message));
+                }
+                local_ai::LocalAiCompatibilityDisposition::ManagedRuntimeAlreadyCompatible => {
+                    let message = local_ai::managed_runtime_still_incompatible_message();
+                    local_ai::remember_runtime_error(&local_ai_state, message.clone());
+                    return Err(compatibility_proposal_error(message));
+                }
+                local_ai::LocalAiCompatibilityDisposition::RetryManagedRuntime => {
+                    local_ai::enable_managed_runtime_compatibility_mode(&local_ai_state)
+                        .await
+                        .map_err(|restart_error| {
+                            let message = format!(
+                                "Free AI hit a Mac graphics compatibility problem. GORKH could not restart the managed local runtime in compatibility mode: {}",
+                                restart_error
+                            );
+                            local_ai::remember_runtime_error(&local_ai_state, message.clone());
+                            compatibility_proposal_error(message)
+                        })?;
+
+                    match provider.conversation_turn(&conversation_params).await {
+                        Ok(result) => {
+                            local_ai::clear_runtime_error(&local_ai_state);
+                            result
+                        }
+                        Err(retry_error) => {
+                            if local_ai::is_macos_metal_compatibility_error(&retry_error.message) {
+                                let message =
+                                    local_ai::managed_runtime_compatibility_failure_message();
+                                local_ai::remember_runtime_error(&local_ai_state, message.clone());
+                                return Err(compatibility_proposal_error(message));
+                            }
+                            return Err(proposal_error_from_llm(retry_error));
+                        }
+                    }
+                }
+            }
+        }
+        Err(error) => return Err(proposal_error_from_llm(error)),
+    };
 
     Ok(ConversationTurnResponse { result })
 }
