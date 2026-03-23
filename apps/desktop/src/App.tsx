@@ -35,6 +35,7 @@ import { desktopRuntimeConfig } from './lib/desktopRuntimeConfig.js';
 import { logoutDesktopSession, startDesktopSignIn } from './lib/desktopAuth.js';
 import { getDesktopAccount, revokeDesktopDevice, type DesktopAccountSnapshot } from './lib/desktopAccount.js';
 import { getDesktopTaskBootstrap, type DesktopTaskBootstrap } from './lib/desktopTasks.js';
+import { parseDesktopError } from './lib/tauriError.js';
 import {
   ensureAssistantRunForMessage,
   interpretAssistantTaskConfirmationResponse,
@@ -1471,11 +1472,12 @@ function App() {
 
       return true;
     } catch (err) {
+      const parsedError = parseDesktopError(err, 'The assistant could not start the task from chat.');
       setMessages((prev) => [
         ...prev,
         createChatItem(
           'agent',
-          err instanceof Error ? err.message : 'The assistant could not start the task from chat.'
+          parsedError.message
         ),
       ]);
       return false;
@@ -1636,11 +1638,12 @@ function App() {
             return;
           }
 
+          const parsedError = parseDesktopError(err, 'The assistant could not respond right now.');
           setMessages((prev) => [
             ...prev,
             createChatItem(
               'agent',
-              err instanceof Error ? err.message : 'The assistant could not respond right now.'
+              parsedError.message
             ),
           ]);
         } finally {

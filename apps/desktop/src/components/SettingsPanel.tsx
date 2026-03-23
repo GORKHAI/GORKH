@@ -25,6 +25,7 @@ import {
   type LlmProvider,
   type LlmSettings,
 } from '../lib/llmConfig.js';
+import { parseDesktopError } from '../lib/tauriError.js';
 import { BrandWordmark } from './BrandWordmark.js';
 
 export type WorkspaceState = LocalWorkspaceState;
@@ -190,7 +191,10 @@ export function SettingsPanel({
         setTestResult({ success: false, message: result.error || 'Failed to save key' });
       }
     } catch (e) {
-      setTestResult({ success: false, message: String(e) });
+      setTestResult({
+        success: false,
+        message: parseDesktopError(e, 'Failed to save key').message,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -205,7 +209,10 @@ export function SettingsPanel({
       setHasKey(false);
       setTestResult({ success: true, message: 'API key cleared' });
     } catch (e) {
-      setTestResult({ success: false, message: String(e) });
+      setTestResult({
+        success: false,
+        message: parseDesktopError(e, 'Failed to clear key').message,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -247,25 +254,30 @@ export function SettingsPanel({
         setTestResult({ success: false, message: `Error: ${result.message}` });
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes('NO_API_KEY')) {
+      const parsedError = parseDesktopError(e, 'Test failed');
+      const diagnosticText = [parsedError.code, parsedError.message].filter(Boolean).join(' ');
+      if (parsedError.code === 'NO_API_KEY' || diagnosticText.includes('NO_API_KEY')) {
         setTestResult({ success: false, message: 'No API key configured. Please enter and save your key first.' });
-      } else if (msg.includes('CONNECTION_FAILED') || msg.includes('Connection refused') || msg.includes('Failed to connect')) {
+      } else if (
+        parsedError.code === 'CONNECTION_FAILED'
+        || diagnosticText.includes('Connection refused')
+        || diagnosticText.includes('Failed to connect')
+      ) {
         setTestResult({ 
           success: false, 
           message: settings.provider === 'native_qwen_ollama'
             ? `Free AI is not ready. Use "Set Up Free AI" in the main assistant view, or check that your local AI engine is running at ${settings.baseUrl}.`
             : settings.provider === 'openai_compat'
               ? 'Local server not reachable. Ensure your local LLM server is running at ' + settings.baseUrl + ' and try again.'
-              : `Connection failed: ${msg}`
+              : `Connection failed: ${parsedError.message}`
         });
-      } else if (msg.includes('TIMEOUT')) {
+      } else if (parsedError.code === 'TIMEOUT' || diagnosticText.includes('TIMEOUT')) {
         setTestResult({ 
           success: false, 
           message: 'Request timed out. The local server may be overloaded or not responding.'
         });
       } else {
-        setTestResult({ success: false, message: `Test failed: ${msg}` });
+        setTestResult({ success: false, message: `Test failed: ${parsedError.message}` });
       }
     } finally {
       setIsLoading(false);
@@ -321,7 +333,7 @@ export function SettingsPanel({
     } catch (e) {
       setUpdateResult({
         success: false,
-        message: e instanceof Error ? e.message : String(e),
+        message: parseDesktopError(e, 'Failed to check for updates').message,
       });
     } finally {
       setIsLoading(false);
