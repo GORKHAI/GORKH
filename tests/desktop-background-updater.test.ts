@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 test('desktop updater helper exposes stable background download state helpers', async () => {
@@ -44,5 +45,17 @@ test('desktop updater helper exposes stable background download state helpers', 
       checkedInBackground: true,
     }),
     /restart to update/i
+  );
+});
+
+test('desktop updater wiring enables the Rust process plugin for restart after install', () => {
+  const cargoToml = readFileSync('apps/desktop/src-tauri/Cargo.toml', 'utf8');
+  const tauriLib = readFileSync('apps/desktop/src-tauri/src/lib.rs', 'utf8');
+
+  assert.match(cargoToml, /tauri-plugin-process\s*=\s*"2"/, 'desktop runtime should depend on the process plugin');
+  assert.match(
+    tauriLib,
+    /plugin\(tauri_plugin_process::init\(\)\)/,
+    'desktop runtime should enable the Tauri process plugin before using relaunch in the frontend'
   );
 });

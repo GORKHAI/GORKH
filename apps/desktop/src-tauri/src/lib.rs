@@ -2378,7 +2378,8 @@ pub fn run() {
                 .open_js_links_on_click(false)
                 .build(),
         )
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init());
 
     let builder = if option_env!("VITE_DESKTOP_UPDATER_ENABLED") == Some("true") {
         builder.plugin(tauri_plugin_updater::Builder::new().build())
