@@ -37,8 +37,23 @@ function getRepoPath(): string {
   return `/repos/${config.GITHUB_REPO_OWNER}/${config.GITHUB_REPO_NAME}`;
 }
 
+export function getDesktopReleaseCacheTtlSeconds(
+  requestedSeconds: number = config.DESKTOP_RELEASE_CACHE_TTL_SECONDS,
+  githubToken: string | undefined = config.GITHUB_TOKEN,
+): number {
+  const normalized = Math.max(1, requestedSeconds);
+
+  // Anonymous GitHub API access is capped at 60 requests/hour, so a 60-second
+  // release cache churns too aggressively for downloads and updater manifests.
+  if (!githubToken?.trim()) {
+    return Math.max(300, normalized);
+  }
+
+  return normalized;
+}
+
 function getCacheTtlMs(): number {
-  return Math.max(1, config.DESKTOP_RELEASE_CACHE_TTL_SECONDS) * 1000;
+  return getDesktopReleaseCacheTtlSeconds() * 1000;
 }
 
 function getGithubHeaders(extra: Record<string, string> = {}): Record<string, string> {

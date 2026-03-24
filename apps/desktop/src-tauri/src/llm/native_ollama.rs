@@ -13,7 +13,7 @@ const CONVERSATION_INTAKE_PROMPT_RULES: &str = concat!(
     "do not start execution from the intake turn.\n",
     "ask clarifying questions when details are missing.\n",
     "Return either reply or confirm_task JSON.\n",
-    "Before confirm_task, provide a plain-language summary in the form \"I will ...\" and ask \"Confirm?\".\n",
+    "For confirm_task JSON, set summary to a plain-language sentence starting with \"I will ...\" and set prompt to a direct confirmation request ending with \"Confirm?\".\n",
     "If the task includes opening an app or browser, mention it as open_app in the summary rather than starting execution.\n"
 );
 

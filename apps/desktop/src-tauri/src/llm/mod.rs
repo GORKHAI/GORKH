@@ -28,7 +28,10 @@ pub enum ToolCall {
     #[serde(rename = "app.get_state")]
     AppGetState,
     #[serde(rename = "settings.set")]
-    SettingsSet { key: String, value: serde_json::Value },
+    SettingsSet {
+        key: String,
+        value: serde_json::Value,
+    },
     #[serde(rename = "free_ai.install")]
     FreeAiInstall { tier: String },
 }
@@ -81,9 +84,7 @@ pub enum InputAction {
         modifiers: Option<Vec<String>>,
     },
     #[serde(rename = "open_app")]
-    OpenApp {
-        app_name: String,
-    },
+    OpenApp { app_name: String },
 }
 
 /// A proposal from the AI agent
@@ -181,7 +182,10 @@ pub struct RunConstraints {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_conversation_user_prompt, ConversationTurnMessage, RunConstraints};
+    use super::{
+        build_conversation_user_prompt, parse_json_response, ConversationTurnMessage,
+        ConversationTurnResult, RunConstraints,
+    };
 
     #[test]
     fn run_constraints_deserialize_from_camel_case_fields() {
@@ -215,6 +219,33 @@ mod tests {
         assert!(!prompt.contains("message-2"));
         assert!(prompt.contains("message-3"));
         assert!(prompt.contains("message-14"));
+    }
+
+    #[test]
+    fn parse_conversation_turn_accepts_prefixed_confirm_task_payload() {
+        let parsed = parse_json_response::<ConversationTurnResult>(
+            r#"-confirm_task{"goal":"gorkh-serve-up-still-thread","summary":"I will serve and warn the user about a still thread.","prompt":"Confirm?"}"#,
+            "conversation turn",
+        )
+        .expect("prefixed confirm_task payload should deserialize");
+
+        match parsed {
+            ConversationTurnResult::ConfirmTask {
+                goal,
+                summary,
+                prompt,
+            } => {
+                assert_eq!(goal, "gorkh-serve-up-still-thread");
+                assert_eq!(
+                    summary,
+                    "I will serve and warn the user about a still thread."
+                );
+                assert_eq!(prompt, "Confirm?");
+            }
+            ConversationTurnResult::Reply { .. } => {
+                panic!("expected confirm_task payload to stay a confirm_task")
+            }
+        }
     }
 }
 
@@ -282,19 +313,128 @@ pub fn build_anthropic_messages_url(base_url: &str) -> String {
     }
 }
 
+fn strip_markdown_code_fence(content: &str) -> &str {
+    let trimmed = content.trim();
+    trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .and_then(|s| s.strip_suffix("```"))
+        .unwrap_or(trimmed)
+        .trim()
+}
+
+fn extract_balanced_json_fragment(content: &str, start_index: usize) -> Option<&str> {
+    let first = content[start_index..].chars().next()?;
+    if first != '{' && first != '[' {
+        return None;
+    }
+
+    let mut stack = vec![first];
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (offset, ch) in content[start_index + first.len_utf8()..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+
+            match ch {
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '{' | '[' => stack.push(ch),
+            '}' => {
+                if stack.pop() != Some('{') {
+                    return None;
+                }
+                if stack.is_empty() {
+                    let end_index = start_index + first.len_utf8() + offset + ch.len_utf8();
+                    return Some(&content[start_index..end_index]);
+                }
+            }
+            ']' => {
+                if stack.pop() != Some('[') {
+                    return None;
+                }
+                if stack.is_empty() {
+                    let end_index = start_index + first.len_utf8() + offset + ch.len_utf8();
+                    return Some(&content[start_index..end_index]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn extract_first_json_fragment(content: &str) -> Option<&str> {
+    let start_index = content
+        .char_indices()
+        .find_map(|(index, ch)| matches!(ch, '{' | '[').then_some(index))?;
+
+    extract_balanced_json_fragment(content, start_index)
+}
+
+fn parse_prefixed_variant_payload<T: DeserializeOwned>(
+    content: &str,
+) -> Option<Result<T, serde_json::Error>> {
+    let first_brace = content.find('{')?;
+    let prefix = content[..first_brace]
+        .trim()
+        .trim_start_matches(|ch: char| ch == '-' || ch == '*' || ch == ':' || ch.is_whitespace())
+        .trim_end_matches(|ch: char| ch == ':' || ch.is_whitespace())
+        .trim();
+
+    if prefix.is_empty()
+        || !prefix
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        return None;
+    }
+
+    let json_fragment = extract_balanced_json_fragment(content, first_brace)?;
+    let mut object =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(json_fragment).ok()?;
+    object
+        .entry("kind".to_string())
+        .or_insert_with(|| serde_json::Value::String(prefix.to_string()));
+
+    Some(serde_json::from_value(serde_json::Value::Object(object)))
+}
+
 pub fn parse_json_response<T: DeserializeOwned>(content: &str, label: &str) -> Result<T, LlmError> {
     match serde_json::from_str(content) {
         Ok(parsed) => Ok(parsed),
         Err(e) => {
-            let cleaned = content
-                .trim()
-                .strip_prefix("```json")
-                .or_else(|| content.trim().strip_prefix("```"))
-                .and_then(|s| s.strip_suffix("```"))
-                .unwrap_or(content)
-                .trim();
+            let cleaned = strip_markdown_code_fence(content);
 
-            serde_json::from_str(cleaned).map_err(|_| LlmError {
+            if let Ok(parsed) = serde_json::from_str(cleaned) {
+                return Ok(parsed);
+            }
+
+            if let Some(result) = parse_prefixed_variant_payload(cleaned) {
+                if let Ok(parsed) = result {
+                    return Ok(parsed);
+                }
+            }
+
+            if let Some(fragment) = extract_first_json_fragment(cleaned) {
+                if let Ok(parsed) = serde_json::from_str(fragment) {
+                    return Ok(parsed);
+                }
+            }
+
+            Err(LlmError {
                 code: "INVALID_JSON".to_string(),
                 message: format!(
                     "Failed to parse {}: {}. Content: {}",

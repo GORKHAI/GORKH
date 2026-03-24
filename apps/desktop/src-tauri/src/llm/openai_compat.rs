@@ -13,7 +13,7 @@ const CONVERSATION_INTAKE_PROMPT_RULES: &str = concat!(
     "do not start execution from the intake turn.\n",
     "ask clarifying questions when details are missing.\n",
     "Return either reply or confirm_task JSON.\n",
-    "Before confirm_task, provide a plain-language summary in the form \"I will ...\" and ask \"Confirm?\".\n",
+    "For confirm_task JSON, set summary to a plain-language sentence starting with \"I will ...\" and set prompt to a direct confirmation request ending with \"Confirm?\".\n",
     "If the task includes opening an app or browser, mention it as open_app in the summary rather than starting execution.\n"
 );
 
@@ -61,13 +61,12 @@ struct OpenAiCompatResponseMessage {
 }
 
 fn is_hosted_free_ai_fallback(base_url: &str) -> bool {
-    base_url.trim_end_matches('/').ends_with("/desktop/free-ai/v1")
+    base_url
+        .trim_end_matches('/')
+        .ends_with("/desktop/free-ai/v1")
 }
 
-fn build_openai_compat_client(
-    base_url: &str,
-    timeout_secs: u64,
-) -> Result<Client, reqwest::Error> {
+fn build_openai_compat_client(base_url: &str, timeout_secs: u64) -> Result<Client, reqwest::Error> {
     let mut builder = Client::builder().timeout(std::time::Duration::from_secs(timeout_secs));
 
     // Render terminates the hosted desktop fallback behind an HTTP/2 edge that has shown
@@ -89,7 +88,11 @@ fn openai_compat_connection_message(base_url: &str, error: &reqwest::Error) -> S
     }
 }
 
-fn openai_compat_api_error_message(base_url: &str, status: reqwest::StatusCode, text: &str) -> String {
+fn openai_compat_api_error_message(
+    base_url: &str,
+    status: reqwest::StatusCode,
+    text: &str,
+) -> String {
     if is_hosted_free_ai_fallback(base_url) {
         if status.as_u16() == 404 {
             format!(
@@ -105,7 +108,8 @@ fn openai_compat_api_error_message(base_url: &str, status: reqwest::StatusCode, 
     } else if status.as_u16() == 404 {
         format!("Local server returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", text)
     } else if status.as_u16() == 401 {
-        "Local server requires authentication. If your server needs an API key, enter it above.".to_string()
+        "Local server requires authentication. If your server needs an API key, enter it above."
+            .to_string()
     } else {
         format!("Local server error {}: {}", status, text)
     }
@@ -113,7 +117,10 @@ fn openai_compat_api_error_message(base_url: &str, status: reqwest::StatusCode, 
 
 fn openai_compat_parse_error_message(base_url: &str, error: &reqwest::Error) -> String {
     if is_hosted_free_ai_fallback(base_url) {
-        format!("Failed to parse response from Hosted Free AI fallback: {}", error)
+        format!(
+            "Failed to parse response from Hosted Free AI fallback: {}",
+            error
+        )
     } else {
         format!("Failed to parse response from local server: {}", error)
     }
@@ -133,11 +140,10 @@ impl LlmProvider for OpenAiCompatProvider {
         &self,
         params: &ProposalParams,
     ) -> Result<AgentProposal, LlmError> {
-        let client = build_openai_compat_client(&params.base_url, 60)
-            .map_err(|e| LlmError {
-                code: "CLIENT_INIT_FAILED".to_string(),
-                message: format!("Failed to create HTTP client: {}", e),
-            })?;
+        let client = build_openai_compat_client(&params.base_url, 60).map_err(|e| LlmError {
+            code: "CLIENT_INIT_FAILED".to_string(),
+            message: format!("Failed to create HTTP client: {}", e),
+        })?;
 
         let system_prompt = format!(
             "{}\n\n{}",
@@ -257,11 +263,10 @@ impl LlmProvider for OpenAiCompatProvider {
         &self,
         params: &ConversationTurnParams,
     ) -> Result<ConversationTurnResult, LlmError> {
-        let client = build_openai_compat_client(&params.base_url, 60)
-            .map_err(|e| LlmError {
-                code: "CLIENT_INIT_FAILED".to_string(),
-                message: format!("Failed to create HTTP client: {}", e),
-            })?;
+        let client = build_openai_compat_client(&params.base_url, 60).map_err(|e| LlmError {
+            code: "CLIENT_INIT_FAILED".to_string(),
+            message: format!("Failed to create HTTP client: {}", e),
+        })?;
 
         let system_prompt = format!(
             "{}\n\n{}",
