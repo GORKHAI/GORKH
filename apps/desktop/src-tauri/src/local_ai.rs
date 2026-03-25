@@ -294,6 +294,13 @@ pub async fn compatibility_disposition(
         return Ok(LocalAiCompatibilityDisposition::ExternalService);
     }
 
+    // If our managed child is NOT running but the port IS occupied, the service
+    // belongs to an external process (e.g. system Ollama). GORKH cannot restart
+    // that process in CPU-safe mode, so treat it the same as an external service.
+    if !managed_child_running(state) && status.runtime_running {
+        return Ok(LocalAiCompatibilityDisposition::ExternalService);
+    }
+
     if status.compatibility_mode {
         return Ok(LocalAiCompatibilityDisposition::ManagedRuntimeAlreadyCompatible);
     }

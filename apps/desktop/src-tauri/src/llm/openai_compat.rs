@@ -60,6 +60,16 @@ struct OpenAiCompatResponseMessage {
     content: String,
 }
 
+fn is_localhost_url(url: &str) -> bool {
+    let lower = url.trim().to_lowercase();
+    lower.starts_with("http://localhost")
+        || lower.starts_with("https://localhost")
+        || lower.starts_with("http://127.")
+        || lower.starts_with("https://127.")
+        || lower.starts_with("http://[::1]")
+        || lower.starts_with("https://[::1]")
+}
+
 #[async_trait::async_trait]
 impl LlmProvider for OpenAiCompatProvider {
     async fn propose_next_action(
@@ -232,30 +242,55 @@ impl LlmProvider for OpenAiCompatProvider {
         };
 
         let url = super::build_openai_chat_completions_url(&params.base_url);
-        let mut request_builder = client.post(&url).header("Content-Type", "application/json");
+        let is_remote = !is_localhost_url(&url);
 
-        if !params.api_key.is_empty() {
-            request_builder =
-                request_builder.header("Authorization", format!("Bearer {}", params.api_key));
+        // For remote hosts (e.g. hosted fallback on Render) retry on connection failure
+        // to handle cold-start delays. Local servers fail fast without retry.
+        const MAX_REMOTE_RETRIES: u32 = 2;
+        const REMOTE_RETRY_DELAY_SECS: u64 = 5;
+
+        let mut last_err: Option<LlmError> = None;
+        let mut response_opt: Option<reqwest::Response> = None;
+
+        let max_attempts = if is_remote { MAX_REMOTE_RETRIES + 1 } else { 1 };
+        for attempt in 0..max_attempts {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(REMOTE_RETRY_DELAY_SECS)).await;
+            }
+            let mut rb = client.post(&url).header("Content-Type", "application/json");
+            if !params.api_key.is_empty() {
+                rb = rb.header("Authorization", format!("Bearer {}", params.api_key));
+            }
+            match rb.json(&request_body).send().await {
+                Ok(r) => {
+                    response_opt = Some(r);
+                    last_err = None;
+                    break;
+                }
+                Err(e) => {
+                    let is_retryable = is_remote && (e.is_connect() || e.is_timeout());
+                    let code = if e.is_connect() {
+                        "CONNECTION_FAILED"
+                    } else if e.is_timeout() {
+                        "TIMEOUT"
+                    } else {
+                        "REQUEST_FAILED"
+                    };
+                    last_err = Some(LlmError {
+                        code: code.to_string(),
+                        message: format!("Failed to connect to local LLM server: {}", e),
+                    });
+                    if !is_retryable {
+                        break;
+                    }
+                }
+            }
         }
 
-        let response = request_builder
-            .json(&request_body)
-            .send()
-            .await
-            .map_err(|e| {
-                let code = if e.is_connect() {
-                    "CONNECTION_FAILED"
-                } else if e.is_timeout() {
-                    "TIMEOUT"
-                } else {
-                    "REQUEST_FAILED"
-                };
-                LlmError {
-                    code: code.to_string(),
-                    message: format!("Failed to connect to local LLM server: {}", e),
-                }
-            })?;
+        let response = match response_opt {
+            Some(r) => r,
+            None => return Err(last_err.unwrap()),
+        };
 
         if !response.status().is_success() {
             let status = response.status();

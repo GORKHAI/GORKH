@@ -1368,22 +1368,44 @@ fastify.post('/desktop/free-ai/v1/chat/completions', async (request, reply) => {
     stream: false,
   };
 
-  let upstreamResponse: Response;
-  try {
-    upstreamResponse = await fetch(buildHostedFreeAiUpstreamUrl('chat/completions'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(config.FREE_AI_FALLBACK_API_KEY.trim().length > 0
-          ? { Authorization: `Bearer ${config.FREE_AI_FALLBACK_API_KEY}` }
-          : {}),
-      },
-      body: JSON.stringify(upstreamBody),
-    });
-  } catch (error) {
+  // Retry the upstream fetch up to 2 additional times with a short delay to
+  // handle cold-start latency from the upstream AI service.
+  const FREE_AI_UPSTREAM_MAX_RETRIES = 2;
+  const FREE_AI_UPSTREAM_RETRY_DELAY_MS = 3_000;
+  const upstreamUrl = buildHostedFreeAiUpstreamUrl('chat/completions');
+  const upstreamHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(config.FREE_AI_FALLBACK_API_KEY.trim().length > 0
+      ? { Authorization: `Bearer ${config.FREE_AI_FALLBACK_API_KEY}` }
+      : {}),
+  };
+  const upstreamBodyStr = JSON.stringify(upstreamBody);
+
+  let upstreamResponse: Response = null!;
+  let lastUpstreamFetchError: unknown;
+  for (let attempt = 0; attempt <= FREE_AI_UPSTREAM_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, FREE_AI_UPSTREAM_RETRY_DELAY_MS));
+    }
+    try {
+      upstreamResponse = await fetch(upstreamUrl, {
+        method: 'POST',
+        headers: upstreamHeaders,
+        body: upstreamBodyStr,
+      });
+      lastUpstreamFetchError = undefined;
+      break;
+    } catch (error) {
+      lastUpstreamFetchError = error;
+      // Only retry on network/connection-level errors (fetch throws).
+      // HTTP 4xx/5xx responses do not throw — they are handled below.
+    }
+  }
+
+  if (lastUpstreamFetchError !== undefined) {
     reply.status(502);
     return reply.send({
-      error: `Hosted Free AI request failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: `Hosted Free AI request failed: ${lastUpstreamFetchError instanceof Error ? lastUpstreamFetchError.message : String(lastUpstreamFetchError)}`,
       code: 'FREE_AI_FALLBACK_UPSTREAM_ERROR',
     });
   }
@@ -1535,8 +1557,10 @@ fastify.post('/desktop/devices/:deviceId/revoke', async (request, reply) => {
 
 fastify.get('/updates/desktop/:platform/:arch/:currentVersion.json', async (request, reply) => {
   if (!config.DESKTOP_UPDATE_ENABLED) {
-    reply.status(404);
-    return { error: 'Desktop updates are disabled' };
+    // 204 = Tauri's documented convention for "no update available".
+    // Returning 404 + JSON causes "Could not fetch a valid release JSON from the remote".
+    reply.status(204);
+    return reply.send();
   }
 
   const { platform, arch, currentVersion } = request.params as {
@@ -1550,9 +1574,18 @@ fastify.get('/updates/desktop/:platform/:arch/:currentVersion.json', async (requ
     return manifest;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    fastify.log.warn({ platform, arch, err: message }, 'Desktop update manifest unavailable');
-    reply.status(message === 'Invalid update target' ? 400 : 404);
-    return { error: message === 'Invalid update target' ? 'Invalid update target' : 'Update manifest not found' };
+    fastify.log.warn({ platform, arch, currentVersion, err: message }, 'Desktop update manifest unavailable');
+
+    if (message === 'Invalid update target') {
+      reply.status(400);
+      return { error: 'Invalid update target' };
+    }
+
+    // For all other failures (GitHub not configured, assets missing, network errors)
+    // return 204 so Tauri silently treats this as "no update available" rather than
+    // surfacing "Could not fetch a valid release JSON from the remote" to the user.
+    reply.status(204);
+    return reply.send();
   }
 });
 
