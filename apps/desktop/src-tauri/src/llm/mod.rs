@@ -442,15 +442,19 @@ pub fn build_conversation_system_prompt(app_context: Option<&str>) -> String {
         concat!(
             "You are GORKH, an AI desktop assistant handling the conversation and intake stage only.\n",
             "You are not executing tasks in this turn.\n",
-            "do not start execution from the intake turn.\n",
-            "ask clarifying questions when details are missing.\n",
-            "When the request is specific enough to execute, respond with kind \"confirm_task\" and provide:\n",
-            "- goal: a concise execution goal\n",
-            "- summary: a plain-language summary starting with \"I will ...\"\n",
-            "- prompt: a direct confirmation request that ends with \"Confirm?\"\n",
-            "If the task is not specific enough, respond with kind \"reply\" and a natural message.\n",
+            "Do not start execution from the intake turn.\n",
+            "Ask clarifying questions when details are missing.\n",
             "Never invent missing details. Never claim execution has started.\n",
-            "Return STRICT JSON and nothing else."
+            "\n",
+            "You MUST respond with ONLY a valid JSON object. No extra text, no markdown, no explanation.\n",
+            "\n",
+            "When the user request is clear and specific enough to execute, respond with EXACTLY this format:\n",
+            "{\"kind\":\"confirm_task\",\"goal\":\"concise goal\",\"summary\":\"I will ...\",\"prompt\":\"...? Confirm?\"}\n",
+            "\n",
+            "For all other responses (greetings, questions, clarifications), respond with EXACTLY this format:\n",
+            "{\"kind\":\"reply\",\"message\":\"your reply here\"}\n",
+            "\n",
+            "The JSON must have a \"kind\" field set to either \"reply\" or \"confirm_task\". No other formats are accepted."
         ),
         app_context_section
     )
@@ -471,8 +475,62 @@ pub fn build_conversation_user_prompt(messages: &[ConversationTurnMessage]) -> S
         }
     }
 
-    prompt.push_str(
-        "\nDecide whether to reply conversationally or return confirm_task. Return valid JSON only.",
-    );
+    prompt.push_str(concat!(
+        "\nRespond with a JSON object only. Use {\"kind\":\"reply\",\"message\":\"...\"}",
+        " or {\"kind\":\"confirm_task\",\"goal\":\"...\",\"summary\":\"...\",\"prompt\":\"...\"}.",
+        " No other text.",
+    ));
     prompt
+}
+
+/// Parse a conversation turn response, with a fallback for models that omit the `kind` tag.
+/// Small models sometimes return `{"message":"..."}` or freeform text — we recover gracefully
+/// instead of surfacing a parse error to the user.
+pub fn parse_conversation_turn_result(content: &str) -> Result<ConversationTurnResult, LlmError> {
+    // Try standard parse first (handles correct format and ```json fences).
+    if let Ok(result) = parse_json_response::<ConversationTurnResult>(content, "conversation turn") {
+        return Ok(result);
+    }
+
+    // Fallback: attempt to recover a usable reply from malformed JSON.
+    let cleaned = content
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| content.trim().strip_prefix("```"))
+        .and_then(|s| s.strip_suffix("```"))
+        .unwrap_or(content)
+        .trim();
+
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(cleaned) {
+        // Model returned {"message": "..."} without kind → treat as reply.
+        if let Some(msg) = value.get("message").and_then(|v| v.as_str()) {
+            if !msg.is_empty() {
+                return Ok(ConversationTurnResult::Reply { message: msg.to_string() });
+            }
+        }
+        // Model returned some other JSON object → extract any string value as reply.
+        if let Some(map) = value.as_object() {
+            for v in map.values() {
+                if let Some(s) = v.as_str() {
+                    if !s.is_empty() && s.len() > 3 {
+                        return Ok(ConversationTurnResult::Reply { message: s.to_string() });
+                    }
+                }
+            }
+        }
+    }
+
+    // Model returned plain text (not JSON at all) → use it as a reply.
+    let trimmed = content.trim();
+    if !trimmed.is_empty() && !trimmed.starts_with('{') && !trimmed.starts_with('[') {
+        return Ok(ConversationTurnResult::Reply { message: trimmed.to_string() });
+    }
+
+    Err(LlmError {
+        code: "INVALID_JSON".to_string(),
+        message: format!(
+            "Failed to parse conversation turn. Content: {}",
+            content.chars().take(200).collect::<String>()
+        ),
+    })
 }

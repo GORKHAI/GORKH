@@ -227,6 +227,6 @@ impl LlmProvider for OpenAiProvider {
                 message: "No response from LLM".to_string(),
             })?;
 
-        super::parse_json_response::<ConversationTurnResult>(&content, "conversation turn")
+        super::parse_conversation_turn_result(&content)
     }
 }

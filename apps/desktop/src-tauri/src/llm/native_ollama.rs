@@ -215,9 +215,6 @@ impl LlmProvider for NativeOllamaProvider {
             message: format!("Failed to parse Ollama response: {}", e),
         })?;
 
-        super::parse_json_response::<ConversationTurnResult>(
-            &ollama_response.response,
-            "conversation turn",
-        )
+        super::parse_conversation_turn_result(&ollama_response.response)
     }
 }
