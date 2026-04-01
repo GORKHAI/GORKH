@@ -1293,6 +1293,7 @@ fastify.get('/desktop/me', async (request, reply) => {
     readiness: {
       billingEnabled: config.BILLING_ENABLED,
       subscriptionStatus: user.subscriptionStatus === 'active' ? 'active' : 'inactive',
+      hostedFreeAiEnabled: config.FREE_AI_FALLBACK_ENABLED,
     },
   };
 });

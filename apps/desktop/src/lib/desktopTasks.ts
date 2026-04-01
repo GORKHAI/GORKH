@@ -23,6 +23,7 @@ export interface DesktopTaskBootstrap {
   readiness: {
     billingEnabled: boolean;
     subscriptionStatus: 'active' | 'inactive';
+    hostedFreeAiEnabled: boolean;
   };
 }
 

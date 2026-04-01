@@ -106,8 +106,8 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
   },
   openai_compat: {
     provider: 'openai_compat',
-    label: 'Local OpenAI-compatible',
-    shortLabel: 'Local OpenAI-compatible',
+    label: 'Custom OpenAI-compatible',
+    shortLabel: 'Custom OpenAI-compatible',
     baseUrl: 'http://127.0.0.1:8000',
     model: 'qwen2.5-7b-instruct',
     runtimeProvider: 'openai_compat',
@@ -131,7 +131,6 @@ const LAUNCH_PROVIDER_ORDER: LlmProvider[] = [
   'native_qwen_ollama',
   'openai',
   'claude',
-  'openai_compat',
 ];
 
 export function isLlmProvider(value: string | undefined | null): value is LlmProvider {
@@ -196,6 +195,12 @@ export function isLaunchLlmProvider(provider: LlmProvider): boolean {
 
 export function getSupportedLlmProviders(): LlmProviderDefinition[] {
   return LAUNCH_PROVIDER_ORDER.map((provider) => PROVIDER_DEFINITIONS[provider]);
+}
+
+export function getAdvancedLlmProviders(): LlmProviderDefinition[] {
+  return ['deepseek', 'minimax', 'kimi', 'openai_compat'].map(
+    (provider) => PROVIDER_DEFINITIONS[provider as LlmProvider]
+  );
 }
 
 export function getAllLlmProviders(): LlmProviderDefinition[] {

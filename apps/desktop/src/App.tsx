@@ -4133,6 +4133,7 @@ function App() {
           onExportDiagnostics={handleExportDiagnostics}
           diagnosticsStatus={diagnosticsStatus}
           overviewPanels={settingsOperationalPanels}
+          hostedFreeAiEnabled={desktopBootstrap?.readiness.hostedFreeAiEnabled ?? false}
         />
       )}
     </div>
