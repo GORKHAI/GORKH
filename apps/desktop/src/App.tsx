@@ -1741,13 +1741,28 @@ function App() {
             appContext: gorkhAppContext ?? undefined,
           });
         } catch (error) {
-          if (
+          const eligibleForFallback =
             llmSettings.provider === DEFAULT_LLM_PROVIDER
-            && runtimeConfig
-            && sessionDeviceToken
-            && shouldRetryWithHostedFreeAiFallback(error)
-          ) {
-            const hostedFreeAiBinding = resolveHostedFreeAiBinding(runtimeConfig, sessionDeviceToken);
+            && shouldRetryWithHostedFreeAiFallback(error);
+
+          if (!eligibleForFallback) {
+            throw error;
+          }
+
+          if (!sessionDeviceToken) {
+            throw new Error(
+              'Free AI could not respond because the local engine is not ready. Sign in to use the hosted Free AI fallback.'
+            );
+          }
+
+          if (!runtimeConfig) {
+            throw new Error(
+              'Free AI could not respond because the local engine is not ready. The hosted Free AI fallback is not available right now.'
+            );
+          }
+
+          const hostedFreeAiBinding = resolveHostedFreeAiBinding(runtimeConfig, sessionDeviceToken);
+          try {
             result = await assistantConversationTurn({
               provider: hostedFreeAiBinding.provider,
               baseUrl: hostedFreeAiBinding.baseUrl,
@@ -1757,8 +1772,43 @@ function App() {
               apiKeyOverride: hostedFreeAiBinding.apiKeyOverride,
             });
             usedHostedFreeAi = true;
-          } else {
-            throw error;
+          } catch (fallbackError) {
+            const parsed = parseDesktopError(
+              fallbackError,
+              'The hosted Free AI fallback also failed.'
+            );
+            const msg = parsed.message.toLowerCase();
+            const code = parsed.code?.toUpperCase() || '';
+            if (
+              code === 'RATE_LIMITED'
+              || msg.includes('rate limit')
+              || msg.includes('429')
+            ) {
+              throw new Error(
+                'Your daily Free AI fallback limit has been reached. Try again tomorrow, or set up local Free AI in Settings.'
+              );
+            }
+            if (
+              code === 'FREE_AI_FALLBACK_UNAVAILABLE'
+              || msg.includes('free ai fallback is unavailable')
+              || msg.includes('503')
+            ) {
+              throw new Error(
+                'The hosted Free AI fallback is temporarily unavailable. This may be due to a cold start or service issue. Please try again in a moment.'
+              );
+            }
+            if (
+              code === 'FREE_AI_FALLBACK_UPSTREAM_ERROR'
+              || msg.includes('free ai fallback upstream error')
+              || msg.includes('502')
+            ) {
+              throw new Error(
+                'The hosted Free AI fallback could not reach the upstream AI service. Please try again in a moment.'
+              );
+            }
+            throw new Error(
+              `Free AI could not respond, and the hosted fallback also failed: ${parsed.message}`
+            );
           }
         }
         // dispatchConfirmedAssistantTask stays on the explicit confirmation path below.

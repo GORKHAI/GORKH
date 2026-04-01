@@ -81,6 +81,7 @@ pub struct LocalAiRuntimeStatus {
     pub runtime_source: Option<LocalAiRuntimeSource>,
     pub runtime_version: Option<String>,
     pub compatibility_mode: bool,
+    pub target_model_available: bool,
     pub last_error: Option<String>,
 }
 
@@ -206,6 +207,32 @@ pub async fn runtime_status(state: &LocalAiRuntimeState) -> Result<LocalAiRuntim
         matches!(runtime_ownership, LocalAiRuntimeOwnership::ExternalService);
     let last_error = state.last_error.lock().unwrap().clone();
 
+    let selected_tier = progress
+        .selected_tier
+        .or_else(|| metadata.as_ref().map(|value| value.selected_tier));
+    let selected_model = progress
+        .selected_model
+        .clone()
+        .or_else(|| metadata.as_ref().map(|value| value.selected_model.clone()));
+    let target_model = selected_model.clone().unwrap_or_else(|| {
+        let tier = selected_tier.unwrap_or(LocalAiTier::Light);
+        tier_runtime_plan(tier).default_model.to_string()
+    });
+
+    let (installed_models, target_model_available) = if running {
+        let live_models = fetch_installed_models(LOCAL_AI_SERVICE_URL).await;
+        let available = live_models.iter().any(|model| model.trim() == target_model);
+        (live_models, available)
+    } else {
+        (
+            metadata
+                .as_ref()
+                .map(|value| value.installed_models.clone())
+                .unwrap_or_default(),
+            false,
+        )
+    };
+
     Ok(LocalAiRuntimeStatus {
         managed_by_app: runtime_present
             || metadata.is_some()
@@ -220,25 +247,19 @@ pub async fn runtime_status(state: &LocalAiRuntimeState) -> Result<LocalAiRuntim
             progress.stage,
             runtime_present,
             running,
+            target_model_available,
             metadata.as_ref(),
         ),
-        selected_tier: progress
-            .selected_tier
-            .or_else(|| metadata.as_ref().map(|value| value.selected_tier)),
-        selected_model: progress
-            .selected_model
-            .clone()
-            .or_else(|| metadata.as_ref().map(|value| value.selected_model.clone())),
-        installed_models: metadata
-            .as_ref()
-            .map(|value| value.installed_models.clone())
-            .unwrap_or_default(),
+        selected_tier,
+        selected_model,
+        installed_models,
         runtime_source: metadata.as_ref().map(|value| value.runtime_source),
         runtime_version: metadata.as_ref().map(|value| value.runtime_version.clone()),
         compatibility_mode: metadata
             .as_ref()
             .map(|value| value.compatibility_mode)
             .unwrap_or(false),
+        target_model_available,
         last_error,
     })
 }
@@ -519,7 +540,18 @@ pub async fn start_runtime(state: &LocalAiRuntimeState) -> Result<LocalAiRuntime
     ensure_managed_dirs(&managed_dir)?;
 
     if is_service_port_open() {
-        return runtime_status(state).await;
+        let status = runtime_status(state).await?;
+        if status.target_model_available {
+            return Ok(status);
+        }
+        let model = status
+            .selected_model
+            .as_deref()
+            .unwrap_or("the required model");
+        return Err(format!(
+            "Another local AI service is already running on {}, but {} is not available. Stop the other service or install the model so GORKH can use it.",
+            LOCAL_AI_SERVICE_URL, model
+        ));
     }
 
     let metadata = read_metadata(&managed_dir);
@@ -1688,9 +1720,10 @@ fn derive_install_stage(
     progress_stage: LocalAiInstallStage,
     runtime_present: bool,
     running: bool,
+    target_model_available: bool,
     metadata: Option<&LocalAiInstallMetadata>,
 ) -> LocalAiInstallStage {
-    if running {
+    if running && target_model_available {
         return LocalAiInstallStage::Ready;
     }
     if matches!(
@@ -1810,6 +1843,39 @@ async fn is_service_running(base_url: &str) -> bool {
     {
         Ok(response) => response.status().is_success(),
         Err(_) => false,
+    }
+}
+
+async fn fetch_installed_models(base_url: &str) -> Vec<String> {
+    #[derive(Debug, Deserialize)]
+    struct TagsResponse {
+        models: Vec<ModelInfo>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct ModelInfo {
+        name: String,
+    }
+
+    let client = match Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return Vec::new(),
+    };
+
+    match client
+        .get(format!("{}/api/tags", base_url.trim_end_matches('/')))
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => {
+            match response.json::<TagsResponse>().await {
+                Ok(tags) => tags.models.into_iter().map(|m| m.name).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+        _ => Vec::new(),
     }
 }
 

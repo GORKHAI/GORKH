@@ -236,26 +236,25 @@ export function SettingsPanel({
         }
       }
 
-      // Test the connection with a simple ask_user request (no screenshot needed)
-      const result = await invoke<{ proposal: { kind: string } } | { code: string; message: string }>(
-        'llm_propose_next_action',
+      // Test the connection using the same conversation-turn path as live chat
+      const result = await invoke<{ kind: string; message?: string }>(
+        'assistant_conversation_turn',
         {
           params: {
             provider: settings.provider,
             baseUrl: settings.baseUrl,
             model: settings.model,
-            goal: 'Test connection',
-            screenshotPngBase64: null,
-            history: null,
-            constraints: { maxActions: 1, maxRuntimeMinutes: 1 },
+            messages: [{ role: 'user', text: 'Hello' }],
+            appContext: null,
+            apiKeyOverride: null,
           },
         }
       );
 
-      if ('proposal' in result) {
+      if (result && typeof result === 'object' && 'kind' in result) {
         setTestResult({ success: true, message: 'Connection successful! LLM is responding.' });
       } else {
-        setTestResult({ success: false, message: `Error: ${result.message}` });
+        setTestResult({ success: false, message: `Unexpected response: ${JSON.stringify(result)}` });
       }
     } catch (e) {
       const parsedError = parseDesktopError(e, 'Test failed');
@@ -272,13 +271,13 @@ export function SettingsPanel({
           message: settings.provider === 'native_qwen_ollama'
             ? `Free AI is not ready. Use "Set Up Free AI" in the main assistant view, or check that your local AI engine is running at ${settings.baseUrl}.`
             : settings.provider === 'openai_compat'
-              ? 'Local server not reachable. Ensure your local LLM server is running at ' + settings.baseUrl + ' and try again.'
+              ? `Server not reachable at ${settings.baseUrl}. Ensure the server is running and try again.`
               : `Connection failed: ${parsedError.message}`
         });
       } else if (parsedError.code === 'TIMEOUT' || diagnosticText.includes('TIMEOUT')) {
         setTestResult({ 
           success: false, 
-          message: 'Request timed out. The local server may be overloaded or not responding.'
+          message: 'Request timed out. The server may be overloaded or not responding.'
         });
       } else if (parsedError.code === 'LOCAL_AI_COMPATIBILITY_ERROR') {
         setTestResult({ success: false, message: parsedError.message });

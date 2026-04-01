@@ -66,7 +66,10 @@ impl LlmProvider for OpenAiProvider {
         &self,
         params: &ProposalParams,
     ) -> Result<AgentProposal, LlmError> {
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| Client::new());
 
         let system_prompt = format!(
             "{}\n\n{}",
@@ -166,7 +169,10 @@ impl LlmProvider for OpenAiProvider {
         &self,
         params: &ConversationTurnParams,
     ) -> Result<ConversationTurnResult, LlmError> {
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| Client::new());
         let system_prompt = format!(
             "{}\n\n{}",
             super::build_conversation_system_prompt(params.app_context.as_deref()),

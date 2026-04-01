@@ -27,6 +27,7 @@ export interface LocalAiRuntimeStatus {
   runtimeSource: string | null;
   runtimeVersion: string | null;
   compatibilityMode: boolean;
+  targetModelAvailable?: boolean;
   lastError: string | null;
 }
 

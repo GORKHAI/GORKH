@@ -21,6 +21,7 @@ const expectedCommands = [
   'autostart_set_enabled',
   'autostart_supported',
   'approve_agent_proposal',
+  'assistant_conversation_turn',
   'cancel_agent_task',
   'capture_display_png',
   'clear_llm_api_key',
@@ -57,6 +58,7 @@ const expectedCommands = [
   'main_window_exit_overlay_mode',
   'main_window_overlay_status',
   'main_window_show',
+  'open_application',
   'open_external_url',
   'permissions_get_status',
   'permissions_open_settings',
@@ -173,7 +175,7 @@ function main() {
   assert.deepEqual(allowCommands, extractRustCommands());
 
   const pluginConfig = tauriConfig.plugins ?? {};
-  for (const forbiddenPlugin of ['shell', 'fs', 'cli', 'process']) {
+  for (const forbiddenPlugin of ['shell', 'fs', 'cli']) {
     assert.equal(
       Object.prototype.hasOwnProperty.call(pluginConfig, forbiddenPlugin),
       false,

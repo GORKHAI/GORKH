@@ -137,6 +137,11 @@ impl LlmProvider for OpenAiCompatProvider {
         };
 
         let url = super::build_openai_chat_completions_url(&params.base_url);
+        let location = if is_localhost_url(&url) {
+            "local LLM server"
+        } else {
+            "remote provider"
+        };
 
         let mut request_builder = client.post(&url).header("Content-Type", "application/json");
 
@@ -161,7 +166,7 @@ impl LlmProvider for OpenAiCompatProvider {
                 };
                 LlmError {
                     code: code.to_string(),
-                    message: format!("Failed to connect to local LLM server: {}", e),
+                    message: format!("Failed to connect to {}: {}", location, e),
                 }
             })?;
 
@@ -170,16 +175,24 @@ impl LlmProvider for OpenAiCompatProvider {
             let text = response.text().await.unwrap_or_default();
 
             // Provide helpful error messages for common issues
+            let code = match status.as_u16() {
+                404 => "MODEL_NOT_FOUND",
+                401 => "AUTH_FAILED",
+                429 => "RATE_LIMITED",
+                502 => "FREE_AI_FALLBACK_UPSTREAM_ERROR",
+                503 => "FREE_AI_FALLBACK_UNAVAILABLE",
+                _ => "API_ERROR",
+            };
             let message = if status.as_u16() == 404 {
-                format!("Local server returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", text)
+                format!("{} returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", location, text)
             } else if status.as_u16() == 401 {
-                "Local server requires authentication. If your server needs an API key, enter it above.".to_string()
+                format!("{} requires authentication. If your server needs an API key, enter it above.", location)
             } else {
-                format!("Local server error {}: {}", status, text)
+                format!("{} error {}: {}", location, status, text)
             };
 
             return Err(LlmError {
-                code: "API_ERROR".to_string(),
+                code: code.to_string(),
                 message,
             });
         }
@@ -187,7 +200,7 @@ impl LlmProvider for OpenAiCompatProvider {
         let compat_response: OpenAiCompatResponse =
             response.json().await.map_err(|e| LlmError {
                 code: "PARSE_ERROR".to_string(),
-                message: format!("Failed to parse response from local server: {}", e),
+                message: format!("Failed to parse response from {}: {}", location, e),
             })?;
 
         let content = compat_response
@@ -197,7 +210,7 @@ impl LlmProvider for OpenAiCompatProvider {
             .map(|c| c.message.content)
             .ok_or_else(|| LlmError {
                 code: "EMPTY_RESPONSE".to_string(),
-                message: "No response from local LLM".to_string(),
+                message: format!("No response from {}", location),
             })?;
 
         // Parse the JSON response
@@ -243,6 +256,7 @@ impl LlmProvider for OpenAiCompatProvider {
 
         let url = super::build_openai_chat_completions_url(&params.base_url);
         let is_remote = !is_localhost_url(&url);
+        let location = if is_remote { "remote provider" } else { "local LLM server" };
 
         // For remote hosts (e.g. hosted fallback on Render) retry on connection failure
         // to handle cold-start delays. Local servers fail fast without retry.
@@ -278,7 +292,7 @@ impl LlmProvider for OpenAiCompatProvider {
                     };
                     last_err = Some(LlmError {
                         code: code.to_string(),
-                        message: format!("Failed to connect to local LLM server: {}", e),
+                        message: format!("Failed to connect to {}: {}", location, e),
                     });
                     if !is_retryable {
                         break;
@@ -295,16 +309,24 @@ impl LlmProvider for OpenAiCompatProvider {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
+            let code = match status.as_u16() {
+                404 => "MODEL_NOT_FOUND",
+                401 => "AUTH_FAILED",
+                429 => "RATE_LIMITED",
+                502 => "FREE_AI_FALLBACK_UPSTREAM_ERROR",
+                503 => "FREE_AI_FALLBACK_UNAVAILABLE",
+                _ => "API_ERROR",
+            };
             let message = if status.as_u16() == 404 {
-                format!("Local server returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", text)
+                format!("{} returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", location, text)
             } else if status.as_u16() == 401 {
-                "Local server requires authentication. If your server needs an API key, enter it above.".to_string()
+                format!("{} requires authentication. If your server needs an API key, enter it above.", location)
             } else {
-                format!("Local server error {}: {}", status, text)
+                format!("{} error {}: {}", location, status, text)
             };
 
             return Err(LlmError {
-                code: "API_ERROR".to_string(),
+                code: code.to_string(),
                 message,
             });
         }
@@ -312,7 +334,7 @@ impl LlmProvider for OpenAiCompatProvider {
         let compat_response: OpenAiCompatResponse =
             response.json().await.map_err(|e| LlmError {
                 code: "PARSE_ERROR".to_string(),
-                message: format!("Failed to parse response from local server: {}", e),
+                message: format!("Failed to parse response from {}: {}", location, e),
             })?;
 
         let content = compat_response
@@ -322,7 +344,7 @@ impl LlmProvider for OpenAiCompatProvider {
             .map(|c| c.message.content)
             .ok_or_else(|| LlmError {
                 code: "EMPTY_RESPONSE".to_string(),
-                message: "No response from local LLM".to_string(),
+                message: format!("No response from {}", location),
             })?;
 
         super::parse_conversation_turn_result(&content)
