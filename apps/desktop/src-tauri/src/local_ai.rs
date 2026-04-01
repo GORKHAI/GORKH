@@ -343,7 +343,7 @@ pub fn managed_runtime_still_incompatible_message() -> String {
 
 pub fn external_service_compatibility_message(base_url: &str) -> String {
     format!(
-        "Free AI reached a Mac graphics compatibility problem inside the local AI service at {}. Restart or reconfigure that Ollama service outside GORKH, or let GORKH manage Free AI instead.",
+        "Free AI reached a Mac graphics compatibility problem inside the local AI service at {}. Stop that external Ollama service, then switch to GORKH-managed Free AI in Settings.",
         base_url.trim()
     )
 }
@@ -369,6 +369,12 @@ pub async fn install_start(
     let existing_metadata = read_metadata(&managed_dir);
 
     if let Some(metadata) = existing_metadata.as_ref() {
+        let port_open = is_service_port_open();
+        let target_available = if port_open {
+            runtime_status(state).await.map(|s| s.target_model_available).unwrap_or(false)
+        } else {
+            false
+        };
         if metadata.selected_tier == selected_tier
             && metadata
                 .installed_models
@@ -377,20 +383,20 @@ pub async fn install_start(
             && (expected_runtime_binary_path(&managed_dir)
                 .as_ref()
                 .is_some_and(|path| path.exists())
-                || is_service_port_open())
+                || target_available)
         {
             let ready_progress = LocalAiInstallProgress {
-                stage: if is_service_port_open() {
+                stage: if target_available {
                     LocalAiInstallStage::Ready
                 } else {
                     LocalAiInstallStage::Installed
                 },
                 selected_tier: Some(selected_tier),
                 selected_model: Some(plan.default_model.to_string()),
-                progress_percent: Some(if is_service_port_open() { 100 } else { 85 }),
+                progress_percent: Some(if target_available { 100 } else { 85 }),
                 downloaded_bytes: None,
                 total_bytes: None,
-                message: Some(if is_service_port_open() {
+                message: Some(if target_available {
                     format!("Free AI is ready with {}.", plan.default_model)
                 } else {
                     format!("Free AI files are installed for {}. Start the local runtime to finish setup.", plan.default_model)
@@ -422,7 +428,7 @@ pub async fn install_start(
 
     let worker_state = state.clone();
     thread::spawn(move || {
-        let result = run_install_worker(worker_state.clone(), managed_dir, selected_tier);
+        let result = run_install_worker(worker_state.clone(), managed_dir.clone(), selected_tier);
         if let Err(error) = result {
             set_last_error(&worker_state, error.clone());
             set_install_progress(
@@ -440,6 +446,7 @@ pub async fn install_start(
                     updated_at_ms: unix_time_ms(),
                 },
             );
+            clear_managed_takeover_marker(&managed_dir);
         }
         *worker_state.install_worker_active.lock().unwrap() = false;
     });
@@ -510,7 +517,7 @@ pub async fn enable_vision_boost(
     thread::spawn(move || {
         let result = run_enable_vision_boost_worker(
             worker_state.clone(),
-            managed_dir,
+            managed_dir.clone(),
             metadata.selected_tier,
         );
         if let Err(error) = result {
@@ -528,6 +535,7 @@ pub async fn enable_vision_boost(
                     updated_at_ms: unix_time_ms(),
                 },
             );
+            clear_managed_takeover_marker(&managed_dir);
         }
         *worker_state.install_worker_active.lock().unwrap() = false;
     });
@@ -692,6 +700,32 @@ pub async fn enable_managed_runtime_compatibility_mode(
     clear_last_error(state);
 
     start_runtime(state).await
+}
+
+pub async fn reset_to_managed(state: &LocalAiRuntimeState) -> Result<LocalAiRuntimeStatus, String> {
+    let managed_dir = managed_runtime_dir();
+    ensure_managed_dirs(&managed_dir)?;
+
+    if managed_child_running(state) {
+        let _ = stop_runtime(state).await?;
+    }
+
+    let path = metadata_path(&managed_dir);
+    if path.exists() {
+        fs::remove_file(&path).map_err(|error| {
+            format!(
+                "Failed to clear managed runtime metadata {}: {}",
+                path.display(),
+                error
+            )
+        })?;
+    }
+
+    write_managed_takeover_marker(&managed_dir)?;
+    set_install_progress(state, default_install_progress());
+    clear_last_error(state);
+
+    runtime_status(state).await
 }
 
 pub fn hardware_profile() -> Result<LocalAiHardwareProfile, String> {
@@ -877,6 +911,7 @@ fn run_install_worker(
         },
     );
     clear_last_error(&state);
+    clear_managed_takeover_marker(&managed_dir);
     Ok(())
 }
 
@@ -1044,6 +1079,28 @@ fn models_dir(managed_dir: &Path) -> PathBuf {
 
 fn metadata_path(managed_dir: &Path) -> PathBuf {
     managed_dir.join(LOCAL_AI_METADATA_FILE)
+}
+
+fn managed_takeover_marker_path(managed_dir: &Path) -> PathBuf {
+    managed_dir.join("pending-managed-takeover")
+}
+
+fn has_managed_takeover_marker(managed_dir: &Path) -> bool {
+    managed_takeover_marker_path(managed_dir).exists()
+}
+
+fn write_managed_takeover_marker(managed_dir: &Path) -> Result<(), String> {
+    fs::write(managed_takeover_marker_path(managed_dir), b"1").map_err(|error| {
+        format!(
+            "Failed to write managed takeover marker to {}: {}",
+            managed_takeover_marker_path(managed_dir).display(),
+            error
+        )
+    })
+}
+
+fn clear_managed_takeover_marker(managed_dir: &Path) {
+    let _ = fs::remove_file(managed_takeover_marker_path(managed_dir));
 }
 
 fn read_metadata(managed_dir: &Path) -> Option<LocalAiInstallMetadata> {
@@ -1570,9 +1627,32 @@ fn ensure_service_running(
     runtime_binary: &Path,
     compatibility_mode: bool,
 ) -> Result<bool, String> {
-    if managed_child_running(state) || is_service_port_open() {
+    if managed_child_running(state) {
+        clear_managed_takeover_marker(managed_dir);
         return Ok(false);
     }
+    if is_service_port_open() {
+        if has_managed_takeover_marker(managed_dir) {
+            return Err(format!(
+                "A local AI service is already running on {}. Stop it so GORKH can start its managed runtime.",
+                LOCAL_AI_SERVICE_URL
+            ));
+        }
+        let target_model = read_metadata(managed_dir)
+            .map(|m| m.selected_model)
+            .unwrap_or_default();
+        if !target_model.is_empty() {
+            let live_models = fetch_installed_models_sync(LOCAL_AI_SERVICE_URL);
+            if !live_models.iter().any(|m| m.trim() == target_model) {
+                return Err(format!(
+                    "A local AI service is already running on {}, but it does not have the required model ({}). Stop the external service so GORKH can start its managed runtime.",
+                    LOCAL_AI_SERVICE_URL, target_model
+                ));
+            }
+        }
+        return Ok(false);
+    }
+    clear_managed_takeover_marker(managed_dir);
 
     let mut command = managed_ollama_command(runtime_binary, managed_dir, compatibility_mode);
     command
@@ -1871,6 +1951,38 @@ async fn fetch_installed_models(base_url: &str) -> Vec<String> {
     {
         Ok(response) if response.status().is_success() => {
             match response.json::<TagsResponse>().await {
+                Ok(tags) => tags.models.into_iter().map(|m| m.name).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn fetch_installed_models_sync(base_url: &str) -> Vec<String> {
+    #[derive(Debug, Deserialize)]
+    struct TagsResponse {
+        models: Vec<ModelInfo>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct ModelInfo {
+        name: String,
+    }
+
+    let client = match BlockingClient::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return Vec::new(),
+    };
+
+    match client
+        .get(format!("{}/api/tags", base_url.trim_end_matches('/')))
+        .send()
+    {
+        Ok(response) if response.status().is_success() => {
+            match response.json::<TagsResponse>() {
                 Ok(tags) => tags.models.into_iter().map(|m| m.name).collect(),
                 Err(_) => Vec::new(),
             }

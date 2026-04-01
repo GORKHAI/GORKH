@@ -62,6 +62,7 @@ import {
   getLocalAiRecommendedTier,
   getLocalAiStatus,
   isLocalAiInstallActive,
+  resetLocalAiToManaged,
   resolveManagedLocalLlmBinding,
   resolveManagedLocalTaskBinding,
   startLocalAiInstall,
@@ -2288,6 +2289,21 @@ function App() {
     }
   }, [desktopBootstrap?.billing, desktopAccount?.billing, refreshLocalAiState]);
 
+  const handleResetLocalAiToManaged = useCallback(async () => {
+    setLocalAiActionBusy(true);
+    setLocalAiError(null);
+    try {
+      const status = await resetLocalAiToManaged();
+      setLocalAiStatus(status);
+      setLocalAiInstallProgress(null);
+      setDiagnosticsStatus('Switched to GORKH-managed Free AI. Click Set Up Free AI to start the managed runtime.');
+    } catch (err) {
+      setLocalAiError(err instanceof Error ? err.message : 'Failed to switch to managed Free AI');
+    } finally {
+      setLocalAiActionBusy(false);
+    }
+  }, []);
+
   const handleDesktopSignIn = useCallback(async () => {
     if (!runtimeConfig) {
       setAuthError(runtimeConfigError || 'Desktop API configuration is invalid');
@@ -3806,6 +3822,9 @@ function App() {
                   }}
                   onRefresh={() => {
                     void refreshLocalAiState();
+                  }}
+                  onResetToManaged={() => {
+                    void handleResetLocalAiToManaged();
                   }}
                 />
               )}

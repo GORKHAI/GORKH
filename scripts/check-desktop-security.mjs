@@ -14,6 +14,7 @@ const expectedCapabilityPermissions = [
   'core:event:allow-listen',
   'core:event:allow-unlisten',
   'desktop-ipc',
+  'updater:default',
 ];
 
 const expectedCommands = [
@@ -47,6 +48,7 @@ const expectedCommands = [
   'local_ai_install_start',
   'local_ai_enable_vision_boost',
   'local_ai_recommended_tier',
+  'local_ai_reset_to_managed',
   'local_ai_start',
   'local_ai_status',
   'local_ai_stop',

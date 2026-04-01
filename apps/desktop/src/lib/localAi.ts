@@ -172,6 +172,10 @@ export async function stopLocalAiRuntime(): Promise<LocalAiRuntimeStatus> {
   return invoke<LocalAiRuntimeStatus>('local_ai_stop');
 }
 
+export async function resetLocalAiToManaged(): Promise<LocalAiRuntimeStatus> {
+  return invoke<LocalAiRuntimeStatus>('local_ai_reset_to_managed');
+}
+
 export async function getLocalAiHardwareProfile(): Promise<LocalAiHardwareProfile> {
   return invoke<LocalAiHardwareProfile>('local_ai_hardware_profile');
 }
@@ -290,7 +294,10 @@ export function getLocalAiTroubleshootingHint(
   }
 
   if (status?.externalServiceDetected && status.installStage !== 'ready') {
-    return 'GORKH found another local AI service on this machine. You can keep using it, or let GORKH manage its own runtime.';
+    if (status?.targetModelAvailable) {
+      return 'GORKH found another local AI service on this machine. You can keep using it, or let GORKH manage its own runtime.';
+    }
+    return 'The external local AI service is missing the required model or is incompatible. Stop it, then use Switch to GORKH-managed runtime followed by Set Up Free AI.';
   }
 
   return null;

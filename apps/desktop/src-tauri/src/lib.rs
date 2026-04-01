@@ -1991,6 +1991,13 @@ fn local_ai_recommended_tier() -> Result<local_ai::LocalAiTierRecommendation, St
     local_ai::recommended_tier()
 }
 
+#[tauri::command]
+async fn local_ai_reset_to_managed(
+    state: State<'_, local_ai::LocalAiRuntimeState>,
+) -> Result<local_ai::LocalAiRuntimeStatus, String> {
+    local_ai::reset_to_managed(&state).await
+}
+
 // Resize RGBA image
 fn resize_rgba(
     rgba: &[u8],
@@ -2442,6 +2449,7 @@ pub fn run() {
             local_ai_stop,
             local_ai_hardware_profile,
             local_ai_recommended_tier,
+            local_ai_reset_to_managed,
             // Iteration 7: Workspace Tools
             workspace::workspace_configure,
             workspace::workspace_get_state,

@@ -58,6 +58,7 @@ test('desktop production security config is locked down', () => {
       'core:event:allow-listen',
       'core:event:allow-unlisten',
       'desktop-ipc',
+      'updater:default',
     ],
     'capability permissions must stay narrowly scoped'
   );

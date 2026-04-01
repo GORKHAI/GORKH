@@ -28,6 +28,7 @@ interface FreeAiSetupCardProps {
   onStart: (tier: LocalAiTier) => void;
   onEnableVisionBoost: () => void;
   onRefresh: () => void;
+  onResetToManaged?: () => void;
 }
 
 const STAGE_ORDER: Array<{ key: LocalAiInstallStage; label: string }> = [
@@ -83,6 +84,7 @@ export function FreeAiSetupCard({
   onStart,
   onEnableVisionBoost,
   onRefresh,
+  onResetToManaged,
 }: FreeAiSetupCardProps) {
   const recommendedTier = recommendation?.tier ?? 'light';
   const [selectedTier, setSelectedTier] = useState<LocalAiTier>(recommendedTier);
@@ -246,14 +248,36 @@ export function FreeAiSetupCard({
           style={{
             marginTop: '1rem',
             padding: '0.75rem',
-            background: '#ecfdf5',
-            border: '1px solid #86efac',
+            background: status?.targetModelAvailable ? '#ecfdf5' : '#fef2f2',
+            border: `1px solid ${status?.targetModelAvailable ? '#86efac' : '#fecaca'}`,
             borderRadius: '8px',
-            color: '#166534',
+            color: status?.targetModelAvailable ? '#166534' : '#991b1b',
             fontSize: '0.875rem',
           }}
         >
-          GORKH found an existing local AI service on this machine. You can keep using it, or let GORKH manage the local engine instead.
+          {status?.targetModelAvailable
+            ? 'GORKH found an existing local AI service on this machine. You can keep using it, or let GORKH manage the local engine instead.'
+            : 'GORKH found an existing local AI service, but it does not have the required model or is incompatible. Stop the external service, then click Set Up Free AI to let GORKH manage the runtime.'}
+        </div>
+      )}
+
+      {status?.externalServiceDetected && (activeStage !== 'ready' || Boolean(activeError)) && onResetToManaged && (
+        <div style={{ marginTop: '1rem' }}>
+          <button
+            onClick={onResetToManaged}
+            disabled={busy || actionBusy}
+            style={{
+              padding: '0.6rem 0.95rem',
+              borderRadius: '8px',
+              border: '1px solid #d1d5db',
+              background: busy || actionBusy ? '#f3f4f6' : 'white',
+              color: '#111827',
+              cursor: busy || actionBusy ? 'not-allowed' : 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Switch to GORKH-managed runtime
+          </button>
         </div>
       )}
 
