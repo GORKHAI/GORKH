@@ -148,6 +148,8 @@ export async function executeToolWithReporting(
             summary.hunksApplied = data.hunks_applied;
           }
           break;
+        case 'fs.delete':
+          break;
         case 'terminal.exec':
           if (data.exit_code !== undefined) {
             summary.exitCode = data.exit_code;
@@ -220,6 +222,7 @@ export function getToolTarget(toolCall: ToolCall): string {
     case 'fs.read_text':
     case 'fs.write_text':
     case 'fs.apply_patch':
+    case 'fs.delete':
       return toolCall.path;
     case 'terminal.exec':
       return toolCall.cmd;
@@ -241,6 +244,8 @@ export function describeToolCall(toolCall: ToolCall): string {
       return `Write file: ${toolCall.path} (${toolCall.content.length} chars)`;
     case 'fs.apply_patch':
       return `Apply patch to: ${toolCall.path}`;
+    case 'fs.delete':
+      return `Delete: ${toolCall.path}`;
     case 'terminal.exec':
       return `Execute: ${toolCall.cmd} ${toolCall.args.join(' ')}`;
     default:
@@ -254,6 +259,7 @@ export function describeToolCall(toolCall: ToolCall): string {
 export function isDestructiveTool(toolCall: ToolCall): boolean {
   return toolCall.tool === 'fs.write_text' || 
          toolCall.tool === 'fs.apply_patch' ||
+         toolCall.tool === 'fs.delete' ||
          toolCall.tool === 'terminal.exec';
 }
 

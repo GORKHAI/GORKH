@@ -18,6 +18,8 @@ pub enum ToolCall {
     FsWriteText { path: String, content: String },
     #[serde(rename = "fs.apply_patch")]
     FsApplyPatch { path: String, patch: String },
+    #[serde(rename = "fs.delete")]
+    FsDelete { path: String },
     #[serde(rename = "terminal.exec")]
     TerminalExec {
         cmd: String,
@@ -41,6 +43,7 @@ impl ToolCall {
             self,
             ToolCall::FsWriteText { .. }
                 | ToolCall::FsApplyPatch { .. }
+                | ToolCall::FsDelete { .. }
                 | ToolCall::TerminalExec { .. }
                 | ToolCall::SettingsSet { .. }
                 | ToolCall::FreeAiInstall { .. }
@@ -55,6 +58,7 @@ impl ToolCall {
             ToolCall::FsReadText { path } => path,
             ToolCall::FsWriteText { path, .. } => path,
             ToolCall::FsApplyPatch { path, .. } => path,
+            ToolCall::FsDelete { path, .. } => path,
             ToolCall::TerminalExec { cmd, .. } => cmd,
             ToolCall::AppGetState => "app",
             ToolCall::SettingsSet { key, .. } => key,

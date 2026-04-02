@@ -249,6 +249,8 @@ pub enum ToolCall {
     FsWriteText { path: String, content: String },
     #[serde(rename = "fs.apply_patch")]
     FsApplyPatch { path: String, patch: String },
+    #[serde(rename = "fs.delete")]
+    FsDelete { path: String },
     #[serde(rename = "terminal.exec")]
     TerminalExec {
         cmd: String,
@@ -396,6 +398,7 @@ pub fn tool_execute(tool_call: ToolCall) -> ToolResult {
         ToolCall::FsReadText { path } => execute_fs_read_text(&path),
         ToolCall::FsWriteText { path, content } => execute_fs_write_text(&path, &content),
         ToolCall::FsApplyPatch { path, patch } => execute_fs_apply_patch(&path, &patch),
+        ToolCall::FsDelete { path } => execute_fs_delete(&path),
         ToolCall::TerminalExec { cmd, args, cwd } => {
             execute_terminal_exec(&cmd, &args, cwd.as_deref())
         }
@@ -690,6 +693,50 @@ fn execute_fs_apply_patch(path: &str, patch: &str) -> ToolResult {
     }
 }
 
+fn execute_fs_delete(path: &str) -> ToolResult {
+    let resolved = match resolve_workspace_path(path) {
+        Ok(p) => p,
+        Err(e) => {
+            return ToolResult {
+                ok: false,
+                error: Some(e),
+                data: None,
+            }
+        }
+    };
+
+    if !resolved.exists() {
+        return ToolResult {
+            ok: false,
+            error: Some(ToolError {
+                code: "NOT_FOUND".to_string(),
+                message: format!("File or directory not found: {}", path),
+            }),
+            data: None,
+        };
+    }
+
+    match if resolved.is_dir() {
+        std::fs::remove_dir_all(&resolved)
+    } else {
+        std::fs::remove_file(&resolved)
+    } {
+        Ok(()) => ToolResult {
+            ok: true,
+            error: None,
+            data: None,
+        },
+        Err(e) => ToolResult {
+            ok: false,
+            error: Some(ToolError {
+                code: "DELETE_ERROR".to_string(),
+                message: format!("Failed to delete {}: {}", path, e),
+            }),
+            data: None,
+        },
+    }
+}
+
 fn execute_terminal_exec(cmd: &str, args: &[String], cwd: Option<&str>) -> ToolResult {
     // Resolve cwd if provided
     let cwd_path = match cwd {
@@ -772,6 +819,7 @@ pub fn get_tool_name(tool: &ToolCall) -> &'static str {
         ToolCall::FsReadText { .. } => "fs.read_text",
         ToolCall::FsWriteText { .. } => "fs.write_text",
         ToolCall::FsApplyPatch { .. } => "fs.apply_patch",
+        ToolCall::FsDelete { .. } => "fs.delete",
         ToolCall::TerminalExec { .. } => "terminal.exec",
     }
 }
@@ -784,6 +832,7 @@ pub fn get_tool_target(tool: &ToolCall) -> String {
         ToolCall::FsReadText { path } => path.clone(),
         ToolCall::FsWriteText { path, .. } => path.clone(),
         ToolCall::FsApplyPatch { path, .. } => path.clone(),
+        ToolCall::FsDelete { path, .. } => path.clone(),
         ToolCall::TerminalExec { cmd, .. } => cmd.clone(),
     }
 }

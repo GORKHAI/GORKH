@@ -134,16 +134,22 @@ impl LlmProvider for NativeOllamaProvider {
     async fn plan_task(&self, request: PlanRequest) -> Result<String, ProviderError> {
         let system = r#"You are GORKH, an AI desktop assistant. Break down the user's goal into a step-by-step plan.
 
-Output format: Return a JSON array of steps, where each step has:
+Output format: Return ONLY a JSON array of steps. No markdown, no explanation. Each step has:
 - id: unique step identifier
 - title: brief description
 - description: detailed description
 - type: one of ["ui_action", "tool", "ask_user", "verification"]
 
-Example:
+Example for browser task:
 [
   {"id": "1", "title": "Open Chrome", "description": "Click Chrome icon to open browser", "type": "ui_action"},
   {"id": "2", "title": "Navigate to Gmail", "description": "Type gmail.com in address bar", "type": "ui_action"}
+]
+
+Example for file task:
+[
+  {"id": "1", "title": "List Downloads", "description": "List files in the Downloads directory", "type": "tool"},
+  {"id": "2", "title": "Delete target file", "description": "Remove the specified file", "type": "tool"}
 ]
 
 Rules:
@@ -151,7 +157,9 @@ Rules:
 - Use "tool" type for file operations or terminal commands
 - Use "ui_action" with open_app when the task requires launching a desktop app or browser by name
 - Use "ask_user" when you need clarification
-- Keep steps atomic (one action per step)"#;
+- Keep steps atomic (one action per step)
+- To delete a file, use "tool" with type "tool" and the tool "fs.delete"
+- Return ONLY the JSON array. No other text."#;
 
         let user = format!(
             "Goal: {}\n\nContext: {}\n\nCreate a detailed plan:",
@@ -204,7 +212,7 @@ Guidelines:
     async fn propose_next_step(&self, request: ActionRequest) -> Result<String, ProviderError> {
         let system = r#"You are GORKH, an AI desktop assistant. Based on the current screen observation, propose the next action.
 
-Output format: Return valid JSON with ONE of these structures:
+Output format: Return ONLY valid JSON with ONE of these structures. No markdown, no explanation.
 
 1. UI Action:
 {
@@ -217,7 +225,7 @@ Output format: Return valid JSON with ONE of these structures:
 2. Tool Call:
 {
   "action_type": "tool",
-  "tool": "fs.list|fs.read_text|fs.write_text|terminal.exec",
+  "tool": "fs.list|fs.read_text|fs.write_text|fs.apply_patch|fs.delete|terminal.exec",
   "params": {"path": "..."} or {"cmd": "..."},
   "rationale": "Why this tool",
   "confidence": 0.9
@@ -239,7 +247,8 @@ Guidelines:
 - Use normalized coordinates (0-1) for UI actions
 - Be precise about element locations
 - Use open_app when the next action is to launch a desktop app or browser by name
-- Ask for help if confidence is low (< 0.7)"#;
+- Ask for help if confidence is low (< 0.7)
+- Return ONLY the JSON object. No other text."#;
 
         let user = format!(
             "Goal: {}\n\nStep: {}\n\nScreen observation: {}\n\nWhat should I do next?",

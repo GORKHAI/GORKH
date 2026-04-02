@@ -829,6 +829,30 @@ function App() {
   }, [currentProposal]);
 
   useEffect(() => {
+    if (!aiState?.isRunning) {
+      return;
+    }
+    if (aiState.status === 'thinking') {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === 'agent' && last.text === 'Planning the next steps…') {
+          return prev;
+        }
+        return [...prev, createChatItem('agent', 'Planning the next steps…')];
+      });
+    }
+    if (aiState.status === 'executing') {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === 'agent' && last.text === 'Working on it…') {
+          return prev;
+        }
+        return [...prev, createChatItem('agent', 'Working on it…')];
+      });
+    }
+  }, [aiState?.isRunning, aiState?.status]);
+
+  useEffect(() => {
     if (llmSettings.provider !== DEFAULT_LLM_PROVIDER) {
       return;
     }
@@ -1473,6 +1497,15 @@ function App() {
 
     assistantStartingRunIdRef.current = runId;
 
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      const text = `Starting task: ${goal}`;
+      if (last?.role === 'agent' && last.text === text) {
+        return prev;
+      }
+      return [...prev, createChatItem('agent', text)];
+    });
+
     const effectiveSettings: LlmSettings = runLlmSettingsByRunId[runId]
       ?? (llmSettings.provider === DEFAULT_LLM_PROVIDER
         ? (() => {
@@ -1826,6 +1859,19 @@ function App() {
           return;
         }
 
+        // Guard: file-operation tasks require a configured workspace
+        const looksLikeFileOperation = /\b(delete|remove|organize|list|file|folder|directory|downloads|documents|desktop)\b/i.test(result.goal);
+        if (looksLikeFileOperation && !workspaceState.configured) {
+          setMessages((prev) => [
+            ...prev,
+            createChatItem(
+              'agent',
+              `I can help with file operations, but I need a workspace folder configured first. Please open Settings and choose a workspace directory, then try again.`
+            ),
+          ]);
+          return;
+        }
+
         setPendingTaskConfirmation({
           goal: result.goal,
           summary: result.summary,
@@ -1878,6 +1924,7 @@ function App() {
     llmSettings,
     runtimeConfig,
     sessionDeviceToken,
+    workspaceState,
   ]);
 
   const replayDeferredUserTask = useCallback((deferredTask: string) => {
@@ -3855,6 +3902,7 @@ function App() {
                   status={status}
                   onSendMessage={handleSendMessage}
                   busy={assistantConversationBusy || pendingTaskConfirmationBusy || pendingFreeAiSetupBusy}
+                  assistantStatusLabel={isSignedIn ? overlayStatusLabel : null}
                   pendingFreeAiSetup={pendingFreeAiSetup}
                   pendingFreeAiSetupBusy={pendingFreeAiSetupBusy}
                   pendingTaskConfirmation={pendingTaskConfirmation}

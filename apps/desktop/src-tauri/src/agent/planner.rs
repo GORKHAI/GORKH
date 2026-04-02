@@ -199,12 +199,9 @@ enum RawStepType {
 }
 
 fn parse_plan_steps(input: &str) -> Result<Vec<PlanStep>, String> {
-    let raw_steps: Vec<RawPlanStep> = serde_json::from_str(input).map_err(|e| e.to_string())?;
-
-    Ok(raw_steps
-        .into_iter()
-        .map(|step| PlanStep {
-            id: step.id,
+    fn map_step(step: RawPlanStep) -> PlanStep {
+        PlanStep {
+            id: if step.id.is_empty() { "1".to_string() } else { step.id },
             title: step.title,
             description: step.description,
             step_type: match step.step_type {
@@ -217,8 +214,48 @@ fn parse_plan_steps(input: &str) -> Result<Vec<PlanStep>, String> {
             retry_count: 0,
             max_retries: 3,
             is_critical: false,
-        })
-        .collect())
+        }
+    }
+
+    fn try_parse(s: &str) -> Result<Vec<PlanStep>, String> {
+        let raw_steps: Vec<RawPlanStep> = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        Ok(raw_steps.into_iter().map(map_step).collect())
+    }
+
+    // Direct parse
+    if let Ok(steps) = try_parse(input) {
+        return Ok(steps);
+    }
+
+    // Fallback: strip markdown fences
+    let cleaned = input
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| input.trim().strip_prefix("```"))
+        .and_then(|s| s.strip_suffix("```"))
+        .unwrap_or(input)
+        .trim();
+
+    if let Ok(steps) = try_parse(cleaned) {
+        return Ok(steps);
+    }
+
+    // Fallback: extract first JSON array
+    if let Some(start) = cleaned.find('[') {
+        if let Some(end) = cleaned.rfind(']') {
+            let array_str = &cleaned[start..=end];
+            if let Ok(steps) = try_parse(array_str) {
+                return Ok(steps);
+            }
+        }
+    }
+
+    // Fallback: single step object
+    if let Ok(step) = serde_json::from_str::<RawPlanStep>(cleaned) {
+        return Ok(vec![map_step(step)]);
+    }
+
+    Err("Failed to parse plan steps".to_string())
 }
 
 /// Estimate duration based on step count and types
@@ -275,9 +312,9 @@ pub fn create_simple_plan(goal: &str) -> TaskPlan {
         goal: goal.to_string(),
         steps: vec![PlanStep::new(
             "1",
-            "Analyze task",
-            "Understand what needs to be done",
-            StepType::AskUser,
+            "Complete the task",
+            goal,
+            StepType::UiAction,
         )
         .with_critical(true)],
         estimated_duration_secs: 10,

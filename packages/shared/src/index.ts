@@ -295,6 +295,7 @@ export const ToolName = {
   FS_READ_TEXT: 'fs.read_text',
   FS_WRITE_TEXT: 'fs.write_text',
   FS_APPLY_PATCH: 'fs.apply_patch',
+  FS_DELETE: 'fs.delete',
   TERMINAL_EXEC: 'terminal.exec',
   // GORKH internal app tools (STEP 2)
   APP_GET_STATE: 'app.get_state',
@@ -326,6 +327,11 @@ export interface FsApplyPatchToolCall {
   patch: string;
 }
 
+export interface FsDeleteToolCall {
+  tool: 'fs.delete';
+  path: string;
+}
+
 export interface TerminalExecToolCall {
   tool: 'terminal.exec';
   cmd: string;
@@ -354,7 +360,7 @@ export interface AppFreeAiInstallToolCall {
 
 export type GorkhToolCall = AppGetStateToolCall | AppSettingsSetToolCall | AppFreeAiInstallToolCall;
 
-export type ToolCall = FsListToolCall | FsReadTextToolCall | FsWriteTextToolCall | FsApplyPatchToolCall | TerminalExecToolCall | GorkhToolCall;
+export type ToolCall = FsListToolCall | FsReadTextToolCall | FsWriteTextToolCall | FsApplyPatchToolCall | FsDeleteToolCall | TerminalExecToolCall | GorkhToolCall;
 
 /** Returns true for GORKH internal read-only tools (no approval needed). */
 export function isGorkhReadOnlyToolCall(toolCall: ToolCall): toolCall is AppGetStateToolCall {
@@ -497,6 +503,11 @@ export function sanitizeToolCallForPersistence(toolCall: ToolCall): ToolCall {
         path: REDACTED_WORKSPACE_PATH,
         patch: '',
       };
+    case 'fs.delete':
+      return {
+        tool: toolCall.tool,
+        path: REDACTED_WORKSPACE_PATH,
+      };
     case 'terminal.exec':
       return {
         tool: toolCall.tool,
@@ -523,6 +534,7 @@ export function redactToolCallForLog(toolCall: ToolCall): { tool: ToolName; path
     case 'fs.read_text':
     case 'fs.write_text':
     case 'fs.apply_patch':
+    case 'fs.delete':
       return { tool: t, pathRel: (sanitized as { path: string }).path };
     case 'terminal.exec':
       return { tool: t, cmd: (sanitized as { cmd: string }).cmd };
@@ -1058,6 +1070,11 @@ const fsApplyPatchToolCallSchema = z.object({
   patch: z.string(),
 });
 
+const fsDeleteToolCallSchema = z.object({
+  tool: z.literal('fs.delete'),
+  path: z.string().max(260),
+});
+
 const terminalExecToolCallSchema = z.object({
   tool: z.literal('terminal.exec'),
   cmd: z.string().max(64),
@@ -1086,6 +1103,7 @@ const toolCallSchema = z.union([
   fsReadTextToolCallSchema,
   fsWriteTextToolCallSchema,
   fsApplyPatchToolCallSchema,
+  fsDeleteToolCallSchema,
   terminalExecToolCallSchema,
   appGetStateToolCallSchema,
   appSettingsSetToolCallSchema,

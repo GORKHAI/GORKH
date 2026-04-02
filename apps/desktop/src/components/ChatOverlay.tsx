@@ -36,6 +36,7 @@ interface ChatOverlayProps {
   status: ConnectionStatus;
   onSendMessage: (content: string) => void;
   busy?: boolean;
+  assistantStatusLabel?: string | null;
   pendingFreeAiSetup?: PendingFreeAiSetup | null;
   pendingFreeAiSetupBusy?: boolean;
   pendingTaskConfirmation?: PendingTaskConfirmation | null;
@@ -53,6 +54,7 @@ export function ChatOverlay({
   status,
   onSendMessage,
   busy = false,
+  assistantStatusLabel = null,
   pendingFreeAiSetup = null,
   pendingFreeAiSetupBusy = false,
   pendingTaskConfirmation = null,
@@ -127,6 +129,11 @@ export function ChatOverlay({
           <div style={{ marginTop: '0.2rem', fontSize: '0.8125rem', color: '#475569' }}>
             Describe what you want done. GORKH will explain the plan, then wait for your confirmation before starting.
           </div>
+          {assistantStatusLabel ? (
+            <div style={{ marginTop: '0.35rem', fontSize: '0.8125rem', color: '#0369a1', fontWeight: 500 }}>
+              {assistantStatusLabel}
+            </div>
+          ) : null}
         </div>
         <span
           style={{
