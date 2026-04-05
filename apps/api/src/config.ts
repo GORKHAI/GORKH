@@ -10,6 +10,8 @@ const configSchema = z.object({
   DEPLOYMENT_MODE: z.enum(['single_instance', 'multi_instance']).default('single_instance'),
   DATABASE_URL: z.string().min(1),
   JWT_SECRET: z.string().min(1),
+  JWT_KEY_ID: z.string().default('v1'),
+  JWT_SECRET_MIN_LENGTH: z.string().transform((s) => parseInt(s, 10)).default('32'),
   ACCESS_TOKEN_EXPIRES_IN: z.string().default('30m'),
   REFRESH_TOKEN_TTL_DAYS: z.string().transform((s) => parseInt(s, 10)).default('14'),
   CSRF_COOKIE_NAME: z.string().default('csrf_token'),
@@ -57,6 +59,10 @@ const configSchema = z.object({
   FREE_AI_FALLBACK_API_KEY: z.string().default(''),
   FREE_AI_FALLBACK_DAILY_LIMIT: z.string().transform((s) => parseInt(s, 10)).default('5'),
   RUN_RECOVERY_POLICY: z.enum(['fail', 'cancel']).default('fail'),
+  // Error tracking (optional)
+  SENTRY_DSN: z.string().default(''),
+  SENTRY_ENVIRONMENT: z.string().default(''),
+  SENTRY_SAMPLE_RATE: z.string().transform((s) => parseFloat(s)).default('1.0'),
 });
 
 function loadConfig() {
@@ -67,6 +73,8 @@ function loadConfig() {
     DEPLOYMENT_MODE: process.env.DEPLOYMENT_MODE,
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
+    JWT_KEY_ID: process.env.JWT_KEY_ID,
+    JWT_SECRET_MIN_LENGTH: process.env.JWT_SECRET_MIN_LENGTH,
     ACCESS_TOKEN_EXPIRES_IN: process.env.ACCESS_TOKEN_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN,
     REFRESH_TOKEN_TTL_DAYS: process.env.REFRESH_TOKEN_TTL_DAYS,
     CSRF_COOKIE_NAME: process.env.CSRF_COOKIE_NAME,
@@ -114,6 +122,9 @@ function loadConfig() {
     FREE_AI_FALLBACK_API_KEY: process.env.FREE_AI_FALLBACK_API_KEY,
     FREE_AI_FALLBACK_DAILY_LIMIT: process.env.FREE_AI_FALLBACK_DAILY_LIMIT,
     RUN_RECOVERY_POLICY: process.env.RUN_RECOVERY_POLICY,
+    SENTRY_DSN: process.env.SENTRY_DSN,
+    SENTRY_ENVIRONMENT: process.env.SENTRY_ENVIRONMENT,
+    SENTRY_SAMPLE_RATE: process.env.SENTRY_SAMPLE_RATE,
   };
 
   const result = configSchema.safeParse(raw);
@@ -173,6 +184,25 @@ function loadConfig() {
   const webOrigins = result.data.WEB_ORIGIN.split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+  // Production-hardening validations
+  if (result.data.NODE_ENV === 'production') {
+    // JWT secret must meet minimum length for security
+    if (result.data.JWT_SECRET.length < result.data.JWT_SECRET_MIN_LENGTH) {
+      console.error(`❌ Invalid configuration:`);
+      console.error(`   - JWT_SECRET must be at least ${result.data.JWT_SECRET_MIN_LENGTH} characters in production`);
+      console.error(`     Current length: ${result.data.JWT_SECRET.length}`);
+      console.error(`     Set JWT_SECRET_MIN_LENGTH to override (default: 32)`);
+      process.exit(1);
+    }
+
+    // Admin API key should be set in production
+    if (!result.data.ADMIN_API_KEY || result.data.ADMIN_API_KEY.length < 16) {
+      console.error('❌ Invalid configuration:');
+      console.error('   - ADMIN_API_KEY must be set and at least 16 characters in production');
+      process.exit(1);
+    }
+  }
 
   try {
     assertSupportedDeploymentMode(result.data.DEPLOYMENT_MODE);

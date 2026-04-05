@@ -1,7 +1,26 @@
 import { z } from 'zod';
 
-// Protocol version
+// Protocol version (WebSocket/WebRTC protocol)
 export const PROTOCOL_VERSION = 1;
+
+// ============================================================================
+// API Version
+// ============================================================================
+// The API version represents the REST API contract version. It is exposed in:
+// - Response headers: x-api-version
+// - Root endpoint: GET /
+// - Health endpoint: GET /health
+// - Ready endpoint: GET /ready
+//
+// Versioning policy:
+// - Minor changes (additive): increment minor version, clients continue working
+// - Major changes (breaking): increment major version, may require client updates
+// - Current baseline: 1.0 (initial stable API contract)
+//
+// Clients SHOULD check the API version and log warnings on major version
+// mismatches. Future versioned routes may use /v1/, /v2/ prefixes.
+// ============================================================================
+export const API_VERSION = '1.0';
 
 // ============================================================================
 // Enums
@@ -1720,3 +1739,9 @@ export type ServerEventType =
 // ============================================================================
 
 export * from './agent/index.js';
+
+// ============================================================================
+// LLM Error Codes (Phase 3 Observability)
+// ============================================================================
+
+export * from './llm-error.js';

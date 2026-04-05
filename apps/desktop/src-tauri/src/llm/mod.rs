@@ -1,9 +1,159 @@
+//! LLM Provider Module - ACTIVE PRODUCTION PATH
+//!
+//! ⚠️  IMPORTANT: This is the ACTIVE production provider path for all chat/assistant
+//!     functionality in GORKH. All user-facing LLM interactions (chat, Free AI,
+//!     test connection) go through this module.
+//!
+//! ## Architecture
+//!
+//! This module provides a unified provider interface for:
+//! - **Chat/Conversation**: `assistant_conversation_turn` command
+//! - **Action Proposals**: `llm_propose_next_action` command  
+//! - **Test Connection**: Provider validation via `create_provider`
+//! - **Free AI**: Local Ollama runtime via `native_ollama` provider
+//!
+//! ## Provider Creation
+//!
+//! The single entry point for creating providers is [`create_provider`]. All
+//! provider instantiation for production use MUST go through this function.
+//!
+//! ## Supported Providers
+//!
+//! - `native_qwen_ollama` - Free AI (local Ollama, Qwen models)
+//! - `openai` - OpenAI API (GPT models)
+//! - `claude` - Anthropic API (Claude models)
+//! - `deepseek` - DeepSeek API (OpenAI-compatible)
+//! - `minimax` - MiniMax API (OpenAI-compatible)
+//! - `kimi` - Moonshot/Kimi API (OpenAI-compatible)
+//! - `openai_compat` - Generic OpenAI-compatible servers
+//!
+//! ## Dormant/Advanced Path
+//!
+//! The separate `agent::providers` module contains an experimental provider
+//! hierarchy for the advanced agent system. It is NOT the active production
+//! path and should not be used for standard chat functionality.
+//!
+//! When adding new provider features, ALWAYS use this module (`llm`), not
+//! `agent::providers`.
+
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::time::{Duration, Instant};
 
 pub mod claude;
+pub mod error;
 pub mod native_ollama;
 pub mod openai;
 pub mod openai_compat;
+
+pub use error::LlmErrorCode;
+
+// =============================================================================
+// Shared HTTP Client Configuration
+// =============================================================================
+// Centralized configuration for LLM HTTP clients to ensure consistent
+// timeouts, error handling, and behavior across all providers.
+// =============================================================================
+
+/// Standard timeout for cloud providers (OpenAI, Claude, etc.)
+pub const CLOUD_PROVIDER_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Extended timeout for local providers (Ollama) which may have slower cold starts
+pub const LOCAL_PROVIDER_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Connection timeout for all providers (separate from overall request timeout)
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Configuration for creating an HTTP client for LLM providers
+#[derive(Debug, Clone, Copy)]
+pub struct ClientConfig {
+    /// Overall request timeout
+    pub timeout: Duration,
+    /// Connection establishment timeout
+    pub connect_timeout: Duration,
+    /// Whether to accept invalid certificates (for local development only)
+    pub accept_invalid_certs: bool,
+}
+
+impl ClientConfig {
+    /// Configuration for cloud providers (OpenAI, Claude, DeepSeek, etc.)
+    pub fn cloud() -> Self {
+        Self {
+            timeout: CLOUD_PROVIDER_TIMEOUT,
+            connect_timeout: CONNECT_TIMEOUT,
+            accept_invalid_certs: false,
+        }
+    }
+
+    /// Configuration for local providers (Ollama, local servers)
+    pub fn local() -> Self {
+        Self {
+            timeout: LOCAL_PROVIDER_TIMEOUT,
+            connect_timeout: CONNECT_TIMEOUT,
+            accept_invalid_certs: false,
+        }
+    }
+
+    /// Configuration for development/testing with local servers
+    pub fn local_dev() -> Self {
+        Self {
+            timeout: LOCAL_PROVIDER_TIMEOUT,
+            connect_timeout: CONNECT_TIMEOUT,
+            accept_invalid_certs: true,
+        }
+    }
+}
+
+/// Create a reqwest Client with the given configuration
+pub fn create_http_client(config: ClientConfig) -> Result<reqwest::Client, LlmError> {
+    reqwest::Client::builder()
+        .timeout(config.timeout)
+        .connect_timeout(config.connect_timeout)
+        .danger_accept_invalid_certs(config.accept_invalid_certs)
+        .build()
+        .map_err(|e| LlmError {
+            code: LlmErrorCode::ClientInitFailed,
+            message: format!("Failed to create HTTP client: {}", e),
+        })
+}
+
+/// Standard error classification for reqwest errors
+pub fn classify_request_error(e: &reqwest::Error) -> LlmErrorCode {
+    if e.is_connect() {
+        LlmErrorCode::ConnectionFailed
+    } else if e.is_timeout() {
+        LlmErrorCode::Timeout
+    } else if e.is_status() {
+        LlmErrorCode::ApiError
+    } else {
+        LlmErrorCode::RequestFailed
+    }
+}
+
+/// Build a user-friendly error message based on error classification
+pub fn user_facing_request_error_message(code: LlmErrorCode, context: &str, base_url: &str) -> String {
+    match code {
+        LlmErrorCode::Timeout => format!(
+            "{} timed out after {} seconds. The server at {} may be overloaded or not responding.",
+            context,
+            LOCAL_PROVIDER_TIMEOUT.as_secs(),
+            base_url
+        ),
+        LlmErrorCode::ConnectionFailed => format!(
+            "{} could not connect to {}. Check that the service is running and reachable.",
+            context, base_url
+        ),
+        _ => format!("{} failed: {}", context, base_url),
+    }
+}
+
+/// Build a standardized error from a reqwest error with context
+pub fn request_error(e: reqwest::Error, context: &str) -> LlmError {
+    let code = classify_request_error(&e);
+    LlmError {
+        code,
+        message: format!("{}: {}", context, e),
+    }
+}
 
 /// Available tools for the AI agent
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +281,9 @@ pub struct ProposalParams {
     /// Contains no sensitive data (no keys, paths, file contents, or typed text).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_context: Option<String>,
+    /// Correlation ID for tracing requests across desktop/API boundaries
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
 }
 
 /// A recent conversation turn used for the intake bridge.
@@ -150,6 +303,9 @@ pub struct ConversationTurnParams {
     pub messages: Vec<ConversationTurnMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_context: Option<String>,
+    /// Correlation ID for tracing requests across desktop/API boundaries
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
 }
 
 /// The only allowed response shapes for the intake bridge.
@@ -225,7 +381,7 @@ mod tests {
 /// Error type for LLM operations
 #[derive(Debug, Clone, Serialize)]
 pub struct LlmError {
-    pub code: String,
+    pub code: LlmErrorCode,
     pub message: String,
 }
 
@@ -236,6 +392,108 @@ impl std::fmt::Display for LlmError {
 }
 
 impl std::error::Error for LlmError {}
+
+impl LlmError {
+    /// Create a new LLM error with the given code and message
+    pub fn new(code: LlmErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+/// Usage metadata for LLM requests
+/// 
+/// Captures telemetry data for debugging, cost analysis, and provider comparison.
+/// No sensitive content (prompts, keys, user data) is included.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmUsageMetadata {
+    /// Provider identifier (e.g., "openai", "claude", "native_qwen_ollama")
+    pub provider: String,
+    /// Model name used for the request
+    pub model: String,
+    /// Request path classification
+    pub path: LlmRequestPath,
+    /// Duration in milliseconds
+    pub duration_ms: u64,
+    /// Input/prompt tokens if available (0 if not provided by provider)
+    pub input_tokens: usize,
+    /// Output/completion tokens if available (0 if not provided by provider)
+    pub output_tokens: usize,
+    /// Total tokens if available (0 if not provided by provider)
+    pub total_tokens: usize,
+    /// Whether token counts are actual (from provider) or unknown
+    pub tokens_available: bool,
+    /// Correlation ID for cross-system tracing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+}
+
+/// Classification of LLM request paths
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmRequestPath {
+    /// Local provider (Ollama, local servers)
+    Local,
+    /// Cloud provider (OpenAI, Claude, etc.)
+    Cloud,
+    /// Hosted Free AI fallback
+    HostedFallback,
+}
+
+impl std::fmt::Display for LlmRequestPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LlmRequestPath::Local => write!(f, "local"),
+            LlmRequestPath::Cloud => write!(f, "cloud"),
+            LlmRequestPath::HostedFallback => write!(f, "hosted_fallback"),
+        }
+    }
+}
+
+/// Classify request path based on base URL
+pub fn classify_request_path(base_url: &str) -> LlmRequestPath {
+    let lower = base_url.to_lowercase();
+    if lower.contains("/desktop/free-ai/") || lower.contains("free-ai/v1") {
+        LlmRequestPath::HostedFallback
+    } else if lower.starts_with("http://localhost") 
+        || lower.starts_with("https://localhost")
+        || lower.starts_with("http://127.")
+        || lower.starts_with("https://127.")
+        || lower.starts_with("http://[::1]")
+        || lower.starts_with("https://[::1]") 
+    {
+        LlmRequestPath::Local
+    } else {
+        LlmRequestPath::Cloud
+    }
+}
+
+/// Log usage metadata for observability
+/// 
+/// This function logs structured usage data without sensitive content.
+/// Use this for debugging, cost tracking, and provider comparison.
+pub fn log_usage(metadata: &LlmUsageMetadata) {
+    // Structured log for observability
+    let log_entry = serde_json::json!({
+        "event": "llm_request_complete",
+        "provider": &metadata.provider,
+        "model": &metadata.model,
+        "path": metadata.path,
+        "duration_ms": metadata.duration_ms,
+        "input_tokens": metadata.input_tokens,
+        "output_tokens": metadata.output_tokens,
+        "total_tokens": metadata.total_tokens,
+        "tokens_available": metadata.tokens_available,
+        "correlation_id": metadata.correlation_id,
+    });
+    
+    // Log structured usage data (debug level)
+    // In production, this can be captured by log aggregation
+    println!("[LLM_USAGE] {}", log_entry);
+}
 
 /// Trait for LLM providers
 #[async_trait::async_trait]
@@ -251,18 +509,40 @@ pub trait LlmProvider: Send + Sync {
     ) -> Result<ConversationTurnResult, LlmError>;
 }
 
-/// Create an LLM provider based on the provider name
+/// Create an LLM provider for production use
+///
+/// This is the SINGLE ENTRY POINT for creating LLM providers in the active
+/// production path. All chat, proposal, and test connection flows MUST use
+/// this function to instantiate providers.
+///
+/// # Arguments
+///
+/// * `provider` - Provider identifier (e.g., "native_qwen_ollama", "openai")
+///
+/// # Supported Providers
+///
+/// - `native_qwen_ollama` - Free AI (local Ollama with Qwen models)
+/// - `openai` - OpenAI API (GPT-4, GPT-4o, etc.)
+/// - `claude` - Anthropic API (Claude 3.x)
+/// - `deepseek` - DeepSeek API (OpenAI-compatible)
+/// - `minimax` - MiniMax API (OpenAI-compatible)
+/// - `kimi` - Moonshot/Kimi API (OpenAI-compatible)
+/// - `openai_compat` - Generic OpenAI-compatible server
+///
+/// # Errors
+///
+/// Returns `LlmErrorCode::UnsupportedProvider` if the provider name is unknown.
 pub fn create_provider(provider: &str) -> Result<Box<dyn LlmProvider>, LlmError> {
     match provider {
         "native_qwen_ollama" => Ok(Box::new(native_ollama::NativeOllamaProvider)),
-        "claude" => Ok(Box::new(claude::ClaudeProvider::new())),
+        "claude" => Ok(Box::new(claude::ClaudeProvider)),
         "deepseek" => Ok(Box::new(openai_compat::OpenAiCompatProvider)),
         "minimax" => Ok(Box::new(openai_compat::OpenAiCompatProvider)),
         "kimi" => Ok(Box::new(openai_compat::OpenAiCompatProvider)),
         "openai" => Ok(Box::new(openai::OpenAiProvider)),
         "openai_compat" => Ok(Box::new(openai_compat::OpenAiCompatProvider)),
         _ => Err(LlmError {
-            code: "UNSUPPORTED_PROVIDER".to_string(),
+            code: LlmErrorCode::UnsupportedProvider,
             message: format!("Provider '{}' is not supported", provider),
         }),
     }
@@ -299,7 +579,7 @@ pub fn parse_json_response<T: DeserializeOwned>(content: &str, label: &str) -> R
                 .trim();
 
             serde_json::from_str(cleaned).map_err(|_| LlmError {
-                code: "INVALID_JSON".to_string(),
+                code: LlmErrorCode::InvalidJson,
                 message: format!(
                     "Failed to parse {}: {}. Content: {}",
                     label,
@@ -531,7 +811,7 @@ pub fn parse_conversation_turn_result(content: &str) -> Result<ConversationTurnR
     }
 
     Err(LlmError {
-        code: "INVALID_JSON".to_string(),
+        code: LlmErrorCode::InvalidJson,
         message: format!(
             "Failed to parse conversation turn. Content: {}",
             content.chars().take(200).collect::<String>()

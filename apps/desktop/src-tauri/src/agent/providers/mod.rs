@@ -1,4 +1,33 @@
-//! Multi-provider LLM support for the advanced agent
+//! Multi-provider LLM support for the advanced agent (EXPERIMENTAL)
+//!
+//! ⚠️  IMPORTANT: This module is for the ADVANCED AGENT system which is
+//!     EXPERIMENTAL and NOT the active production path for standard chat.
+//!
+//! ## Status
+//!
+//! - **Purpose**: Advanced autonomous agent with task planning, screen analysis,
+//!   and multi-step execution
+//! - **Maturity**: Experimental/incomplete - many methods are stubs
+//! - **Active Path**: For standard chat/assistant functionality, use `llm::`
+//!   module instead (see `llm::create_provider`)
+//!
+//! ## Architecture
+//!
+//! This module has its own `LlmProvider` trait separate from the main `llm::`
+//! module. The provider router here is for the advanced agent's specific needs
+//! (task planning, screen analysis, etc.), not general chat.
+//!
+//! ## When to Use
+//!
+//! Only use this module if you are explicitly working on the advanced agent
+//! feature. For all chat, Free AI, and test connection functionality, use
+//! the `llm` module instead.
+//!
+//! ## Current Limitations
+//!
+//! - Provider trait methods are largely stubbed/not implemented
+//! - Router returns `NOT_IMPLEMENTED` errors for most operations
+//! - Not integrated with the main chat flow
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

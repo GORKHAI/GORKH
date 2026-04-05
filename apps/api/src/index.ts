@@ -13,7 +13,7 @@ import { screenStore } from './store/screen.js';
 import { actionStore } from './store/actions.js';
 import { toolStore } from './store/tools.js';
 import { setRunPersistence, setSSEBroadcast } from './engine/runEngine.js';
-import { createServerMessage, redactActionForLog } from '@ai-operator/shared';
+import { API_VERSION, createServerMessage, redactActionForLog } from '@ai-operator/shared';
 import type { Device, InputAction, RunMode, ServerEventType } from '@ai-operator/shared';
 import { prisma } from './db/prisma.js';
 import { actionsRepo } from './repos/actions.js';
@@ -54,6 +54,9 @@ import {
   WEBHOOK_RAW_BODY_LIMIT,
 } from './lib/security.js';
 import { dispatchDeviceCommand, isDeviceCommandQueueEnabled } from './lib/device-commands.js';
+import { setupSignalHandlers } from './lib/shutdown.js';
+import { closeAllConnections as closeWsConnections } from './lib/ws-handler.js';
+import { initErrorTracking, reportError } from './lib/error-tracking.js';
 import {
   counterLabelsFromRateLimitKey,
   incCounter,
@@ -155,6 +158,7 @@ await fastify.register(fastifyRawBody, {
 
 fastify.addHook('onRequest', async (request, reply) => {
   reply.header('x-request-id', request.id);
+  reply.header('x-api-version', API_VERSION);
   (request as FastifyRequest & { startedAt?: bigint }).startedAt = process.hrtime.bigint();
 });
 
@@ -840,6 +844,7 @@ const stopRetentionScheduler = startRetentionScheduler({
 
 registerRootRoute(fastify, {
   appVersion,
+  apiVersion: API_VERSION,
   apiPublicBaseUrl: config.API_PUBLIC_BASE_URL,
   nodeEnv: config.NODE_ENV,
 });
@@ -852,6 +857,7 @@ fastify.get('/health', async () => {
   return {
     ok: true,
     version: appVersion,
+    apiVersion: API_VERSION,
     uptimeSeconds: Math.floor(process.uptime()),
     ts: Date.now(),
   };
@@ -868,6 +874,7 @@ fastify.get('/ready', async (_request, reply) => {
     ok: readiness.ok,
     checks: readiness.checks,
     version: appVersion,
+    apiVersion: API_VERSION,
     ts: Date.now(),
     failures: readiness.failures,
   };
@@ -1344,12 +1351,26 @@ fastify.get('/desktop/free-ai/v1/models', async (request, reply) => {
 });
 
 fastify.post('/desktop/free-ai/v1/chat/completions', async (request, reply) => {
+  const startTime = Date.now();
   const desktopSession = await requireDesktopDeviceSession(request, reply);
   if (!desktopSession) {
     return { error: 'Unauthorized' };
   }
 
+  // Extract correlation ID for cross-system tracing
+  const correlationId = (request.headers['x-request-id'] as string | undefined) ?? request.id;
+
+  // Track hosted fallback usage
+  incCounter('hosted_free_ai_fallback_requests_total', {
+    userId: desktopSession.userId,
+  });
+
   if (!hostedFreeAiFallbackAvailable()) {
+    fastify.log.warn({ correlationId, userId: desktopSession.userId }, 'Hosted Free AI fallback unavailable');
+    incCounter('hosted_free_ai_fallback_errors_total', {
+      userId: desktopSession.userId,
+      reason: 'unavailable',
+    });
     return buildHostedFreeAiUnavailableReply(reply);
   }
 
@@ -1359,6 +1380,11 @@ fastify.post('/desktop/free-ai/v1/chat/completions', async (request, reply) => {
     config.FREE_AI_FALLBACK_DAILY_LIMIT,
     86_400_000
   ))) {
+    fastify.log.warn({ correlationId, userId: desktopSession.userId }, 'Hosted Free AI fallback rate limited');
+    incCounter('hosted_free_ai_fallback_errors_total', {
+      userId: desktopSession.userId,
+      reason: 'rate_limited',
+    });
     return;
   }
 
@@ -1404,10 +1430,36 @@ fastify.post('/desktop/free-ai/v1/chat/completions', async (request, reply) => {
   }
 
   if (lastUpstreamFetchError !== undefined) {
+    const durationMs = Date.now() - startTime;
+    observeDuration('hosted_free_ai_fallback_duration_ms', durationMs, {
+      userId: desktopSession.userId,
+      result: 'upstream_error',
+    });
+    incCounter('hosted_free_ai_fallback_errors_total', {
+      userId: desktopSession.userId,
+      reason: 'upstream_fetch_failed',
+    });
+    const error = lastUpstreamFetchError instanceof Error
+      ? lastUpstreamFetchError
+      : new Error(String(lastUpstreamFetchError));
+    reportError(error, {
+      correlationId,
+      userId: desktopSession.userId,
+      path: 'hosted_fallback',
+      errorCode: 'FREE_AI_FALLBACK_UPSTREAM_ERROR',
+      tags: { phase: 'hosted_fallback_upstream', durationMs },
+    });
+    fastify.log.error({
+      correlationId,
+      userId: desktopSession.userId,
+      durationMs,
+      error: error.message,
+    }, 'Hosted Free AI upstream fetch failed');
     reply.status(502);
     return reply.send({
-      error: `Hosted Free AI request failed: ${lastUpstreamFetchError instanceof Error ? lastUpstreamFetchError.message : String(lastUpstreamFetchError)}`,
+      error: `Hosted Free AI request failed: ${error.message}`,
       code: 'FREE_AI_FALLBACK_UPSTREAM_ERROR',
+      correlationId,
     });
   }
 
@@ -1418,17 +1470,72 @@ fastify.post('/desktop/free-ai/v1/chat/completions', async (request, reply) => {
   reply.header('Content-Type', contentType);
 
   if (!text) {
-    return reply.send({});
+    fastify.log.warn({ correlationId, userId: desktopSession.userId, status: upstreamResponse.status }, 'Hosted Free AI returned empty response');
+    return reply.send({ correlationId });
+  }
+
+  // Log non-success responses for debugging
+  if (!upstreamResponse.ok) {
+    const durationMs = Date.now() - startTime;
+    observeDuration('hosted_free_ai_fallback_duration_ms', durationMs, {
+      userId: desktopSession.userId,
+      result: 'upstream_error_status',
+    });
+    incCounter('hosted_free_ai_fallback_errors_total', {
+      userId: desktopSession.userId,
+      reason: `upstream_status_${upstreamResponse.status}`,
+    });
+    fastify.log.warn({
+      correlationId,
+      userId: desktopSession.userId,
+      durationMs,
+      status: upstreamResponse.status,
+      bodyPreview: text.slice(0, 200),
+    }, 'Hosted Free AI upstream returned error status');
   }
 
   try {
-    return reply.send(JSON.parse(text));
+    const parsed = JSON.parse(text);
+    const durationMs = Date.now() - startTime;
+    
+    // Track successful response
+    if (upstreamResponse.ok) {
+      observeDuration('hosted_free_ai_fallback_duration_ms', durationMs, {
+        userId: desktopSession.userId,
+        result: 'success',
+      });
+      // Extract usage from upstream response if available
+      const usage = parsed.usage;
+      if (usage) {
+        fastify.log.info({
+          correlationId,
+          userId: desktopSession.userId,
+          durationMs,
+          promptTokens: usage.prompt_tokens,
+          completionTokens: usage.completion_tokens,
+          totalTokens: usage.total_tokens,
+        }, 'Hosted Free AI request completed with usage');
+      }
+    }
+    
+    // Include correlation ID in response for client-side tracing
+    return reply.send({ ...parsed, correlationId });
   } catch {
+    const durationMs = Date.now() - startTime;
+    observeDuration('hosted_free_ai_fallback_duration_ms', durationMs, {
+      userId: desktopSession.userId,
+      result: 'parse_error',
+    });
+    incCounter('hosted_free_ai_fallback_errors_total', {
+      userId: desktopSession.userId,
+      reason: 'response_parse_failed',
+    });
     return reply.send({
       error: text,
       code: upstreamResponse.ok
         ? 'FREE_AI_FALLBACK_INVALID_RESPONSE'
         : 'FREE_AI_FALLBACK_UPSTREAM_ERROR',
+      correlationId,
     });
   }
 });
@@ -2325,6 +2432,12 @@ fastify.get('/events', async (request, reply) => {
 setupWebSocket(fastify);
 
 // ============================================================================
+// Initialize Error Tracking
+// ============================================================================
+
+await initErrorTracking();
+
+// ============================================================================
 // Start Server
 // ============================================================================
 
@@ -2336,42 +2449,28 @@ try {
   fastify.log.info(`API server listening on port ${config.PORT}`);
 } catch (err) {
   fastify.log.error({ err: redact(err) }, 'API server failed to start');
+  reportError(err instanceof Error ? err : new Error(String(err)), {
+    tags: { phase: 'server_startup' },
+  });
   process.exit(1);
 }
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  fastify.log.info('Shutting down gracefully...');
-  stopRetentionScheduler?.();
-  deviceStore.markAllDisconnected();
-  
-  for (const [, client] of sseClients) {
-    try {
-      client.reply.raw.end();
-    } catch {
-      // Ignore
+// Graceful shutdown setup
+setupSignalHandlers({
+  fastify,
+  prisma,
+  stopRetentionScheduler,
+  markAllDevicesDisconnected: () => deviceStore.markAllDisconnected(),
+  closeWsConnections: () => closeWsConnections(fastify.log),
+  closeSseConnections: () => {
+    for (const [, client] of sseClients) {
+      try {
+        client.reply.raw.end();
+      } catch {
+        // Ignore
+      }
     }
-  }
-  sseClients.clear();
-  
-  await fastify.close();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  fastify.log.info('Shutting down gracefully...');
-  stopRetentionScheduler?.();
-  deviceStore.markAllDisconnected();
-  
-  for (const [, client] of sseClients) {
-    try {
-      client.reply.raw.end();
-    } catch {
-      // Ignore
-    }
-  }
-  sseClients.clear();
-  
-  await fastify.close();
-  process.exit(0);
+    sseClients.clear();
+  },
+  shutdownTimeoutMs: 30_000,
 });
