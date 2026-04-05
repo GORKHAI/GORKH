@@ -1,8 +1,8 @@
 use super::{
-    AgentProposal, ConversationTurnParams, ConversationTurnResult, LlmError, LlmProvider,
-    ProposalParams,
+    AgentProposal, ClientConfig, ConversationTurnParams, ConversationTurnResult, LlmError,
+    LlmErrorCode, LlmProvider, LlmUsageMetadata, ProposalParams, create_http_client,
+    log_usage, Instant, LlmRequestPath,
 };
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 pub struct NativeOllamaProvider;
@@ -36,6 +36,12 @@ struct OllamaRequest {
 #[derive(Debug, Deserialize)]
 struct OllamaResponse {
     response: String,
+    /// Prompt evaluation count (input tokens)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_eval_count: Option<u64>,
+    /// Evaluation count (output/completion tokens)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    eval_count: Option<u64>,
 }
 
 #[async_trait::async_trait]
@@ -44,13 +50,8 @@ impl LlmProvider for NativeOllamaProvider {
         &self,
         params: &ProposalParams,
     ) -> Result<AgentProposal, LlmError> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .map_err(|e| LlmError {
-                code: "CLIENT_INIT_FAILED".to_string(),
-                message: format!("Failed to create HTTP client: {}", e),
-            })?;
+        let start = Instant::now();
+        let client = create_http_client(ClientConfig::local())?;
 
         let system_prompt = format!(
             "{}\n\n{}",
@@ -86,26 +87,36 @@ impl LlmProvider for NativeOllamaProvider {
             images: clean_image.map(|image| vec![image]),
         };
 
-        let response = client
+        let mut request_builder = client
             .post(format!("{}/api/generate", params.base_url.trim_end_matches('/')))
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json");
+        
+        // Propagate correlation ID for cross-system tracing
+        if let Some(ref correlation_id) = params.correlation_id {
+            request_builder = request_builder.header("x-request-id", correlation_id);
+        }
+        
+        let response = request_builder
             .json(&request_body)
             .send()
             .await
             .map_err(|e| {
-                let code = if e.is_connect() {
-                    "CONNECTION_FAILED"
-                } else if e.is_timeout() {
-                    "TIMEOUT"
-                } else {
-                    "REQUEST_FAILED"
+                let code = super::classify_request_error(&e);
+                let message = match code {
+                    LlmErrorCode::Timeout => format!(
+                        "Ollama at {} timed out ({}s). The model may be loading or the system is busy. Try again in a moment.",
+                        params.base_url,
+                        super::LOCAL_PROVIDER_TIMEOUT.as_secs()
+                    ),
+                    LlmErrorCode::ConnectionFailed => format!(
+                        "Cannot connect to Ollama at {}. Start Ollama and ensure it is listening on that address.",
+                        params.base_url
+                    ),
+                    _ => format!("Request to Ollama at {} failed: {}", params.base_url, e),
                 };
                 LlmError {
-                    code: code.to_string(),
-                    message: format!(
-                        "Failed to connect to Ollama at {}: {}. Start Ollama and ensure it is listening on that address.",
-                        params.base_url, e
-                    ),
+                    code,
+                    message,
                 }
             })?;
 
@@ -122,18 +133,36 @@ impl LlmProvider for NativeOllamaProvider {
             };
 
             return Err(LlmError {
-                code: "OLLAMA_ERROR".to_string(),
+                code: LlmErrorCode::OllamaError,
                 message,
             });
         }
 
         let ollama_response: OllamaResponse = response.json().await.map_err(|e| LlmError {
-            code: "PARSE_ERROR".to_string(),
+            code: LlmErrorCode::ParseError,
             message: format!("Failed to parse Ollama response: {}", e),
         })?;
 
         let content = ollama_response.response;
         let proposal = super::parse_json_response::<AgentProposal>(&content, "proposal")?;
+
+        // Track usage - Ollama returns prompt_eval_count and eval_count
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let input_tokens = ollama_response.prompt_eval_count.unwrap_or(0) as usize;
+        let output_tokens = ollama_response.eval_count.unwrap_or(0) as usize;
+        let tokens_available = ollama_response.prompt_eval_count.is_some() || ollama_response.eval_count.is_some();
+        let metadata = LlmUsageMetadata {
+            provider: "native_ollama".to_string(),
+            model: params.model.clone(),
+            path: LlmRequestPath::Local,
+            duration_ms,
+            input_tokens,
+            output_tokens,
+            total_tokens: input_tokens + output_tokens,
+            tokens_available,
+            correlation_id: params.correlation_id.clone(),
+        };
+        log_usage(&metadata);
 
         Ok(proposal)
     }
@@ -142,13 +171,8 @@ impl LlmProvider for NativeOllamaProvider {
         &self,
         params: &ConversationTurnParams,
     ) -> Result<ConversationTurnResult, LlmError> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .map_err(|e| LlmError {
-                code: "CLIENT_INIT_FAILED".to_string(),
-                message: format!("Failed to create HTTP client: {}", e),
-            })?;
+        let start = Instant::now();
+        let client = create_http_client(ClientConfig::local())?;
 
         let system_prompt = format!(
             "{}\n\n{}",
@@ -169,26 +193,36 @@ impl LlmProvider for NativeOllamaProvider {
             images: None,
         };
 
-        let response = client
+        let mut request_builder = client
             .post(format!("{}/api/generate", params.base_url.trim_end_matches('/')))
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json");
+        
+        // Propagate correlation ID for cross-system tracing
+        if let Some(ref correlation_id) = params.correlation_id {
+            request_builder = request_builder.header("x-request-id", correlation_id);
+        }
+        
+        let response = request_builder
             .json(&request_body)
             .send()
             .await
             .map_err(|e| {
-                let code = if e.is_connect() {
-                    "CONNECTION_FAILED"
-                } else if e.is_timeout() {
-                    "TIMEOUT"
-                } else {
-                    "REQUEST_FAILED"
+                let code = super::classify_request_error(&e);
+                let message = match code {
+                    LlmErrorCode::Timeout => format!(
+                        "Ollama at {} timed out ({}s). The model may be loading or the system is busy. Try again in a moment.",
+                        params.base_url,
+                        super::LOCAL_PROVIDER_TIMEOUT.as_secs()
+                    ),
+                    LlmErrorCode::ConnectionFailed => format!(
+                        "Cannot connect to Ollama at {}. Start Ollama and ensure it is listening on that address.",
+                        params.base_url
+                    ),
+                    _ => format!("Request to Ollama at {} failed: {}", params.base_url, e),
                 };
                 LlmError {
-                    code: code.to_string(),
-                    message: format!(
-                        "Failed to connect to Ollama at {}: {}. Start Ollama and ensure it is listening on that address.",
-                        params.base_url, e
-                    ),
+                    code,
+                    message,
                 }
             })?;
 
@@ -205,15 +239,33 @@ impl LlmProvider for NativeOllamaProvider {
             };
 
             return Err(LlmError {
-                code: "OLLAMA_ERROR".to_string(),
+                code: LlmErrorCode::OllamaError,
                 message,
             });
         }
 
         let ollama_response: OllamaResponse = response.json().await.map_err(|e| LlmError {
-            code: "PARSE_ERROR".to_string(),
+            code: LlmErrorCode::ParseError,
             message: format!("Failed to parse Ollama response: {}", e),
         })?;
+
+        // Track usage - Ollama returns prompt_eval_count and eval_count
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let input_tokens = ollama_response.prompt_eval_count.unwrap_or(0) as usize;
+        let output_tokens = ollama_response.eval_count.unwrap_or(0) as usize;
+        let tokens_available = ollama_response.prompt_eval_count.is_some() || ollama_response.eval_count.is_some();
+        let metadata = LlmUsageMetadata {
+            provider: "native_ollama".to_string(),
+            model: params.model.clone(),
+            path: LlmRequestPath::Local,
+            duration_ms,
+            input_tokens,
+            output_tokens,
+            total_tokens: input_tokens + output_tokens,
+            tokens_available,
+            correlation_id: params.correlation_id.clone(),
+        };
+        log_usage(&metadata);
 
         super::parse_conversation_turn_result(&ollama_response.response)
     }

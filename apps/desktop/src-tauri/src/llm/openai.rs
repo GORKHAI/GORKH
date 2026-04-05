@@ -1,8 +1,7 @@
 use super::{
-    AgentProposal, ConversationTurnParams, ConversationTurnResult, LlmError, LlmProvider,
-    ProposalParams,
+    AgentProposal, ClientConfig, ConversationTurnParams, ConversationTurnResult, LlmError,
+    LlmErrorCode, LlmProvider, LlmUsageMetadata, ProposalParams, classify_request_path, create_http_client, log_usage, Instant,
 };
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 pub struct OpenAiProvider;
@@ -48,6 +47,15 @@ struct OpenAiRequest {
 #[derive(Debug, Deserialize)]
 struct OpenAiResponse {
     choices: Vec<OpenAiChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<OpenAiUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiUsage {
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    total_tokens: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,10 +74,8 @@ impl LlmProvider for OpenAiProvider {
         &self,
         params: &ProposalParams,
     ) -> Result<AgentProposal, LlmError> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .unwrap_or_else(|_| Client::new());
+        let start = Instant::now();
+        let client = create_http_client(ClientConfig::cloud())?;
 
         let system_prompt = format!(
             "{}\n\n{}",
@@ -123,29 +129,47 @@ impl LlmProvider for OpenAiProvider {
             max_tokens: Some(1000),
         };
 
-        let response = client
+        let mut request_builder = client
             .post(super::build_openai_chat_completions_url(&params.base_url))
             .header("Authorization", format!("Bearer {}", params.api_key))
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json");
+        
+        // Propagate correlation ID for cross-system tracing
+        if let Some(ref correlation_id) = params.correlation_id {
+            request_builder = request_builder.header("x-request-id", correlation_id);
+        }
+        
+        let response = request_builder
             .json(&request_body)
             .send()
             .await
-            .map_err(|e| LlmError {
-                code: "REQUEST_FAILED".to_string(),
-                message: format!("Failed to send request: {}", e),
+            .map_err(|e| {
+                let code = super::classify_request_error(&e);
+                let message = match code {
+                    LlmErrorCode::Timeout => format!(
+                        "OpenAI request timed out after {} seconds. The service may be experiencing delays.",
+                        super::CLOUD_PROVIDER_TIMEOUT.as_secs()
+                    ),
+                    LlmErrorCode::ConnectionFailed => "Cannot connect to OpenAI. Check your internet connection.".to_string(),
+                    _ => format!("Request failed: {}", e),
+                };
+                LlmError {
+                    code,
+                    message,
+                }
             })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
             return Err(LlmError {
-                code: "API_ERROR".to_string(),
+                code: LlmErrorCode::ApiError,
                 message: format!("API error {}: {}", status, text),
             });
         }
 
         let openai_response: OpenAiResponse = response.json().await.map_err(|e| LlmError {
-            code: "PARSE_ERROR".to_string(),
+            code: LlmErrorCode::ParseError,
             message: format!("Failed to parse response: {}", e),
         })?;
 
@@ -155,12 +179,28 @@ impl LlmProvider for OpenAiProvider {
             .next()
             .map(|c| c.message.content)
             .ok_or_else(|| LlmError {
-                code: "EMPTY_RESPONSE".to_string(),
+                code: LlmErrorCode::EmptyResponse,
                 message: "No response from LLM".to_string(),
             })?;
 
         // Parse the JSON response
         let proposal = super::parse_json_response::<AgentProposal>(&content, "proposal")?;
+
+        // Track usage
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let usage = openai_response.usage;
+        let metadata = LlmUsageMetadata {
+            provider: "openai".to_string(),
+            model: params.model.clone(),
+            path: classify_request_path(&params.base_url),
+            duration_ms,
+            input_tokens: usage.as_ref().map(|u| u.prompt_tokens as usize).unwrap_or(0),
+            output_tokens: usage.as_ref().map(|u| u.completion_tokens as usize).unwrap_or(0),
+            total_tokens: usage.as_ref().map(|u| u.total_tokens as usize).unwrap_or(0),
+            tokens_available: usage.is_some(),
+            correlation_id: params.correlation_id.clone(),
+        };
+        log_usage(&metadata);
 
         Ok(proposal)
     }
@@ -169,10 +209,8 @@ impl LlmProvider for OpenAiProvider {
         &self,
         params: &ConversationTurnParams,
     ) -> Result<ConversationTurnResult, LlmError> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .unwrap_or_else(|_| Client::new());
+        let start = Instant::now();
+        let client = create_http_client(ClientConfig::cloud())?;
         let system_prompt = format!(
             "{}\n\n{}",
             super::build_conversation_system_prompt(params.app_context.as_deref()),
@@ -197,29 +235,47 @@ impl LlmProvider for OpenAiProvider {
             max_tokens: Some(600),
         };
 
-        let response = client
+        let mut request_builder = client
             .post(super::build_openai_chat_completions_url(&params.base_url))
             .header("Authorization", format!("Bearer {}", params.api_key))
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json");
+        
+        // Propagate correlation ID for cross-system tracing
+        if let Some(ref correlation_id) = params.correlation_id {
+            request_builder = request_builder.header("x-request-id", correlation_id);
+        }
+        
+        let response = request_builder
             .json(&request_body)
             .send()
             .await
-            .map_err(|e| LlmError {
-                code: "REQUEST_FAILED".to_string(),
-                message: format!("Failed to send request: {}", e),
+            .map_err(|e| {
+                let code = super::classify_request_error(&e);
+                let message = match code {
+                    LlmErrorCode::Timeout => format!(
+                        "OpenAI request timed out after {} seconds. The service may be experiencing delays.",
+                        super::CLOUD_PROVIDER_TIMEOUT.as_secs()
+                    ),
+                    LlmErrorCode::ConnectionFailed => "Cannot connect to OpenAI. Check your internet connection.".to_string(),
+                    _ => format!("Request failed: {}", e),
+                };
+                LlmError {
+                    code,
+                    message,
+                }
             })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
             return Err(LlmError {
-                code: "API_ERROR".to_string(),
+                code: LlmErrorCode::ApiError,
                 message: format!("API error {}: {}", status, text),
             });
         }
 
         let openai_response: OpenAiResponse = response.json().await.map_err(|e| LlmError {
-            code: "PARSE_ERROR".to_string(),
+            code: LlmErrorCode::ParseError,
             message: format!("Failed to parse response: {}", e),
         })?;
 
@@ -229,9 +285,25 @@ impl LlmProvider for OpenAiProvider {
             .next()
             .map(|c| c.message.content)
             .ok_or_else(|| LlmError {
-                code: "EMPTY_RESPONSE".to_string(),
+                code: LlmErrorCode::EmptyResponse,
                 message: "No response from LLM".to_string(),
             })?;
+
+        // Track usage
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let usage = openai_response.usage;
+        let metadata = LlmUsageMetadata {
+            provider: "openai".to_string(),
+            model: params.model.clone(),
+            path: classify_request_path(&params.base_url),
+            duration_ms,
+            input_tokens: usage.as_ref().map(|u| u.prompt_tokens as usize).unwrap_or(0),
+            output_tokens: usage.as_ref().map(|u| u.completion_tokens as usize).unwrap_or(0),
+            total_tokens: usage.as_ref().map(|u| u.total_tokens as usize).unwrap_or(0),
+            tokens_available: usage.is_some(),
+            correlation_id: params.correlation_id.clone(),
+        };
+        log_usage(&metadata);
 
         super::parse_conversation_turn_result(&content)
     }

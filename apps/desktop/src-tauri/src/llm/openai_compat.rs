@@ -1,8 +1,8 @@
 use super::{
-    AgentProposal, ConversationTurnParams, ConversationTurnResult, LlmError, LlmProvider,
-    ProposalParams,
+    AgentProposal, ClientConfig, ConversationTurnParams, ConversationTurnResult, LlmError,
+    LlmErrorCode, LlmProvider, LlmUsageMetadata, ProposalParams, create_http_client, classify_request_error,
+    classify_request_path, log_usage, Instant,
 };
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 pub struct OpenAiCompatProvider;
@@ -48,6 +48,15 @@ struct OpenAiCompatRequest {
 #[derive(Debug, Deserialize)]
 struct OpenAiCompatResponse {
     choices: Vec<OpenAiCompatChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<OpenAiCompatUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiCompatUsage {
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    total_tokens: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,13 +85,8 @@ impl LlmProvider for OpenAiCompatProvider {
         &self,
         params: &ProposalParams,
     ) -> Result<AgentProposal, LlmError> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .map_err(|e| LlmError {
-                code: "CLIENT_INIT_FAILED".to_string(),
-                message: format!("Failed to create HTTP client: {}", e),
-            })?;
+        let start = Instant::now();
+        let client = create_http_client(ClientConfig::local())?;
 
         let system_prompt = format!(
             "{}\n\n{}",
@@ -152,21 +156,29 @@ impl LlmProvider for OpenAiCompatProvider {
                 request_builder.header("Authorization", format!("Bearer {}", params.api_key));
         }
 
+        // Propagate correlation ID for cross-system tracing
+        if let Some(ref correlation_id) = params.correlation_id {
+            request_builder = request_builder.header("x-request-id", correlation_id);
+        }
+
         let response = request_builder
             .json(&request_body)
             .send()
             .await
             .map_err(|e| {
-                let code = if e.is_connect() {
-                    "CONNECTION_FAILED"
-                } else if e.is_timeout() {
-                    "TIMEOUT"
-                } else {
-                    "REQUEST_FAILED"
+                let code = classify_request_error(&e);
+                let message = match code {
+                    LlmErrorCode::Timeout => format!(
+                        "{} timed out after {} seconds. The server may be overloaded or slow to respond.",
+                        location,
+                        super::LOCAL_PROVIDER_TIMEOUT.as_secs()
+                    ),
+                    LlmErrorCode::ConnectionFailed => format!("Cannot connect to {}. Check that the server is running.", location),
+                    _ => format!("Request to {} failed: {}", location, e),
                 };
                 LlmError {
-                    code: code.to_string(),
-                    message: format!("Failed to connect to {}: {}", location, e),
+                    code,
+                    message,
                 }
             })?;
 
@@ -176,12 +188,12 @@ impl LlmProvider for OpenAiCompatProvider {
 
             // Provide helpful error messages for common issues
             let code = match status.as_u16() {
-                404 => "MODEL_NOT_FOUND",
-                401 => "AUTH_FAILED",
-                429 => "RATE_LIMITED",
-                502 => "FREE_AI_FALLBACK_UPSTREAM_ERROR",
-                503 => "FREE_AI_FALLBACK_UNAVAILABLE",
-                _ => "API_ERROR",
+                404 => LlmErrorCode::ModelNotFound,
+                401 => LlmErrorCode::AuthFailed,
+                429 => LlmErrorCode::RateLimited,
+                502 => LlmErrorCode::FreeAiFallbackUpstreamError,
+                503 => LlmErrorCode::FreeAiFallbackUnavailable,
+                _ => LlmErrorCode::ApiError,
             };
             let message = if status.as_u16() == 404 {
                 format!("{} returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", location, text)
@@ -192,14 +204,14 @@ impl LlmProvider for OpenAiCompatProvider {
             };
 
             return Err(LlmError {
-                code: code.to_string(),
+                code,
                 message,
             });
         }
 
         let compat_response: OpenAiCompatResponse =
             response.json().await.map_err(|e| LlmError {
-                code: "PARSE_ERROR".to_string(),
+                code: LlmErrorCode::ParseError,
                 message: format!("Failed to parse response from {}: {}", location, e),
             })?;
 
@@ -209,12 +221,28 @@ impl LlmProvider for OpenAiCompatProvider {
             .next()
             .map(|c| c.message.content)
             .ok_or_else(|| LlmError {
-                code: "EMPTY_RESPONSE".to_string(),
+                code: LlmErrorCode::EmptyResponse,
                 message: format!("No response from {}", location),
             })?;
 
         // Parse the JSON response
         let proposal = super::parse_json_response::<AgentProposal>(&content, "proposal")?;
+
+        // Track usage - OpenAI-compatible APIs may return usage data
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let usage = compat_response.usage;
+        let metadata = LlmUsageMetadata {
+            provider: "openai_compat".to_string(),
+            model: params.model.clone(),
+            path: classify_request_path(&params.base_url),
+            duration_ms,
+            input_tokens: usage.as_ref().map(|u| u.prompt_tokens as usize).unwrap_or(0),
+            output_tokens: usage.as_ref().map(|u| u.completion_tokens as usize).unwrap_or(0),
+            total_tokens: usage.as_ref().map(|u| u.total_tokens as usize).unwrap_or(0),
+            tokens_available: usage.is_some(),
+            correlation_id: params.correlation_id.clone(),
+        };
+        log_usage(&metadata);
 
         Ok(proposal)
     }
@@ -223,13 +251,8 @@ impl LlmProvider for OpenAiCompatProvider {
         &self,
         params: &ConversationTurnParams,
     ) -> Result<ConversationTurnResult, LlmError> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .map_err(|e| LlmError {
-                code: "CLIENT_INIT_FAILED".to_string(),
-                message: format!("Failed to create HTTP client: {}", e),
-            })?;
+        let start = Instant::now();
+        let client = create_http_client(ClientConfig::local())?;
 
         let system_prompt = format!(
             "{}\n\n{}",
@@ -275,6 +298,10 @@ impl LlmProvider for OpenAiCompatProvider {
             if !params.api_key.is_empty() {
                 rb = rb.header("Authorization", format!("Bearer {}", params.api_key));
             }
+            // Propagate correlation ID for cross-system tracing
+            if let Some(ref correlation_id) = params.correlation_id {
+                rb = rb.header("x-request-id", correlation_id);
+            }
             match rb.json(&request_body).send().await {
                 Ok(r) => {
                     response_opt = Some(r);
@@ -283,16 +310,15 @@ impl LlmProvider for OpenAiCompatProvider {
                 }
                 Err(e) => {
                     let is_retryable = is_remote && (e.is_connect() || e.is_timeout());
-                    let code = if e.is_connect() {
-                        "CONNECTION_FAILED"
-                    } else if e.is_timeout() {
-                        "TIMEOUT"
-                    } else {
-                        "REQUEST_FAILED"
+                    let code = classify_request_error(&e);
+                    let message = match code {
+                        LlmErrorCode::Timeout => format!("{} timed out. The server may be overloaded.", location),
+                        LlmErrorCode::ConnectionFailed => format!("Cannot connect to {}.", location),
+                        _ => format!("Request to {} failed: {}", location, e),
                     };
                     last_err = Some(LlmError {
-                        code: code.to_string(),
-                        message: format!("Failed to connect to {}: {}", location, e),
+                        code,
+                        message,
                     });
                     if !is_retryable {
                         break;
@@ -310,12 +336,12 @@ impl LlmProvider for OpenAiCompatProvider {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
             let code = match status.as_u16() {
-                404 => "MODEL_NOT_FOUND",
-                401 => "AUTH_FAILED",
-                429 => "RATE_LIMITED",
-                502 => "FREE_AI_FALLBACK_UPSTREAM_ERROR",
-                503 => "FREE_AI_FALLBACK_UNAVAILABLE",
-                _ => "API_ERROR",
+                404 => LlmErrorCode::ModelNotFound,
+                401 => LlmErrorCode::AuthFailed,
+                429 => LlmErrorCode::RateLimited,
+                502 => LlmErrorCode::FreeAiFallbackUpstreamError,
+                503 => LlmErrorCode::FreeAiFallbackUnavailable,
+                _ => LlmErrorCode::ApiError,
             };
             let message = if status.as_u16() == 404 {
                 format!("{} returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", location, text)
@@ -326,14 +352,14 @@ impl LlmProvider for OpenAiCompatProvider {
             };
 
             return Err(LlmError {
-                code: code.to_string(),
+                code,
                 message,
             });
         }
 
         let compat_response: OpenAiCompatResponse =
             response.json().await.map_err(|e| LlmError {
-                code: "PARSE_ERROR".to_string(),
+                code: LlmErrorCode::ParseError,
                 message: format!("Failed to parse response from {}: {}", location, e),
             })?;
 
@@ -343,9 +369,25 @@ impl LlmProvider for OpenAiCompatProvider {
             .next()
             .map(|c| c.message.content)
             .ok_or_else(|| LlmError {
-                code: "EMPTY_RESPONSE".to_string(),
+                code: LlmErrorCode::EmptyResponse,
                 message: format!("No response from {}", location),
             })?;
+
+        // Track usage - OpenAI-compatible APIs may return usage data
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let usage = compat_response.usage;
+        let metadata = LlmUsageMetadata {
+            provider: "openai_compat".to_string(),
+            model: params.model.clone(),
+            path: classify_request_path(&params.base_url),
+            duration_ms,
+            input_tokens: usage.as_ref().map(|u| u.prompt_tokens as usize).unwrap_or(0),
+            output_tokens: usage.as_ref().map(|u| u.completion_tokens as usize).unwrap_or(0),
+            total_tokens: usage.as_ref().map(|u| u.total_tokens as usize).unwrap_or(0),
+            tokens_available: usage.is_some(),
+            correlation_id: params.correlation_id.clone(),
+        };
+        log_usage(&metadata);
 
         super::parse_conversation_turn_result(&content)
     }
