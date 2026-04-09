@@ -119,6 +119,7 @@ test('desktop app seeds the greeting from onboarding copy and keeps fresh chat i
   const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
   const chatOverlaySource = readFileSync('apps/desktop/src/components/ChatOverlay.tsx', 'utf8');
   const knowledgeSource = readFileSync('apps/desktop/src/lib/gorkhKnowledge.ts', 'utf8');
+  const conversationHelperSource = readFileSync('apps/desktop/src/lib/assistantConversation.ts', 'utf8');
 
   assert.match(knowledgeSource, /GORKH_ONBOARDING/, 'onboarding knowledge should still define greeting copy');
   assert.match(
@@ -135,6 +136,26 @@ test('desktop app seeds the greeting from onboarding copy and keeps fresh chat i
     appSource,
     /handleSendMessage[\s\S]{0,2600}assistantConversationTurn[\s\S]{0,2600}dispatchConfirmedAssistantTask/,
     'fresh chat should go through assistantConversationTurn before a confirmed task is dispatched'
+  );
+  assert.match(
+    appSource,
+    /const correlationId = `conv-\$\{Date\.now\(\)\}-\$\{Math\.random\(\)\.toString\(36\)\.slice\(2,\s*8\)\}`;/,
+    'desktop app should generate a correlation ID for conversation tracing'
+  );
+  assert.match(
+    appSource,
+    /assistantConversationTurn\(\{[\s\S]{0,500}correlationId[\s\S]{0,500}\}\)/,
+    'desktop app should forward the correlation ID into conversation-turn requests'
+  );
+  assert.match(
+    conversationHelperSource,
+    /correlationId\?: string \| null/,
+    'assistant conversation helper should accept an optional correlation ID'
+  );
+  assert.match(
+    conversationHelperSource,
+    /correlationId: params\.correlationId \?\? null/,
+    'assistant conversation helper should pass the correlation ID into the Tauri command payload'
   );
   assert.doesNotMatch(
     appSource,

@@ -24,6 +24,8 @@ interface AssistantConversationTurnParams {
   messages: AssistantConversationMessage[];
   appContext?: string | null;
   apiKeyOverride?: string | null;
+  /** Correlation ID for tracing requests across desktop/API boundaries */
+  correlationId?: string | null;
 }
 
 export async function assistantConversationTurn(
@@ -37,6 +39,7 @@ export async function assistantConversationTurn(
       messages: params.messages,
       appContext: params.appContext ?? null,
       apiKeyOverride: params.apiKeyOverride ?? null,
+      correlationId: params.correlationId ?? null,
     },
   }) as Promise<AssistantConversationTurnResult>;
 }
