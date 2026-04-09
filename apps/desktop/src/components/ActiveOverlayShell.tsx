@@ -1,5 +1,3 @@
-import { BrandWordmark } from './BrandWordmark.js';
-
 interface ActiveOverlayShellProps {
   statusLabel: string;
   goal?: string | null;
@@ -21,6 +19,7 @@ export function ActiveOverlayShell({
         background: 'transparent',
       }}
     >
+      {/* GORKH branding - minimal top-left status pill */}
       <div
         style={{
           position: 'absolute',
@@ -28,25 +27,60 @@ export function ActiveOverlayShell({
           top: '1rem',
           display: 'flex',
           alignItems: 'center',
-          gap: '0.85rem',
-          padding: '0.6rem 0.85rem',
+          gap: '0.6rem',
+          padding: '0.5rem 0.75rem',
           borderRadius: '999px',
-          background: 'rgba(15,23,42,0.26)',
-          border: '1px solid rgba(148,163,184,0.22)',
-          color: '#f8fafc',
-          boxShadow: '0 10px 30px rgba(15,23,42,0.12)',
+          background: 'rgba(0,0,0,0.6)',
+          border: '1px solid rgba(255,255,255,0.15)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+          color: '#ffffff',
         }}
       >
-        <BrandWordmark width={120} subtitle={overlaySupported ? 'GORKH overlay mode' : 'GORKH focused active mode'} />
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc' }}>{statusLabel}</div>
-          {goal ? (
-            <div style={{ marginTop: '0.2rem', color: '#cbd5e1', lineHeight: 1.35, fontSize: '0.8rem', maxWidth: '28rem' }}>
-              {goal}
-            </div>
-          ) : null}
+        {/* Status dot */}
+        <div
+          style={{
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            background: '#22c55e',
+            boxShadow: '0 0 8px #22c55e',
+            animation: 'pulse 2s infinite',
+          }}
+        />
+        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ffffff' }}>
+          {statusLabel}
         </div>
+        {goal && (
+          <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginLeft: '0.25rem' }}>
+            • {goal.length > 40 ? goal.slice(0, 40) + '...' : goal}
+          </div>
+        )}
       </div>
+
+      {/* Optional: subtle corner hint */}
+      {!overlaySupported && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '1.25rem',
+            top: '3.5rem',
+            fontSize: '0.7rem',
+            color: 'rgba(255,255,255,0.5)',
+            background: 'rgba(0,0,0,0.5)',
+            padding: '0.3rem 0.6rem',
+            borderRadius: '6px',
+          }}
+        >
+          Focus mode (overlay not available)
+        </div>
+      )}
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
     </div>
   );
 }

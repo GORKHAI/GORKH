@@ -309,7 +309,7 @@ export function SettingsPanel({
           ? 'Preparing update...'
           : 'Check for Updates';
   const updaterStatusMessage = !UPDATER_ENABLED
-    ? 'Updater is disabled in this environment.'
+    ? 'Updater is disabled in this build. Beta builds do not ship in-app updates.'
     : getDesktopUpdaterStatusMessage(desktopUpdaterState);
   const updaterStatusTone = desktopUpdaterState.status === 'error'
     ? {

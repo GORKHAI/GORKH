@@ -38,6 +38,7 @@ import { getDesktopAccount, revokeDesktopDevice, type DesktopAccountSnapshot } f
 import { getDesktopTaskBootstrap, type DesktopTaskBootstrap } from './lib/desktopTasks.js';
 import { parseDesktopError } from './lib/tauriError.js';
 import {
+  canUseHostedFreeAiFallback,
   resolveHostedFreeAiBinding,
   shouldRetryWithHostedFreeAiFallback,
 } from './lib/freeAiFallback.js';
@@ -108,6 +109,8 @@ import {
 import {
   evaluateDesktopTaskReadiness,
   getDesktopControlExecutionBlocker,
+  taskLikelyNeedsScreenObservation,
+  taskLikelyNeedsWorkspace,
 } from './lib/taskReadiness.js';
 import {
   buildGorkhContextBlock,
@@ -1620,6 +1623,13 @@ function App() {
       && assistantEngine
       && aiState?.status === 'asking_user'
     );
+    const taskRequiresScreen = taskLikelyNeedsScreenObservation(trimmed);
+    const taskRequiresWorkspace = taskLikelyNeedsWorkspace(trimmed);
+    const hostedFreeAiAvailable = canUseHostedFreeAiFallback({
+      runtimeConfig,
+      deviceToken: sessionDeviceToken,
+      hostedFreeAiEnabled: desktopBootstrap?.readiness.hostedFreeAiEnabled ?? false,
+    });
 
     if (startingNewTask) {
       const executionReadiness = evaluateDesktopTaskReadiness({
@@ -1632,6 +1642,8 @@ function App() {
         providerConfigured,
         isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
         requireControl: false,
+        requireScreen: taskRequiresScreen,
+        requireWorkspace: taskRequiresWorkspace,
       });
 
       if (!executionReadiness.ready) {
@@ -1649,13 +1661,23 @@ function App() {
     try {
       let runtimeOverride: LlmSettings | null = null;
       if (llmSettings.provider === DEFAULT_LLM_PROVIDER && startingNewTask) {
-        const hostedFreeAiBinding = resolveHostedFreeAiBinding(runtimeConfig, sessionDeviceToken);
         const localTaskBinding = resolveManagedLocalTaskBinding(localAiStatus, localAiRecommendation, trimmed);
         const shouldForceHostedFallback = pendingTaskConfirmation?.goal === trimmed
           && pendingTaskConfirmation.providerMode === 'hosted_free_ai';
 
         if (shouldForceHostedFallback || localTaskBinding.requiresVisionBoost) {
-          runtimeOverride = hostedFreeAiBinding;
+          if (!hostedFreeAiAvailable) {
+            setMessages((prev) => [
+              ...prev,
+              createChatItem(
+                'agent',
+                'This task needs Vision Boost or the hosted Free AI fallback, but that fallback is not available for this desktop right now. Enable Vision Boost locally or try again when hosted fallback is available.'
+              ),
+            ]);
+            return false;
+          }
+
+          runtimeOverride = resolveHostedFreeAiBinding(runtimeConfig, sessionDeviceToken);
         }
 
         if (!runtimeOverride) {
@@ -1751,11 +1773,14 @@ function App() {
     runtimeConfig,
     sessionDeviceToken,
     workspaceState.configured,
+    desktopBootstrap?.readiness.hostedFreeAiEnabled,
   ]);
 
   const startAssistantConversation = useCallback((conversationItems: ChatItem[]) => {
     const requestId = assistantConversationRequestIdRef.current + 1;
     assistantConversationRequestIdRef.current = requestId;
+    // Generate correlation ID for tracing across desktop/API boundaries
+    const correlationId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setAssistantConversationBusy(true);
     void (async () => {
       try {
@@ -1763,6 +1788,11 @@ function App() {
           ? resolveManagedLocalLlmBinding(localAiStatus, localAiRecommendation)
           : llmSettings;
         const conversationMessages = toAssistantConversationMessages(conversationItems);
+        const hostedFreeAiAvailable = canUseHostedFreeAiFallback({
+          runtimeConfig,
+          deviceToken: sessionDeviceToken,
+          hostedFreeAiEnabled: desktopBootstrap?.readiness.hostedFreeAiEnabled ?? false,
+        });
         let usedHostedFreeAi = false;
         let result: AssistantConversationTurnResult;
 
@@ -1773,6 +1803,7 @@ function App() {
             model: conversationSettings.model,
             messages: conversationMessages,
             appContext: gorkhAppContext ?? undefined,
+            correlationId,
           });
         } catch (error) {
           const eligibleForFallback =
@@ -1783,19 +1814,13 @@ function App() {
             throw error;
           }
 
-          if (!sessionDeviceToken) {
+          if (!hostedFreeAiAvailable) {
             throw new Error(
-              'Free AI could not respond because the local engine is not ready. Sign in to use the hosted Free AI fallback.'
+              'Free AI could not respond because the local engine is not ready, and the hosted Free AI fallback is not available for this desktop right now.'
             );
           }
 
-          if (!runtimeConfig) {
-            throw new Error(
-              'Free AI could not respond because the local engine is not ready. The hosted Free AI fallback is not available right now.'
-            );
-          }
-
-          const hostedFreeAiBinding = resolveHostedFreeAiBinding(runtimeConfig, sessionDeviceToken);
+          const hostedFreeAiBinding = resolveHostedFreeAiBinding(runtimeConfig!, sessionDeviceToken!);
           try {
             result = await assistantConversationTurn({
               provider: hostedFreeAiBinding.provider,
@@ -1804,6 +1829,7 @@ function App() {
               messages: conversationMessages,
               appContext: gorkhAppContext ?? undefined,
               apiKeyOverride: hostedFreeAiBinding.apiKeyOverride,
+              correlationId,
             });
             usedHostedFreeAi = true;
           } catch (fallbackError) {
@@ -1860,8 +1886,8 @@ function App() {
         }
 
         // Guard: file-operation tasks require a configured workspace
-        const looksLikeFileOperation = /\b(delete|remove|organize|list|file|folder|directory|downloads|documents|desktop)\b/i.test(result.goal);
-        if (looksLikeFileOperation && !workspaceState.configured) {
+        const needsWorkspace = taskLikelyNeedsWorkspace(result.goal);
+        if (needsWorkspace && !workspaceState.configured) {
           setMessages((prev) => [
             ...prev,
             createChatItem(
@@ -1883,8 +1909,7 @@ function App() {
 
             if (
               llmSettings.provider === DEFAULT_LLM_PROVIDER
-              && runtimeConfig
-              && sessionDeviceToken
+              && hostedFreeAiAvailable
               && resolveManagedLocalTaskBinding(localAiStatus, localAiRecommendation, result.goal)
                 .requiresVisionBoost
             ) {
@@ -1921,6 +1946,7 @@ function App() {
     gorkhAppContext,
     localAiRecommendation,
     localAiStatus,
+    desktopBootstrap?.readiness.hostedFreeAiEnabled,
     llmSettings,
     runtimeConfig,
     sessionDeviceToken,
@@ -2749,6 +2775,8 @@ function App() {
     providerConfigured,
     isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
     requireControl: false,
+    requireScreen: false,
+    requireWorkspace: false,
   });
   const taskReadiness = evaluateDesktopTaskReadiness({
     mode: 'ai_assist',
@@ -2760,6 +2788,8 @@ function App() {
     providerConfigured,
     isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
     requireControl: false,
+    requireScreen: false,
+    requireWorkspace: false,
   });
   const controlReadiness = evaluateDesktopTaskReadiness({
     mode: 'ai_assist',
@@ -2771,6 +2801,8 @@ function App() {
     providerConfigured,
     isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
     requireControl: true,
+    requireScreen: false,
+    requireWorkspace: false,
   });
   const controlSetupItems = controlReadiness.requiredSetup.filter(
     (item) => !taskReadiness.requiredSetup.some((existing) => existing.id === item.id)
@@ -2959,7 +2991,7 @@ function App() {
               Desktop ID: <code>{deviceId}</code>
             </span>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#475569' }}>
-              <span>Assistant engine</span>
+              <span>Debug engine override</span>
               <select
                 value={assistantEngineId}
                 onChange={(event) => setAssistantEngineId(event.target.value as AssistantEngineId)}
@@ -3445,32 +3477,37 @@ function App() {
         </>
       )}
 
-      {/* Main Content */}
+      {/* Main Content - hidden during overlay mode */}
+      {!isOverlayActive && (
       <div
         style={{
           flex: 1,
           padding: `${homeTopInset} 1.5rem 2rem`,
           overflow: 'auto',
-          pointerEvents: isOverlayActive ? 'none' : 'auto',
+          pointerEvents: 'auto',
           position: 'relative',
           zIndex: 1,
         }}
       >
         <div style={frameStyle}>
-          <div style={{ position: 'relative', minHeight: platform === 'macos' ? '4.5rem' : '4rem' }}>
-            <div
-              data-tauri-drag-region
-              style={{
-                position: 'absolute',
-                inset: '0 0 auto 0',
-                height: platform === 'macos' ? '4.5rem' : '4rem',
-              }}
-            />
-            <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+          <div
+            data-tauri-drag-region
+            style={{
+              position: 'relative',
+              minHeight: platform === 'macos' ? '4.75rem' : '4.25rem',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: '1rem',
+              flexWrap: 'wrap',
+              padding: platform === 'macos' ? '0.15rem 0.2rem 0.45rem' : '0 0 0.35rem',
+              marginBottom: '0.2rem',
+            }}
+          >
               <div style={{ paddingLeft: platform === 'macos' ? '1rem' : 0, minHeight: platform === 'macos' ? '2.25rem' : undefined }}>
                 <BrandWordmark width={220} subtitle="Desktop intelligence layer" />
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', pointerEvents: 'auto' }}>
               <button
                 onClick={handleStopAll}
                 disabled={approvalItems.every((item) => item.state !== 'pending') && !aiState?.isRunning}
@@ -3505,7 +3542,6 @@ function App() {
                 Open Settings
               </button>
               </div>
-            </div>
           </div>
         {runtimeConfigError && (
           <div
@@ -4080,6 +4116,7 @@ function App() {
         )}
         </div>
       </div>
+      )}
 
       {isOverlayActive && (
         <>

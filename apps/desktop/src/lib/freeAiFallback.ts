@@ -11,6 +11,12 @@ export interface HostedFreeAiBinding {
   supportsVisionOverride: true;
 }
 
+export interface HostedFreeAiAvailabilityInput {
+  runtimeConfig: DesktopApiRuntimeConfig | null | undefined;
+  deviceToken: string | null | undefined;
+  hostedFreeAiEnabled: boolean;
+}
+
 export function buildHostedFreeAiBaseUrl(runtimeConfig: DesktopApiRuntimeConfig): string {
   return `${runtimeConfig.httpBase}/desktop/free-ai/v1`;
 }
@@ -26,6 +32,12 @@ export function resolveHostedFreeAiBinding(
     apiKeyOverride: deviceToken,
     supportsVisionOverride: true,
   };
+}
+
+export function canUseHostedFreeAiFallback(
+  input: HostedFreeAiAvailabilityInput
+): boolean {
+  return Boolean(input.hostedFreeAiEnabled && input.runtimeConfig && input.deviceToken);
 }
 
 export function shouldRetryWithHostedFreeAiFallback(error: unknown): boolean {

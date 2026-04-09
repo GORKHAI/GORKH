@@ -5,7 +5,7 @@ GitHub Releases remain the canonical source of truth for desktop downloads and u
 Iteration 25 splits the release lane into two channels:
 
 - `beta`: GitHub pre-releases with signed and notarized macOS artifacts, unsigned Windows artifacts, and updater promotion disabled.
-- `stable`: signed Windows installers plus signed and notarized macOS artifacts, with updater promotion enabled.
+- `stable`: a macOS-only signed and notarized release lane, with updater promotion enabled. Windows remains disabled for now.
 
 ## Channels And Tags
 
@@ -57,12 +57,11 @@ Beta artifacts are intentionally not promotable for auto-update.
 
 ### Stable
 
-- Signs the Windows `.msi` with Authenticode.
-- Verifies the Windows signature with `signtool verify /pa`.
 - Imports the macOS Developer ID certificate into a temporary keychain.
 - Builds macOS bundles with a Developer ID signing identity.
 - Submits the final `.dmg` to Apple notarization, waits for completion, staples the ticket, and validates the result with `spctl`.
 - Generates updater `.sig` files only after the final platform signing/notarization steps complete.
+- Publishes macOS artifacts only. Windows remains disabled for now.
 
 Updater promotion is enabled only for this channel.
 
@@ -70,7 +69,7 @@ Updater promotion is enabled only for this channel.
 
 Beta macOS releases require the macOS signing and notarization secrets below.
 
-Stable releases additionally require updater-signing secrets, Windows Authenticode secrets, and the updater public key workflow variable.
+Stable releases additionally require updater-signing secrets and the updater public key workflow variable.
 
 ### Existing updater-signing secrets
 
@@ -78,11 +77,6 @@ Stable releases additionally require updater-signing secrets, Windows Authentico
 - `TAURI_KEY_PASSWORD`: password for the updater private key.
 
 These secrets are still stored under the existing names. The workflow maps them to Tauri's current signer env vars when it generates final updater `.sig` files.
-
-### Windows Authenticode secrets
-
-- `WINDOWS_CERT_PFX_BASE64`: base64-encoded `.pfx` signing certificate.
-- `WINDOWS_CERT_PASSWORD`: password for the `.pfx`.
 
 ### macOS code-signing secrets
 
@@ -106,7 +100,7 @@ Fallback Apple ID method:
 
 Stable runs fail early if:
 
-- any required updater, Windows, or macOS signing secret is missing, or
+- any required updater or macOS signing secret is missing, or
 - neither notarization credential set is complete.
 
 The workflow never falls back from `stable` to unsigned behavior.
@@ -195,7 +189,7 @@ Recommended rotation process:
 
 Additional guidance:
 
-- Rotate Windows, macOS, and updater-signing secrets independently when possible.
+- Rotate macOS and updater-signing secrets independently when possible.
 - Keep certificate passwords unique per environment.
 - Treat updater keys with the same care as platform certificates: losing the private key prevents future update signing continuity.
 
@@ -228,3 +222,38 @@ After publishing a stable release:
 3. Confirm the response references the expected stable version and `.sig` asset.
 4. Log in as an active subscriber and open `/download`.
 5. Confirm the displayed version and download links match the stable GitHub Release assets.
+
+## Packaged Desktop Validation Reports
+
+Source checks and CI are not enough for the desktop release gate. Before cutting or promoting a desktop release, record the real packaged-app results from a Mac in a structured report and verify that report locally.
+
+Generate a report template:
+
+```bash
+node scripts/release/verify-packaged-desktop-report.mjs --template --channel beta --version 0.2.1-beta.1 --machine macos-sonoma-arm64 > /tmp/gorkh-beta-packaged-report.json
+node scripts/release/verify-packaged-desktop-report.mjs --template --channel stable --version 0.2.1 --machine macos-sonoma-arm64 > /tmp/gorkh-stable-packaged-report.json
+```
+
+The `Desktop Release` workflow now also uploads a channel-specific artifact. For the current shipping lane, use `packaged-desktop-validation-stable` and complete it on a real Mac before promotion.
+
+Fill the report after running the packaged checks on the real machine, then verify it:
+
+```bash
+node scripts/release/verify-packaged-desktop-report.mjs --report /tmp/gorkh-beta-packaged-report.json
+node scripts/release/verify-packaged-desktop-report.mjs --report /tmp/gorkh-stable-packaged-report.json
+```
+
+Required common packaged checks:
+
+- `confirmed_task_local_free_ai`
+- `non_workspace_non_screen_task`
+- `hosted_fallback_unavailable`
+- `overlay_and_dragging`
+
+Required channel-specific packaged checks:
+
+- stable report: `stable_updater_truth`
+
+Current release sign-off requires:
+
+- one validated stable packaged report from a real Mac

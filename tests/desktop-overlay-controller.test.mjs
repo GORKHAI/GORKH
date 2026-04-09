@@ -32,8 +32,8 @@ test('desktop overlay controller should be a transparent floating control strip,
   );
   assert.doesNotMatch(
     controllerSource,
-    /width:\s*'min\(390px, calc\(100vw - 2rem\)\)'/,
-    'controller should be more compact than the current large card shell'
+    /width:\s*'min\(320px, calc\(100vw - 2rem\)\)'|borderRadius:\s*'20px'|backdropFilter:\s*'blur\(4px\)'/,
+    'controller should be more compact and lighter than the current large card shell'
   );
 });
 

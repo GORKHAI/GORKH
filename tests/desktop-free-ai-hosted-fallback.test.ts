@@ -31,6 +31,25 @@ test('desktop hosted Free AI helper resolves the authenticated OpenAI-compatible
   );
 
   assert.equal(
+    imported.canUseHostedFreeAiFallback({
+      runtimeConfig,
+      deviceToken: 'desktop-device-token',
+      hostedFreeAiEnabled: true,
+    }),
+    true,
+    'hosted Free AI should only be considered available when runtime config, device auth, and bootstrap readiness all agree'
+  );
+  assert.equal(
+    imported.canUseHostedFreeAiFallback({
+      runtimeConfig,
+      deviceToken: 'desktop-device-token',
+      hostedFreeAiEnabled: false,
+    }),
+    false,
+    'hosted Free AI should stay disabled when desktop bootstrap readiness says it is unavailable'
+  );
+
+  assert.equal(
     imported.shouldRetryWithHostedFreeAiFallback({
       code: 'LOCAL_AI_COMPATIBILITY_ERROR',
       message: 'Free AI reached a Mac graphics compatibility problem inside the local AI service.',
@@ -64,8 +83,20 @@ test('desktop app and local-compatible provider keep a hosted Free AI execution 
 
   assert.match(
     appSource,
-    /resolveHostedFreeAiBinding|shouldRetryWithHostedFreeAiFallback/,
+    /resolveHostedFreeAiBinding|shouldRetryWithHostedFreeAiFallback|canUseHostedFreeAiFallback/,
     'App.tsx should resolve and retry through the hosted Free AI fallback path'
+  );
+
+  assert.match(
+    appSource,
+    /desktopBootstrap\?\.readiness\.hostedFreeAiEnabled[\s\S]{0,400}canUseHostedFreeAiFallback|canUseHostedFreeAiFallback[\s\S]{0,400}desktopBootstrap\?\.readiness\.hostedFreeAiEnabled/,
+    'App.tsx should gate hosted fallback routing on explicit bootstrap readiness instead of only checking runtime config and device token'
+  );
+
+  assert.doesNotMatch(
+    appSource,
+    /runtimeConfig\s*&&\s*sessionDeviceToken[\s\S]{0,200}resolveManagedLocalTaskBinding\([^\)]*result\.goal[^\)]*\)[\s\S]{0,120}\.requiresVisionBoost[\s\S]{0,120}return 'hosted_free_ai'/,
+    'App.tsx should not route tasks onto hosted fallback solely because runtime config and a device token exist'
   );
 
   assert.match(

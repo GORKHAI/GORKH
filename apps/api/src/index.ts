@@ -1689,11 +1689,8 @@ fastify.get('/updates/desktop/:platform/:arch/:currentVersion.json', async (requ
       return { error: 'Invalid update target' };
     }
 
-    // For all other failures (GitHub not configured, assets missing, network errors)
-    // return 204 so Tauri silently treats this as "no update available" rather than
-    // surfacing "Could not fetch a valid release JSON from the remote" to the user.
-    reply.status(204);
-    return reply.send();
+    reply.status(503);
+    return { error: 'Desktop updater release feed is unavailable. Check release feed configuration.' };
   }
 });
 

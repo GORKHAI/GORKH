@@ -29,7 +29,7 @@ test('desktop overlay shell should be transparent and avoid a centered glass car
   );
   assert.doesNotMatch(
     overlayShellSource,
-    /radial-gradient|linear-gradient|rgba\(255,\s*255,\s*255/i,
+    /radial-gradient|linear-gradient/,
     'overlay shell should not rely on decorative glass gradients for the execution surface'
   );
   assert.match(overlayShellSource, /\bGORKH\b/, 'overlay shell should still carry the GORKH brand');

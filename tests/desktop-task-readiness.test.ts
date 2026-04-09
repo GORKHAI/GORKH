@@ -195,3 +195,63 @@ test('windows readiness still blocks when permissions are explicitly denied', ()
     ['screen-permission', 'accessibility-permission']
   );
 });
+
+test('assistant launch readiness can defer screen and workspace setup when the task does not need them', () => {
+  const readiness = evaluateDesktopTaskReadiness({
+    mode: 'ai_assist',
+    subscriptionStatus: 'inactive',
+    platform: 'macos',
+    permissionStatus: {
+      screenRecording: 'denied',
+      accessibility: 'granted',
+    },
+    localSettings: {
+      startMinimizedToTray: false,
+      autostartEnabled: false,
+      screenPreviewEnabled: false,
+      allowControlEnabled: true,
+    },
+    workspaceConfigured: false,
+    providerConfigured: true,
+    requireControl: false,
+    requireScreen: false,
+    requireWorkspace: false,
+  } as Parameters<typeof evaluateDesktopTaskReadiness>[0]);
+
+  assert.equal(readiness.ready, true);
+  assert.deepEqual(readiness.blockers, []);
+  assert.deepEqual(readiness.requiredSetup, []);
+  assert.deepEqual(
+    readiness.optionalUpgrades.map((item) => item.id),
+    ['screen-preview', 'screen-permission', 'workspace']
+  );
+});
+
+test('assistant launch readiness still blocks workspace when the confirmed task explicitly needs file access', () => {
+  const readiness = evaluateDesktopTaskReadiness({
+    mode: 'ai_assist',
+    subscriptionStatus: 'inactive',
+    platform: 'macos',
+    permissionStatus: {
+      screenRecording: 'granted',
+      accessibility: 'granted',
+    },
+    localSettings: {
+      startMinimizedToTray: false,
+      autostartEnabled: false,
+      screenPreviewEnabled: true,
+      allowControlEnabled: true,
+    },
+    workspaceConfigured: false,
+    providerConfigured: true,
+    requireControl: false,
+    requireScreen: false,
+    requireWorkspace: true,
+  } as Parameters<typeof evaluateDesktopTaskReadiness>[0]);
+
+  assert.equal(readiness.ready, false);
+  assert.deepEqual(
+    readiness.requiredSetup.map((item) => item.id),
+    ['workspace']
+  );
+});

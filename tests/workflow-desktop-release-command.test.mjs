@@ -197,3 +197,47 @@ test('desktop release workflow stores the macOS asset path as an absolute worksp
     'stable updater signing still runs through pnpm exec in the desktop package directory, so MACOS_ASSET_PATH must already be absolute'
   );
 });
+
+test('desktop release workflow publishes a packaged desktop validation template for the active channel', () => {
+  const source = readFileSync(workflowPath, 'utf8');
+
+  assert.match(
+    source,
+    /Generate packaged desktop validation report template/,
+    'desktop release workflow should generate a packaged desktop validation template artifact for human Mac sign-off'
+  );
+
+  assert.match(
+    source,
+    /verify-packaged-desktop-report\.mjs --template --channel "\$\{\{\s*steps\.context\.outputs\.channel\s*\}\}" --version "\$\{\{\s*steps\.context\.outputs\.version\s*\}\}" --machine macos-fill-me/,
+    'packaged desktop validation template should be versioned for the active release channel'
+  );
+
+  assert.match(
+    source,
+    /name:\s*packaged-desktop-validation-\$\{\{\s*steps\.context\.outputs\.channel\s*\}\}/,
+    'workflow should upload the packaged desktop validation template as a channel-specific artifact'
+  );
+});
+
+test('desktop release workflow stable notes call out the macOS-only packaged validation artifact', () => {
+  const source = readFileSync(workflowPath, 'utf8');
+
+  assert.match(
+    source,
+    /packaged-desktop-validation-stable/,
+    'stable release notes should point operators at the stable packaged validation artifact'
+  );
+
+  assert.match(
+    source,
+    /stable macOS sign-off is required before promotion/i,
+    'stable release notes should state that macOS sign-off remains mandatory before promotion'
+  );
+
+  assert.match(
+    source,
+    /Windows remains disabled for now/i,
+    'stable release notes should make the current Windows-disabled policy explicit'
+  );
+});

@@ -105,7 +105,7 @@ Beta releases:
 
 ### Stable Release Flow
 
-Only after beta has been validated:
+This is the current shipping lane. Stable sign-off is macOS-only for now:
 
 ```bash
 # 1. Ensure ALL pre-flight checks pass
@@ -129,6 +129,17 @@ git push origin v1.2.3
 
 After CI completes the release (typically 10-15 minutes):
 
+### 0. Validate The Packaged Desktop Report
+
+Download the workflow artifact named `packaged-desktop-validation-stable`, run the packaged checks on a real Mac, fill the JSON report, then verify it:
+
+```bash
+node scripts/release/verify-packaged-desktop-report.mjs --report /path/to/packaged-desktop-report-stable.template.json
+```
+
+- [ ] Stable packaged report validated after real-machine macOS testing
+- [ ] Report records outcomes for local Free AI, non-workspace tasks, fallback-unavailable behavior, overlay/dragging, and stable updater truth
+
 ### 1. Verify GitHub Release
 
 ```bash
@@ -148,7 +159,7 @@ MISSING_ASSETS=[]
 ```
 
 - [ ] Release exists on GitHub
-- [ ] All 6 required assets present (3 installers + 3 signatures)
+- [ ] All required macOS assets present (2 installers + 2 signatures)
 - [ ] Asset names follow convention: `ai-operator-desktop_{VERSION}_{platform}.{ext}`
 
 ### 2. Verify API in GitHub Mode
@@ -191,7 +202,21 @@ On a test machine with the previous stable version installed:
 
 - [ ] macOS (Intel): Update detected and installs
 - [ ] macOS (Apple Silicon): Update detected and installs
-- [ ] Windows: Update detected and installs
+- [ ] Windows remains disabled for now
+
+### 3A. Packaged Desktop Runtime Check
+
+On the packaged Mac build used for sign-off:
+
+1. Confirm a simple local Free AI task and verify it executes after confirmation.
+2. Confirm a non-workspace, non-screen task and verify it does not hard-block on setup.
+3. Test overlay mode and verify the main window still drags from the visible top chrome.
+4. Validate the stable updater truth: broken feed surfaces a real error instead of silent no-update.
+
+- [ ] Confirmed local Free AI task executes in the packaged app
+- [ ] Non-workspace task starts without unrelated blockers
+- [ ] Overlay stays compact and the normal window drags correctly
+- [ ] Stable updater truth is verified in the packaged app
 
 ### 4. Smoke Test Production Deploy
 
