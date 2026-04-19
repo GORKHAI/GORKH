@@ -1,6 +1,6 @@
 # Security Posture and Threat Model
 
-This document describes the current production security posture for AI Operator and the trust boundaries around remote control, billing, and desktop privileges.
+This document describes the current production security posture for GORKH and the trust boundaries around remote control, billing, and desktop privileges.
 
 ## Security Goals
 

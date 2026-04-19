@@ -61,6 +61,10 @@ jobs:
       - name: Build
         run: pnpm -w build
 
+      - name: Audit dependencies
+        run: pnpm audit --audit-level moderate
+        continue-on-error: true
+
       - name: Lint Gate
         run: pnpm -w lint:ci
 

@@ -1,4 +1,4 @@
-# Deploying AI Operator (MVP Production Blueprint)
+# Deploying GORKH (MVP Production Blueprint)
 
 This document describes a production-ready MVP deployment for:
 - `apps/api` (Fastify API + WS + SSE)

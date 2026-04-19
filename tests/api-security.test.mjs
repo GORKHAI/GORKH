@@ -76,10 +76,21 @@ test('production security validation rejects insecure origins unless explicitly 
     });
   });
 
-  assert.equal(isAllowedCorsOrigin(undefined, ['https://web.example.com']), true);
+  // Undefined origin (no Origin header) is now rejected for security
+  // This prevents abuse from file:// URLs and sandboxed browser contexts
+  assert.equal(isAllowedCorsOrigin(undefined, ['https://web.example.com']), false);
+  
+  // Null string origin (sent by sandboxed iframes) is also rejected
+  assert.equal(isAllowedCorsOrigin('null', ['https://web.example.com']), false);
+  
+  // Configured web origins are allowed
   assert.equal(isAllowedCorsOrigin('https://web.example.com', ['https://web.example.com']), true);
+  
+  // Tauri desktop webview origins are always allowed
   assert.equal(isAllowedCorsOrigin('tauri://localhost', ['https://web.example.com']), true);
   assert.equal(isAllowedCorsOrigin('https://tauri.localhost', ['https://web.example.com']), true);
   assert.equal(isAllowedCorsOrigin('http://tauri.localhost', ['https://web.example.com']), true);
+  
+  // Unknown origins are rejected
   assert.equal(isAllowedCorsOrigin('https://evil.example.com', ['https://web.example.com']), false);
 });

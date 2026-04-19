@@ -32,6 +32,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
       - name: Cache cargo artifacts
         uses: actions/cache@v4
         with:
@@ -54,6 +57,11 @@ jobs:
 
       - name: Run desktop compile checks
         run: pnpm --filter @ai-operator/desktop tauri:check
+
+      - name: Audit Rust dependencies
+        run: |
+          cd apps/desktop/src-tauri
+          cargo audit
 
   desktop-windows:
     runs-on: windows-latest
@@ -80,6 +88,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
       - name: Cache cargo artifacts
         uses: actions/cache@v4
         with:
@@ -102,3 +113,9 @@ jobs:
 
       - name: Run desktop compile checks
         run: pnpm --filter @ai-operator/desktop tauri:check
+
+      - name: Audit Rust dependencies
+        shell: pwsh
+        run: |
+          cd apps/desktop/src-tauri
+          cargo audit

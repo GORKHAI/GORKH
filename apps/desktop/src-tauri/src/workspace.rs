@@ -259,6 +259,72 @@ pub enum ToolCall {
     },
 }
 
+impl ToolCall {
+    /// Returns true for operations that permanently destroy data
+    /// Used to show elevated risk warnings in approval UI
+    pub fn is_destructive(&self) -> bool {
+        match self {
+            ToolCall::FsDelete { .. } => true,
+            ToolCall::TerminalExec { cmd, args, .. } => {
+                is_destructive_terminal_command(cmd, args)
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns a risk classification for this tool call
+    pub fn risk_level(&self) -> ToolRiskLevel {
+        match self {
+            ToolCall::FsList { .. } | ToolCall::FsReadText { .. } => ToolRiskLevel::Low,
+            ToolCall::FsWriteText { .. } | ToolCall::FsApplyPatch { .. } => ToolRiskLevel::Medium,
+            ToolCall::FsDelete { .. } => ToolRiskLevel::High,
+            ToolCall::TerminalExec { cmd, args, .. } => {
+                if is_destructive_terminal_command(cmd, args) {
+                    ToolRiskLevel::High
+                } else {
+                    ToolRiskLevel::Medium
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolRiskLevel {
+    Low,
+    Medium,
+    High,
+}
+
+/// Detects obviously destructive terminal commands
+fn is_destructive_terminal_command(cmd: &str, args: &[String]) -> bool {
+    let normalized = cmd.to_lowercase().trim().to_string();
+    
+    // Known destructive base commands
+    const DESTRUCTIVE_COMMANDS: &[&str] = &["rm", "del", "rmdir", "format", "dd", "mkfs", "fdisk", "shred"];
+    if DESTRUCTIVE_COMMANDS.contains(&normalized.as_str()) {
+        return true;
+    }
+    
+    // Check for rm with recursive flag
+    if normalized == "rm" {
+        let full = args.join(" ").to_lowercase();
+        if full.contains("-r") || full.contains("-rf") || full.contains("-fr") {
+            return true;
+        }
+    }
+    
+    // Check for del with wildcards
+    if normalized == "del" || normalized == "erase" {
+        if args.iter().any(|arg| arg.contains('*') || arg.contains('?')) {
+            return true;
+        }
+    }
+    
+    false
+}
+
 #[derive(Serialize)]
 pub struct FsListEntry {
     name: String,

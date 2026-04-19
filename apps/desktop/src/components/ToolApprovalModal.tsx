@@ -16,6 +16,7 @@ function getToolDetails(toolCall: ToolCall): {
   title: string;
   target?: string;
   warning?: string;
+  destructive?: boolean;
 } {
   switch (toolCall.tool) {
     case 'fs.list':
@@ -34,15 +35,51 @@ function getToolDetails(toolCall: ToolCall): {
         target: toolCall.path,
         warning: 'This will edit a file inside the configured workspace.',
       };
+    case 'fs.delete':
+      return {
+        title: 'Delete File or Directory',
+        target: toolCall.path,
+        warning: 'This will permanently delete the file or directory. This action cannot be undone.',
+        destructive: true,
+      };
     case 'terminal.exec':
       return {
         title: 'Execute Terminal Command',
         target: toolCall.cmd,
-        warning: 'Only the command name is shown here. Review carefully before approving.',
+        warning: getTerminalWarning(toolCall.cmd, toolCall.args),
+        destructive: isDestructiveTerminalCommand(toolCall.cmd, toolCall.args),
       };
     default:
       return { title: 'Tool Request' };
   }
+}
+
+function isDestructiveTerminalCommand(cmd: string, args: string[]): boolean {
+  const destructiveCommands = ['rm', 'del', 'rmdir', 'format', 'dd', 'mkfs', 'fdisk'];
+  const normalizedCmd = cmd.toLowerCase().trim();
+  
+  // Check base command
+  if (destructiveCommands.includes(normalizedCmd)) {
+    return true;
+  }
+  
+  // Check for rm -rf or similar in args
+  const fullCommand = `${normalizedCmd} ${args.join(' ').toLowerCase()}`;
+  if (fullCommand.includes('rm') && fullCommand.includes('-r')) {
+    return true;
+  }
+  if (fullCommand.includes('del') && args.some(arg => arg.includes('*'))) {
+    return true;
+  }
+  
+  return false;
+}
+
+function getTerminalWarning(cmd: string, args: string[]): string {
+  if (isDestructiveTerminalCommand(cmd, args)) {
+    return '⚠️ This command can permanently delete files or data. Review carefully before approving.';
+  }
+  return 'Only the command name is shown here. Review carefully before approving.';
 }
 
 export function ToolApprovalModal({
@@ -138,8 +175,13 @@ export function ToolApprovalModal({
           >
             Tool Request
           </div>
-          <div style={{ marginBottom: '0.35rem', fontSize: '0.72rem', color: '#1d4ed8' }}>
-            {approval.risk.toUpperCase()} risk • expires in {Math.ceil(remainingMs / 1000)}s
+          <div style={{ 
+            marginBottom: '0.35rem', 
+            fontSize: '0.72rem', 
+            color: approval.risk === 'high' || details.destructive ? '#dc2626' : '#1d4ed8',
+            fontWeight: approval.risk === 'high' || details.destructive ? 600 : 400,
+          }}>
+            {approval.risk.toUpperCase()} risk{details.destructive ? ' • DESTRUCTIVE' : ''} • expires in {Math.ceil(remainingMs / 1000)}s
           </div>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>{details.title}</h2>
         </div>
@@ -180,12 +222,15 @@ export function ToolApprovalModal({
             style={{
               marginBottom: '0.85rem',
               padding: '0.7rem',
-              backgroundColor: '#fef3c7',
+              backgroundColor: details.destructive ? '#fef2f2' : '#fef3c7',
               borderRadius: '12px',
               fontSize: '0.84rem',
-              color: '#92400e',
+              color: details.destructive ? '#991b1b' : '#92400e',
+              border: details.destructive ? '1px solid #fecaca' : undefined,
+              fontWeight: details.destructive ? 500 : 400,
             }}
           >
+            {details.destructive && '⚠️ '}
             {details.warning}
           </div>
         )}

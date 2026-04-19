@@ -23,6 +23,8 @@ export interface LocalAiRuntimeStatus {
   installStage: LocalAiInstallStage;
   selectedTier: LocalAiTier | null;
   selectedModel: string | null;
+  /** The actual model to use (may be a compatible variant of selectedModel) */
+  effectiveModel?: string | null;
   installedModels: string[];
   runtimeSource: string | null;
   runtimeVersion: string | null;
@@ -90,6 +92,74 @@ export interface ManagedLocalTaskBinding extends ManagedLocalLlmBinding {
 
 const GIB = 1024 * 1024 * 1024;
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+
+/** Extract base model family from a model name (e.g., "qwen2.5:7b" -> "qwen2.5") */
+function extractModelFamily(modelName: string): string {
+  return modelName.trim().split(':')[0]?.toLowerCase() ?? modelName.trim().toLowerCase();
+}
+
+/** Check if a model belongs to the Qwen2.5 family */
+function isQwen25Family(modelName: string): boolean {
+  const family = extractModelFamily(modelName);
+  return family.startsWith('qwen2.5') || family.startsWith('qwen2_5') || family.startsWith('qwen-2.5');
+}
+
+/** Check if a model belongs to the Qwen2.5-VL (vision) family */
+function isQwen25VlFamily(modelName: string): boolean {
+  const family = extractModelFamily(modelName);
+  return family.startsWith('qwen2.5-vl') || family.startsWith('qwen2_5_vl') || family.startsWith('qwen-2.5-vl');
+}
+
+/** Check if a model is compatible with the target model (same family) */
+function isCompatibleModel(installedModel: string, targetModel: string): boolean {
+  const installed = installedModel.trim();
+  const target = targetModel.trim();
+
+  // Exact match
+  if (installed === target) {
+    return true;
+  }
+
+  // Check family compatibility
+  const targetIsVl = isQwen25VlFamily(target);
+  const installedIsVl = isQwen25VlFamily(installed);
+
+  // Vision models are compatible with other vision models
+  if (targetIsVl && installedIsVl) {
+    return true;
+  }
+
+  // Regular Qwen2.5 models are compatible with each other (but not with vision)
+  if (isQwen25Family(target) && isQwen25Family(installed) && !targetIsVl) {
+    return true;
+  }
+
+  return false;
+}
+
+/** Find a compatible model from a list of installed models */
+function findCompatibleModel(installedModels: string[], targetModel: string): string | null {
+  // First pass: exact match
+  for (const model of installedModels) {
+    if (model.trim() === targetModel.trim()) {
+      return model;
+    }
+  }
+
+  // Second pass: same family match
+  for (const model of installedModels) {
+    if (isCompatibleModel(model, targetModel)) {
+      return model;
+    }
+  }
+
+  return null;
+}
+
+/** Check if any compatible vision model is installed */
+function hasCompatibleVisionModel(installedModels: string[], visionModel: string): boolean {
+  return findCompatibleModel(installedModels, visionModel) !== null;
+}
 const TIER_DETAILS: Record<LocalAiTier, LocalAiTierDetails> = {
   light: {
     tier: 'light',
@@ -313,9 +383,14 @@ export function resolveManagedLocalLlmBinding(
 ): ManagedLocalLlmBinding {
   const tier = status?.selectedTier ?? recommendation?.tier ?? 'light';
   const plan = getLocalAiTierRuntimePlan(tier);
+  // Use effectiveModel if available (it's the compatible model found on the system)
+  // Otherwise fall back to selectedModel or the tier's default
+  const model = status?.effectiveModel
+    ?? status?.selectedModel
+    ?? plan.defaultModel;
   return {
     baseUrl: status?.serviceUrl || 'http://127.0.0.1:11434',
-    model: status?.selectedModel || plan.defaultModel,
+    model,
   };
 }
 
@@ -360,18 +435,24 @@ export function resolveManagedLocalTaskBinding(
   const tier = status?.selectedTier ?? recommendation?.tier ?? 'light';
   const plan = getLocalAiTierRuntimePlan(tier);
   const visionModel = plan.optionalVisionModel;
-  const visionInstalled = Boolean(
-    status?.selectedModel === visionModel
-      || status?.installedModels.includes(visionModel)
+  // Use compatible vision model detection - accepts any qwen2.5-vl variant
+  const visionInstalled = hasCompatibleVisionModel(
+    status?.installedModels ?? [],
+    visionModel
   );
+  // Find the actual compatible vision model to use
+  const compatibleVisionModel = visionInstalled
+    ? findCompatibleModel(status?.installedModels ?? [], visionModel) ?? visionModel
+    : visionModel;
   const needsVision = taskLikelyNeedsVision(goal);
 
   return {
     baseUrl: baseBinding.baseUrl,
-    model: needsVision && visionInstalled ? visionModel : baseBinding.model,
+    // Use the compatible vision model if available, otherwise fall back to base model
+    model: needsVision && visionInstalled ? compatibleVisionModel : baseBinding.model,
     needsVision,
     requiresVisionBoost: needsVision && !visionInstalled,
-    visionModel,
+    visionModel: compatibleVisionModel,
   };
 }
 
