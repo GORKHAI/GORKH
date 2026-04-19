@@ -58,13 +58,19 @@ test('desktop release config includes a tracked icon asset', () => {
   );
 });
 
-test('desktop base Tauri config keeps updater disabled until release workflow injects concrete values', () => {
+test('desktop base Tauri config includes updater plugin with env var placeholders', () => {
   const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf8'));
 
-  assert.equal(
+  // Updater should be configured with env var placeholders for release workflow
+  assert.ok(
     tauriConfig.plugins?.updater,
-    undefined,
-    'desktop base Tauri config should not define updater settings; release workflows must inject concrete updater config only for builds that need it',
+    'desktop Tauri config should include updater plugin configuration',
+  );
+  
+  assert.equal(
+    tauriConfig.plugins.updater.active,
+    true,
+    'desktop updater plugin should be active',
   );
 
   assert.equal(
@@ -115,17 +121,17 @@ test('desktop rust sources avoid the broken API usage that blocked CI', () => {
     'desktop keyring integration should delete stored credentials through delete_credential()',
   );
 
+  // Updater plugin is now always initialized (controlled by active: true/false in config)
   assert.ok(
-    !libRs.includes(
-      '.plugin(tauri_plugin_dialog::init())\n        .plugin(tauri_plugin_updater::Builder::new().build())',
-    ),
-    'desktop beta builds must not initialize the updater plugin as part of the unconditional base builder chain',
+    libRs.includes('tauri_plugin_updater::Builder::new().build()'),
+    'desktop should initialize the updater plugin',
   );
 
+  // The VITE_DESKTOP_UPDATER_ENABLED env var is still used to control dialog visibility
   assert.match(
     libRs,
     /option_env!\("VITE_DESKTOP_UPDATER_ENABLED"\)/,
-    'desktop runtime should gate updater plugin initialization on the build-time VITE_DESKTOP_UPDATER_ENABLED flag',
+    'desktop runtime should check VITE_DESKTOP_UPDATER_ENABLED to control update dialog behavior',
   );
 });
 

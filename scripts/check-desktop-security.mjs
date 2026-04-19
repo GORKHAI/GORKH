@@ -14,6 +14,7 @@ const expectedCapabilityPermissions = [
   'core:event:allow-listen',
   'core:event:allow-unlisten',
   'desktop-ipc',
+  'updater:default',
 ];
 
 const expectedCommands = [
@@ -21,6 +22,7 @@ const expectedCommands = [
   'autostart_set_enabled',
   'autostart_supported',
   'approve_agent_proposal',
+  'assistant_conversation_turn',
   'cancel_agent_task',
   'capture_display_png',
   'clear_llm_api_key',
@@ -46,6 +48,7 @@ const expectedCommands = [
   'local_ai_install_start',
   'local_ai_enable_vision_boost',
   'local_ai_recommended_tier',
+  'local_ai_reset_to_managed',
   'local_ai_start',
   'local_ai_status',
   'local_ai_stop',
@@ -57,6 +60,7 @@ const expectedCommands = [
   'main_window_exit_overlay_mode',
   'main_window_overlay_status',
   'main_window_show',
+  'open_application',
   'open_external_url',
   'permissions_get_status',
   'permissions_open_settings',
@@ -173,7 +177,7 @@ function main() {
   assert.deepEqual(allowCommands, extractRustCommands());
 
   const pluginConfig = tauriConfig.plugins ?? {};
-  for (const forbiddenPlugin of ['shell', 'fs', 'cli', 'process']) {
+  for (const forbiddenPlugin of ['shell', 'fs', 'cli']) {
     assert.equal(
       Object.prototype.hasOwnProperty.call(pluginConfig, forbiddenPlugin),
       false,

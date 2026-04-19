@@ -249,12 +249,80 @@ pub enum ToolCall {
     FsWriteText { path: String, content: String },
     #[serde(rename = "fs.apply_patch")]
     FsApplyPatch { path: String, patch: String },
+    #[serde(rename = "fs.delete")]
+    FsDelete { path: String },
     #[serde(rename = "terminal.exec")]
     TerminalExec {
         cmd: String,
         args: Vec<String>,
         cwd: Option<String>,
     },
+}
+
+impl ToolCall {
+    /// Returns true for operations that permanently destroy data
+    /// Used to show elevated risk warnings in approval UI
+    pub fn is_destructive(&self) -> bool {
+        match self {
+            ToolCall::FsDelete { .. } => true,
+            ToolCall::TerminalExec { cmd, args, .. } => {
+                is_destructive_terminal_command(cmd, args)
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns a risk classification for this tool call
+    pub fn risk_level(&self) -> ToolRiskLevel {
+        match self {
+            ToolCall::FsList { .. } | ToolCall::FsReadText { .. } => ToolRiskLevel::Low,
+            ToolCall::FsWriteText { .. } | ToolCall::FsApplyPatch { .. } => ToolRiskLevel::Medium,
+            ToolCall::FsDelete { .. } => ToolRiskLevel::High,
+            ToolCall::TerminalExec { cmd, args, .. } => {
+                if is_destructive_terminal_command(cmd, args) {
+                    ToolRiskLevel::High
+                } else {
+                    ToolRiskLevel::Medium
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolRiskLevel {
+    Low,
+    Medium,
+    High,
+}
+
+/// Detects obviously destructive terminal commands
+fn is_destructive_terminal_command(cmd: &str, args: &[String]) -> bool {
+    let normalized = cmd.to_lowercase().trim().to_string();
+    
+    // Known destructive base commands
+    const DESTRUCTIVE_COMMANDS: &[&str] = &["rm", "del", "rmdir", "format", "dd", "mkfs", "fdisk", "shred"];
+    if DESTRUCTIVE_COMMANDS.contains(&normalized.as_str()) {
+        return true;
+    }
+    
+    // Check for rm with recursive flag
+    if normalized == "rm" {
+        let full = args.join(" ").to_lowercase();
+        if full.contains("-r") || full.contains("-rf") || full.contains("-fr") {
+            return true;
+        }
+    }
+    
+    // Check for del with wildcards
+    if normalized == "del" || normalized == "erase" {
+        if args.iter().any(|arg| arg.contains('*') || arg.contains('?')) {
+            return true;
+        }
+    }
+    
+    false
 }
 
 #[derive(Serialize)]
@@ -396,6 +464,7 @@ pub fn tool_execute(tool_call: ToolCall) -> ToolResult {
         ToolCall::FsReadText { path } => execute_fs_read_text(&path),
         ToolCall::FsWriteText { path, content } => execute_fs_write_text(&path, &content),
         ToolCall::FsApplyPatch { path, patch } => execute_fs_apply_patch(&path, &patch),
+        ToolCall::FsDelete { path } => execute_fs_delete(&path),
         ToolCall::TerminalExec { cmd, args, cwd } => {
             execute_terminal_exec(&cmd, &args, cwd.as_deref())
         }
@@ -690,6 +759,50 @@ fn execute_fs_apply_patch(path: &str, patch: &str) -> ToolResult {
     }
 }
 
+fn execute_fs_delete(path: &str) -> ToolResult {
+    let resolved = match resolve_workspace_path(path) {
+        Ok(p) => p,
+        Err(e) => {
+            return ToolResult {
+                ok: false,
+                error: Some(e),
+                data: None,
+            }
+        }
+    };
+
+    if !resolved.exists() {
+        return ToolResult {
+            ok: false,
+            error: Some(ToolError {
+                code: "NOT_FOUND".to_string(),
+                message: format!("File or directory not found: {}", path),
+            }),
+            data: None,
+        };
+    }
+
+    match if resolved.is_dir() {
+        std::fs::remove_dir_all(&resolved)
+    } else {
+        std::fs::remove_file(&resolved)
+    } {
+        Ok(()) => ToolResult {
+            ok: true,
+            error: None,
+            data: None,
+        },
+        Err(e) => ToolResult {
+            ok: false,
+            error: Some(ToolError {
+                code: "DELETE_ERROR".to_string(),
+                message: format!("Failed to delete {}: {}", path, e),
+            }),
+            data: None,
+        },
+    }
+}
+
 fn execute_terminal_exec(cmd: &str, args: &[String], cwd: Option<&str>) -> ToolResult {
     // Resolve cwd if provided
     let cwd_path = match cwd {
@@ -772,6 +885,7 @@ pub fn get_tool_name(tool: &ToolCall) -> &'static str {
         ToolCall::FsReadText { .. } => "fs.read_text",
         ToolCall::FsWriteText { .. } => "fs.write_text",
         ToolCall::FsApplyPatch { .. } => "fs.apply_patch",
+        ToolCall::FsDelete { .. } => "fs.delete",
         ToolCall::TerminalExec { .. } => "terminal.exec",
     }
 }
@@ -784,6 +898,7 @@ pub fn get_tool_target(tool: &ToolCall) -> String {
         ToolCall::FsReadText { path } => path.clone(),
         ToolCall::FsWriteText { path, .. } => path.clone(),
         ToolCall::FsApplyPatch { path, .. } => path.clone(),
+        ToolCall::FsDelete { path, .. } => path.clone(),
         ToolCall::TerminalExec { cmd, .. } => cmd.clone(),
     }
 }

@@ -1,6 +1,6 @@
-# AI Operator iOS Companion
+# GORKH iOS Companion
 
-A minimal iOS companion app for AI Operator that provides read-only monitoring and approval capabilities.
+A minimal iOS companion app for GORKH that provides read-only monitoring and account access.
 
 ## Features
 
@@ -128,4 +128,4 @@ private let defaultBaseURL = URL(string: "http://localhost:3000")!
 
 ## License
 
-Same as AI Operator project.
+Same as GORKH project.

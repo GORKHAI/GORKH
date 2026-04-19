@@ -28,6 +28,7 @@ test('desktop local AI bridge exports the managed runtime command surface', () =
     'local_ai_stop',
     'local_ai_hardware_profile',
     'local_ai_recommended_tier',
+    'local_ai_reset_to_managed',
   ]) {
     assert.match(
       source,

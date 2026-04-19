@@ -20,9 +20,16 @@ use tokio::{
 };
 
 mod agent;
+// ACTIVE PRODUCTION PATH for all chat/assistant LLM functionality
+// See module docs for architecture details and provider usage
 mod llm;
 mod local_ai;
 mod workspace;
+
+// Build-time environment flag check (evaluated at compile time)
+fn desktop_updater_enabled() -> bool {
+    option_env!("VITE_DESKTOP_UPDATER_ENABLED").unwrap_or("false") == "true"
+}
 
 // Display info structure
 #[derive(Serialize)]
@@ -1680,6 +1687,9 @@ struct ProposalRequest {
     /// Structured GORKH app state for grounding — no sensitive data.
     #[serde(skip_serializing_if = "Option::is_none")]
     app_context: Option<String>,
+    /// Correlation ID for tracing requests across desktop/API boundaries
+    #[serde(skip_serializing_if = "Option::is_none")]
+    correlation_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1696,7 +1706,7 @@ struct ProposalError {
 
 fn proposal_error_from_llm(error: llm::LlmError) -> ProposalError {
     ProposalError {
-        code: error.code,
+        code: error.code.to_string(),
         message: error.message,
     }
 }
@@ -1749,6 +1759,7 @@ async fn llm_propose_next_action(
         constraints: params.constraints,
         workspace_configured,
         app_context: params.app_context,
+        correlation_id: params.correlation_id,
     };
 
     let provider = llm::create_provider(&proposal_params.provider).map_err(proposal_error_from_llm)?;
@@ -1835,6 +1846,9 @@ struct ConversationTurnRequest {
     api_key_override: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     app_context: Option<String>,
+    /// Correlation ID for tracing requests across desktop/API boundaries
+    #[serde(skip_serializing_if = "Option::is_none")]
+    correlation_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1859,6 +1873,7 @@ async fn assistant_conversation_turn(
         api_key,
         messages: params.messages,
         app_context: params.app_context,
+        correlation_id: params.correlation_id,
     };
 
     let provider = llm::create_provider(&conversation_params.provider).map_err(proposal_error_from_llm)?;
@@ -1991,6 +2006,13 @@ fn local_ai_recommended_tier() -> Result<local_ai::LocalAiTierRecommendation, St
     local_ai::recommended_tier()
 }
 
+#[tauri::command]
+async fn local_ai_reset_to_managed(
+    state: State<'_, local_ai::LocalAiRuntimeState>,
+) -> Result<local_ai::LocalAiRuntimeStatus, String> {
+    local_ai::reset_to_managed(&state).await
+}
+
 // Resize RGBA image
 fn resize_rgba(
     rgba: &[u8],
@@ -2072,7 +2094,14 @@ mod base64 {
 }
 
 // ============================================================================
-// Iteration 31: Advanced Agent System - State and Commands
+// Iteration 31: Advanced Agent System - State and Commands (EXPERIMENTAL)
+// ============================================================================
+// ⚠️  EXPERIMENTAL: This is the advanced agent system, separate from the main
+//     chat/assistant flow. It has its own provider hierarchy and is NOT the
+//     active production path for standard LLM functionality.
+//
+//     For chat, Free AI, and test connection: use `llm::create_provider()`
+//     For advanced agent features: use `agent::providers` (incomplete)
 // ============================================================================
 
 use agent::providers::{LlmProvider as _, ProviderRouter, ProviderType};
@@ -2394,11 +2423,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init());
 
-    let builder = if option_env!("VITE_DESKTOP_UPDATER_ENABLED") == Some("true") {
-        builder.plugin(tauri_plugin_updater::Builder::new().build())
-    } else {
-        builder
-    };
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
         .invoke_handler(tauri::generate_handler![
@@ -2442,6 +2467,7 @@ pub fn run() {
             local_ai_stop,
             local_ai_hardware_profile,
             local_ai_recommended_tier,
+            local_ai_reset_to_managed,
             // Iteration 7: Workspace Tools
             workspace::workspace_configure,
             workspace::workspace_get_state,

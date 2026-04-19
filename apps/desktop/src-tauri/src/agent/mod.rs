@@ -14,6 +14,7 @@ use crate::llm::{
     AgentProposal as RetailAgentProposal, InputAction as RetailInputAction,
     ToolCall as RetailToolCall,
 };
+use crate::llm;
 use crate::workspace;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1017,6 +1018,7 @@ fn summarize_retail_tool(tool_call: &RetailToolCall) -> String {
         RetailToolCall::FsReadText { path } => format!("Read {}", path),
         RetailToolCall::FsWriteText { path, .. } => format!("Write {}", path),
         RetailToolCall::FsApplyPatch { path, .. } => format!("Patch {}", path),
+        RetailToolCall::FsDelete { path, .. } => format!("Delete {}", path),
         RetailToolCall::TerminalExec { .. } => {
             "Run a terminal command in the workspace".to_string()
         }
@@ -1030,9 +1032,15 @@ fn summarize_retail_tool(tool_call: &RetailToolCall) -> String {
 }
 
 fn parse_next_operation(input: &str) -> Result<NextOperation, AgentError> {
-    let proposal: RawProposalEnvelope = serde_json::from_str(input).map_err(|error| {
-        AgentError::Provider(format!("Failed to parse proposed step: {}", error))
-    })?;
+    let proposal = match llm::parse_json_response::<RawProposalEnvelope>(input, "proposed step") {
+        Ok(p) => p,
+        Err(_) => {
+            // Fallback: small models sometimes confuse the step format with the system-prompt AgentProposal format
+            let agent_proposal = llm::parse_json_response::<llm::AgentProposal>(input, "proposed step fallback")
+                .map_err(|error| AgentError::Provider(format!("Failed to parse proposed step: {}", error.message)))?;
+            return agent_proposal_to_next_operation(&agent_proposal);
+        }
+    };
 
     match proposal.action_type.as_str() {
         "click" => {
@@ -1165,6 +1173,56 @@ fn parse_next_operation(input: &str) -> Result<NextOperation, AgentError> {
     }
 }
 
+fn agent_proposal_to_next_operation(proposal: &llm::AgentProposal) -> Result<NextOperation, AgentError> {
+    match proposal {
+        llm::AgentProposal::ProposeAction { action, rationale, confidence } => {
+            Ok(NextOperation::Approval {
+                execution: PendingExecution::Action(retail_action_to_executor(action)),
+                proposal: RetailAgentProposal::ProposeAction {
+                    action: action.clone(),
+                    rationale: rationale.clone(),
+                    confidence: *confidence,
+                },
+            })
+        }
+        llm::AgentProposal::ProposeTool { tool_call, rationale, confidence } => {
+            let retail_tool = llm_tool_to_retail(tool_call).ok_or_else(|| {
+                AgentError::Provider("This tool is not supported by the advanced agent yet.".to_string())
+            })?;
+            Ok(NextOperation::Approval {
+                execution: PendingExecution::Tool(retail_tool_to_workspace(&retail_tool)),
+                proposal: RetailAgentProposal::ProposeTool {
+                    tool_call: retail_tool,
+                    rationale: rationale.clone(),
+                    confidence: *confidence,
+                },
+            })
+        }
+        llm::AgentProposal::AskUser { question } => {
+            Ok(NextOperation::AskUser {
+                question: question.clone(),
+            })
+        }
+        llm::AgentProposal::Done { summary } => {
+            Ok(NextOperation::Done {
+                summary: summary.clone(),
+            })
+        }
+    }
+}
+
+fn llm_tool_to_retail(tool_call: &llm::ToolCall) -> Option<RetailToolCall> {
+    match tool_call {
+        llm::ToolCall::FsList { path } => Some(RetailToolCall::FsList { path: path.clone() }),
+        llm::ToolCall::FsReadText { path } => Some(RetailToolCall::FsReadText { path: path.clone() }),
+        llm::ToolCall::FsWriteText { path, content } => Some(RetailToolCall::FsWriteText { path: path.clone(), content: content.clone() }),
+        llm::ToolCall::FsApplyPatch { path, patch } => Some(RetailToolCall::FsApplyPatch { path: path.clone(), patch: patch.clone() }),
+        llm::ToolCall::FsDelete { path } => Some(RetailToolCall::FsDelete { path: path.clone() }),
+        llm::ToolCall::TerminalExec { cmd, args, cwd } => Some(RetailToolCall::TerminalExec { cmd: cmd.clone(), args: args.clone(), cwd: cwd.clone() }),
+        _ => None,
+    }
+}
+
 fn parse_tool_call(proposal: &RawProposalEnvelope) -> Result<RetailToolCall, AgentError> {
     let tool_name = proposal
         .tool
@@ -1185,6 +1243,9 @@ fn parse_tool_call(proposal: &RawProposalEnvelope) -> Result<RetailToolCall, Age
         "fs.apply_patch" => Ok(RetailToolCall::FsApplyPatch {
             path: read_string(&proposal.params, "path")?,
             patch: read_string(&proposal.params, "patch")?,
+        }),
+        "fs.delete" => Ok(RetailToolCall::FsDelete {
+            path: read_string(&proposal.params, "path")?,
         }),
         "terminal.exec" => Ok(RetailToolCall::TerminalExec {
             cmd: read_string(&proposal.params, "cmd")?,
@@ -1233,6 +1294,9 @@ fn retail_tool_to_workspace(tool_call: &RetailToolCall) -> workspace::ToolCall {
         RetailToolCall::FsApplyPatch { path, patch } => workspace::ToolCall::FsApplyPatch {
             path: path.clone(),
             patch: patch.clone(),
+        },
+        RetailToolCall::FsDelete { path } => workspace::ToolCall::FsDelete {
+            path: path.clone(),
         },
         RetailToolCall::TerminalExec { cmd, args, cwd } => workspace::ToolCall::TerminalExec {
             cmd: cmd.clone(),

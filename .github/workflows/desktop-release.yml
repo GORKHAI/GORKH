@@ -302,6 +302,20 @@ jobs:
             exit 1
           fi
 
+      - name: Generate packaged desktop validation report template
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-signoff
+          node scripts/release/verify-packaged-desktop-report.mjs --template --channel "${{ steps.context.outputs.channel }}" --version "${{ steps.context.outputs.version }}" --machine macos-fill-me > "release-signoff/packaged-desktop-report-${{ steps.context.outputs.channel }}.template.json"
+
+      - name: Upload packaged desktop validation template
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-desktop-validation-${{ steps.context.outputs.channel }}
+          path: release-signoff/*
+
   build-windows:
     runs-on: windows-latest
     needs:
@@ -712,6 +726,8 @@ jobs:
 
           Signed stable release.
           This stable lane currently publishes macOS artifacts only. Auto-update promotion is enabled only because the uploaded artifacts are signed, notarized where required, and accompanied by updater signatures generated after final packaging.
+          Download the packaged-desktop-validation-stable workflow artifact and complete the stable macOS sign-off report before promotion.
+          Stable macOS sign-off is required before promotion. Windows remains disabled for now.
           EOF
           fi
 

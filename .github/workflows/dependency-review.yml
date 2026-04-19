@@ -1,0 +1,36 @@
+# Dependency Review Action
+# Scans pull requests for dependency changes and blocks known vulnerabilities.
+# This is a lightweight, GitHub-native security gate.
+#
+# Features:
+# - Scans PRs for new dependencies
+# - Blocks merges that introduce known vulnerabilities
+# - Shows license information for new dependencies
+# - Runs on all PRs (no local dev impact)
+
+name: Dependency Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Block PRs that introduce known vulnerabilities
+          fail-on-severity: moderate
+          # Show vulnerability notices in PR
+          comment-summary-in-pr: always
+          # Don't fail on license issues (commercial project)
+          license-check: false

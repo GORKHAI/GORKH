@@ -65,19 +65,19 @@ export interface AssistantEngineHandle {
   getState: () => AssistantEngineState;
 }
 
-export const DEFAULT_ASSISTANT_ENGINE_ID: AssistantEngineId = 'advanced_agent';
+export const DEFAULT_ASSISTANT_ENGINE_ID: AssistantEngineId = 'ai_assist_legacy';
 
 const ASSISTANT_ENGINE_CATALOG: AssistantEngineCatalogEntry[] = [
   {
-    id: 'advanced_agent',
-    label: 'Retail Assistant Engine',
-    description: 'Primary desktop assistant engine using the advanced planning, observation, approval, execution, and verification loop.',
+    id: 'ai_assist_legacy',
+    label: 'GORKH Assistant',
+    description: 'Stable retail default for confirmed desktop tasks while the newer runtime continues internal validation.',
     experimental: false,
   },
   {
-    id: 'ai_assist_legacy',
-    label: 'Legacy AI Assist',
-    description: 'Secondary fallback engine kept for debug and migration while the retail assistant runtime settles.',
+    id: 'advanced_agent',
+    label: 'Advanced Agent (Experimental)',
+    description: 'Experimental planning runtime kept for debug, comparison, and migration work until packaged behavior reaches parity.',
     experimental: true,
   },
 ];
@@ -100,7 +100,7 @@ function attachEngineMeta(
 
 class LegacyAiAssistEngineAdapter implements AssistantEngineHandle {
   readonly id: AssistantEngineId = 'ai_assist_legacy';
-  readonly label = 'Legacy AI Assist';
+  readonly label = 'GORKH Assistant';
 
   private controller: AiAssistController;
 
@@ -191,7 +191,7 @@ function mapAdvancedProvider(settings: LlmSettings): {
 
 class AdvancedAssistantEngineAdapter implements AssistantEngineHandle {
   readonly id: AssistantEngineId = 'advanced_agent';
-  readonly label = 'Retail Assistant Engine';
+  readonly label = 'Advanced Agent (Experimental)';
 
   private state: AssistantEngineState = {
     engineId: this.id,

@@ -1,6 +1,6 @@
-# AI Operator Production Runbook
+# GORKH Production Runbook
 
-This document provides operational procedures for deploying, managing, and troubleshooting AI Operator in production.
+This document provides operational procedures for deploying, managing, and troubleshooting GORKH in production.
 
 ## Table of Contents
 

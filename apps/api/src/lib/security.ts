@@ -83,13 +83,20 @@ export function createSecurityOnSendHook(options: { nodeEnv: string }) {
 }
 
 export function isAllowedCorsOrigin(origin: string | undefined, webOrigins: string[]): boolean {
+  // Reject null/undefined origins - only explicitly configured origins are allowed
+  // This prevents abuse from file:// URLs, sandboxed iframes, and other null-origin contexts
   if (!origin) {
-    return true;
+    return false;
   }
 
   const normalizedOrigin = origin.trim();
   if (!normalizedOrigin) {
-    return true;
+    return false;
+  }
+
+  // Explicitly reject the string "null" which browsers send from sandboxed contexts
+  if (normalizedOrigin === 'null') {
+    return false;
   }
 
   return webOrigins.includes(normalizedOrigin) || BUILTIN_DESKTOP_WEBVIEW_ORIGINS.has(normalizedOrigin);

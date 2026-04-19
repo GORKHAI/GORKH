@@ -50,6 +50,8 @@ interface EvaluateDesktopTaskReadinessInput {
   providerConfigured: boolean;
   isManagedLocalProvider?: boolean;
   requireControl?: boolean;
+  requireScreen?: boolean;
+  requireWorkspace?: boolean;
 }
 
 function isPermissionBlocked(
@@ -106,11 +108,51 @@ export function getDesktopControlExecutionBlocker(
   return null;
 }
 
+export function taskLikelyNeedsWorkspace(goal: string): boolean {
+  const normalized = goal.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /\b(file|files|folder|folders|directory|directories|workspace|repo|repository|project|codebase|download|downloads|document|documents|desktop)\b/.test(normalized);
+}
+
+export function taskLikelyNeedsScreenObservation(goal: string): boolean {
+  const normalized = goal.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const patterns = [
+    /\bphotoshop\b/,
+    /\bblender\b/,
+    /\bfigma\b/,
+    /\bscreenshot\b/,
+    /\bscreen\b/,
+    /\bon screen\b/,
+    /\bwindow\b/,
+    /\bmenu\b/,
+    /\bbutton\b/,
+    /\bdialog\b/,
+    /\bcanvas\b/,
+    /\bui\b/,
+    /\bgui\b/,
+    /\bclick\b/,
+    /\blook at\b/,
+    /\bsee\b/,
+    /\bvisible\b/,
+  ];
+
+  return patterns.some((pattern) => pattern.test(normalized));
+}
+
 export function evaluateDesktopTaskReadiness(
   input: EvaluateDesktopTaskReadinessInput
 ): DesktopTaskReadiness {
   const platform = input.platform ?? 'unknown';
   const requireControl = input.requireControl ?? true;
+  const requireScreen = input.requireScreen ?? true;
+  const requireWorkspace = input.requireWorkspace ?? input.mode === 'ai_assist';
   const blockers: DesktopTaskBlocker[] = [];
   const requiredSetup: DesktopTaskSetupItem[] = [];
   const optionalUpgrades: DesktopTaskSetupItem[] = [];
@@ -121,8 +163,12 @@ export function evaluateDesktopTaskReadiness(
       label: 'Screen preview disabled',
       detail: 'Enable Screen Preview so runs can inspect the local desktop safely.',
     } satisfies DesktopTaskBlocker;
-    blockers.push(item);
-    requiredSetup.push(item);
+    if (requireScreen) {
+      blockers.push(item);
+      requiredSetup.push(item);
+    } else {
+      optionalUpgrades.push(item);
+    }
   }
 
   if (isPermissionBlocked(input.permissionStatus.screenRecording, platform)) {
@@ -131,8 +177,12 @@ export function evaluateDesktopTaskReadiness(
       label: 'Screen recording permission missing',
       detail: getPermissionBlockerDetail('screenRecording', platform),
     } satisfies DesktopTaskBlocker;
-    blockers.push(item);
-    requiredSetup.push(item);
+    if (requireScreen) {
+      blockers.push(item);
+      requiredSetup.push(item);
+    } else {
+      optionalUpgrades.push(item);
+    }
   }
 
   if (requireControl) {
@@ -163,8 +213,12 @@ export function evaluateDesktopTaskReadiness(
       label: 'Workspace not configured',
       detail: 'Choose a workspace folder before starting AI Assist tasks.',
     } satisfies DesktopTaskBlocker;
-    blockers.push(item);
-    requiredSetup.push(item);
+    if (requireWorkspace) {
+      blockers.push(item);
+      requiredSetup.push(item);
+    } else {
+      optionalUpgrades.push(item);
+    }
   }
 
   if (input.mode === 'ai_assist' && !input.providerConfigured) {

@@ -15,6 +15,7 @@ import {
   type PermissionTarget,
 } from '../lib/permissions.js';
 import {
+  getAdvancedLlmProviders,
   getLlmDefaults,
   getLlmProviderDefinition,
   getSupportedLlmProviders,
@@ -66,8 +67,7 @@ interface SettingsPanelProps {
   onExportDiagnostics: () => void | Promise<void>;
   diagnosticsStatus?: string | null;
   overviewPanels?: ReactNode;
-  runtimeConfig?: DesktopApiRuntimeConfig | null;
-  sessionDeviceToken?: string | null;
+  hostedFreeAiEnabled?: boolean;
 }
 
 export function SettingsPanel({
@@ -96,12 +96,12 @@ export function SettingsPanel({
   onExportDiagnostics,
   diagnosticsStatus,
   overviewPanels,
-  runtimeConfig = null,
-  sessionDeviceToken = null,
+  hostedFreeAiEnabled = false,
 }: SettingsPanelProps) {
   const settings = llmSettings;
   const providerDefinition = getLlmProviderDefinition(settings.provider);
   const supportedProviders = getSupportedLlmProviders();
+  const advancedProviders = getAdvancedLlmProviders();
   const selectedProviderVisible = isLaunchLlmProvider(settings.provider);
   const providerOptions = selectedProviderVisible
     ? supportedProviders
@@ -246,26 +246,25 @@ export function SettingsPanel({
         }
       }
 
-      // Test the connection with a simple ask_user request (no screenshot needed)
-      const result = await invoke<{ proposal: { kind: string } } | { code: string; message: string }>(
-        'llm_propose_next_action',
+      // Test the connection using the same conversation-turn path as live chat
+      const result = await invoke<{ kind: string; message?: string }>(
+        'assistant_conversation_turn',
         {
           params: {
             provider: settings.provider,
             baseUrl: settings.baseUrl,
             model: settings.model,
-            goal: 'Test connection',
-            screenshotPngBase64: null,
-            history: null,
-            constraints: { maxActions: 1, maxRuntimeMinutes: 1 },
+            messages: [{ role: 'user', text: 'Hello' }],
+            appContext: null,
+            apiKeyOverride: null,
           },
         }
       );
 
-      if ('proposal' in result) {
+      if (result && typeof result === 'object' && 'kind' in result) {
         setTestResult({ success: true, message: 'Connection successful! LLM is responding.' });
       } else {
-        setTestResult({ success: false, message: `Error: ${result.message}` });
+        setTestResult({ success: false, message: `Unexpected response: ${JSON.stringify(result)}` });
       }
     } catch (e) {
       if (isManagedFreeAiProvider && shouldRetryWithHostedFreeAiFallback(e)) {
@@ -309,15 +308,15 @@ export function SettingsPanel({
         setTestResult({ 
           success: false, 
           message: settings.provider === 'native_qwen_ollama'
-            ? `Free AI is not ready. Use "Set Up Free AI" in the main assistant view, or check that your local AI engine is running at ${settings.baseUrl}.`
+            ? 'Free AI is not ready. Use "Set Up Free AI" in the main assistant view to start the local engine.'
             : settings.provider === 'openai_compat'
-              ? 'Local server not reachable. Ensure your local LLM server is running at ' + settings.baseUrl + ' and try again.'
+              ? `Server not reachable at ${settings.baseUrl}. Ensure the server is running and try again.`
               : `Connection failed: ${parsedError.message}`
         });
       } else if (parsedError.code === 'TIMEOUT' || diagnosticText.includes('TIMEOUT')) {
         setTestResult({ 
           success: false, 
-          message: 'Request timed out. The local server may be overloaded or not responding.'
+          message: 'Request timed out. The server may be overloaded or not responding.'
         });
       } else if (parsedError.code === 'LOCAL_AI_COMPATIBILITY_ERROR') {
         setTestResult({ success: false, message: parsedError.message });
@@ -345,7 +344,7 @@ export function SettingsPanel({
           ? 'Preparing update...'
           : 'Check for Updates';
   const updaterStatusMessage = !UPDATER_ENABLED
-    ? 'Updater is disabled in this environment.'
+    ? 'Updater is disabled in this build. Beta builds do not ship in-app updates.'
     : getDesktopUpdaterStatusMessage(desktopUpdaterState);
   const updaterStatusTone = desktopUpdaterState.status === 'error'
     ? {
@@ -431,7 +430,7 @@ export function SettingsPanel({
             🤖 AI Assist Configuration
           </h3>
           <p style={{ margin: '0 0 1rem', fontSize: '0.875rem', color: '#666' }}>
-            Configure the assistant model. Launch beta officially supports Free AI, OpenAI, and Claude. API keys stay in the OS keychain and are never sent to the server.
+            Configure the assistant model. Free AI runs locally on your Mac when possible and can fall back to a hosted service when you&apos;re signed in. OpenAI and Claude use your own API keys. API keys stay in the OS keychain and are never sent to the server.
           </p>
 
           {/* Provider */}
@@ -457,10 +456,19 @@ export function SettingsPanel({
               {providerOptions.map((provider) => (
                 <option key={provider.provider} value={provider.provider}>
                   {provider.provider === settings.provider && !selectedProviderVisible
-                    ? `${provider.label} (compatibility mode)`
+                    ? `${provider.label} (advanced)`
                     : `${provider.label}${provider.paid ? ' (paid)' : provider.provider === 'native_qwen_ollama' ? ' (free default)' : ''}`}
                 </option>
               ))}
+              <optgroup label="Advanced">
+                {advancedProviders
+                  .filter((provider) => !providerOptions.some((p) => p.provider === provider.provider))
+                  .map((provider) => (
+                    <option key={provider.provider} value={provider.provider}>
+                      {provider.label}{provider.paid ? ' (paid)' : ''}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
           </div>
 
@@ -476,28 +484,14 @@ export function SettingsPanel({
                 color: '#1d4ed8',
               }}
             >
-              <strong>Compatibility provider</strong>
+              <strong>Advanced provider</strong>
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
-                {providerDefinition.label} remains available for existing setups, but it is hidden from the beta provider menu. For external beta, GORKH officially supports Free AI, OpenAI, and Claude in the main assistant flow.
+                {providerDefinition.label} remains available for existing setups, but it is hidden from the main provider menu. For most users, GORKH officially supports Free AI, OpenAI, and Claude in the main assistant flow.
               </p>
             </div>
           )}
 
-          {isManagedFreeAiProvider ? (
-            <div
-              style={{
-                marginBottom: '1rem',
-                padding: '0.9rem 1rem',
-                backgroundColor: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                fontSize: '0.875rem',
-                color: '#334155',
-              }}
-            >
-              Free AI is managed for you. GORKH runs locally on your Mac first and, when you are signed in, can quietly use the secure hosted fallback if the local engine is unavailable.
-            </div>
-          ) : (
+          {settings.provider !== 'native_qwen_ollama' && (
             <>
               {/* Base URL */}
               <div style={{ marginBottom: '1rem' }}>
@@ -622,7 +616,7 @@ export function SettingsPanel({
             </div>
           )}
           
-          {/* Local server note */}
+          {/* Free AI note */}
           {settings.provider === 'native_qwen_ollama' && (
             <div style={{ 
               marginBottom: '1rem', 
@@ -633,9 +627,10 @@ export function SettingsPanel({
               fontSize: '0.875rem',
               color: '#155e75',
             }}>
-              <strong>Free AI setup</strong>
+              <strong>Free AI</strong>
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
-                GORKH manages the local AI engine for you. Use "Set Up Free AI" in the main assistant view to install and start it automatically. You can also connect to an existing local AI service at {settings.baseUrl}.
+                GORKH manages the local AI engine for you. Use "Set Up Free AI" in the main assistant view to install and start it automatically.
+                {hostedFreeAiEnabled && ' If the local engine isn\'t ready and you\'re signed in, GORKH can use a hosted fallback automatically.'}
               </p>
             </div>
           )}
@@ -650,10 +645,9 @@ export function SettingsPanel({
               fontSize: '0.875rem',
               color: '#0369a1',
             }}>
-              <strong>Local Model Setup Required</strong>
+              <strong>Custom endpoint setup</strong>
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
-                You need to run a local OpenAI-compatible server (e.g., vLLM, llama.cpp server) 
-                on your machine. See documentation for setup instructions.
+                For advanced use only. Enter the Base URL and Model for your own OpenAI-compatible server (for example, a local development server at http://127.0.0.1:8000).
               </p>
             </div>
           )}

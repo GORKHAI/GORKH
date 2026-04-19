@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 interface RootRouteOptions {
   appVersion: string;
+  apiVersion: string;
   apiPublicBaseUrl: string;
   nodeEnv: string;
 }
@@ -15,6 +16,7 @@ export function registerRootRoute(fastify: FastifyInstance, options: RootRouteOp
     name: 'GORKH API',
     status: 'ok' as const,
     version: options.appVersion,
+    apiVersion: options.apiVersion,
     environment: options.nodeEnv,
     links: {
       health: buildLink(options.apiPublicBaseUrl, 'health'),

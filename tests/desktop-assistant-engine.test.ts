@@ -11,30 +11,30 @@ test('desktop defines one assistant-engine catalog with ai assist default and ad
     return;
   }
 
-  assert.equal(imported.DEFAULT_ASSISTANT_ENGINE_ID, 'advanced_agent');
+  assert.equal(imported.DEFAULT_ASSISTANT_ENGINE_ID, 'ai_assist_legacy');
 
   const engines = imported.getAssistantEngineCatalog();
   assert.deepEqual(
     engines.map((engine) => engine.id),
-    ['advanced_agent', 'ai_assist_legacy']
+    ['ai_assist_legacy', 'advanced_agent']
   );
 
-  const retail = engines.find((engine) => engine.id === 'advanced_agent');
-  const experimental = engines.find((engine) => engine.id === 'ai_assist_legacy');
+  const retail = engines.find((engine) => engine.id === 'ai_assist_legacy');
+  const experimental = engines.find((engine) => engine.id === 'advanced_agent');
 
   assert.ok(retail);
   assert.equal(retail?.experimental, false);
   assert.match(
     retail?.description || '',
-    /planning|verification|retail assistant/i,
-    'retail engine should be the advanced assistant runtime'
+    /stable|default|retail assistant|primary/i,
+    'retail engine should be the stable default path'
   );
   assert.ok(experimental);
   assert.equal(experimental?.experimental, true);
   assert.match(
     experimental?.description || '',
-    /legacy|fallback|debug/i,
-    'legacy AI Assist should be clearly marked as secondary once the advanced runtime becomes primary'
+    /experimental|debug|secondary|migration/i,
+    'advanced agent should be clearly marked as experimental once legacy AI Assist becomes the default again'
   );
 });
 

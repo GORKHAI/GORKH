@@ -27,31 +27,31 @@ export function OverlayController({
   onPauseToggle,
   onOpenDetails,
 }: OverlayControllerProps) {
-  const messagePreview = messages.slice(-3);
+  const messagePreview = messages.slice(-2);
 
   return (
     <div
       style={{
         position: 'fixed',
-        right: '1.5rem',
-        bottom: '1.5rem',
+        right: '1rem',
+        bottom: '1rem',
         zIndex: 140,
-        width: 'min(320px, calc(100vw - 2rem))',
-        borderRadius: '18px',
-        background: 'rgba(15,23,42,0.68)',
-        border: '1px solid rgba(148,163,184,0.22)',
-        boxShadow: '0 16px 38px rgba(15,23,42,0.18)',
+        width: 'min(272px, calc(100vw - 1.5rem))',
+        borderRadius: '16px',
+        background: 'rgba(15,23,42,0.66)',
+        border: '1px solid rgba(255,255,255,0.15)',
+        boxShadow: '0 14px 34px rgba(2,6,23,0.28)',
         color: '#f8fafc',
         overflow: 'hidden',
       }}
     >
-        <div
-          style={{
-            padding: '0.8rem 0.85rem 0.65rem',
-            borderBottom: '1px solid rgba(148,163,184,0.18)',
-            background: 'rgba(15,23,42,0.34)',
-          }}
-        >
+      <div
+        style={{
+          padding: '0.65rem 0.75rem 0.5rem',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          background: 'rgba(2,6,23,0.12)',
+        }}
+      >
         <div
           style={{
             display: 'flex',
@@ -63,26 +63,26 @@ export function OverlayController({
           <div>
             <div
               style={{
-                fontSize: '0.7rem',
-                letterSpacing: '0.18em',
+                fontSize: '0.65rem',
+                letterSpacing: '0.15em',
                 textTransform: 'uppercase',
-                color: '#cbd5e1',
-                marginBottom: '0.25rem',
+                color: 'rgba(255,255,255,0.6)',
+                marginBottom: '0.16rem',
               }}
             >
               GORKH
             </div>
-            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#ffffff' }}>{statusLabel}</div>
+            <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#ffffff' }}>{statusLabel}</div>
           </div>
           <div
             style={{
-              padding: '0.3rem 0.5rem',
+              padding: '0.25rem 0.5rem',
               borderRadius: '999px',
-              background: 'rgba(15,23,42,0.42)',
-              border: '1px solid rgba(148,163,184,0.18)',
-              color: '#dbe4ee',
-              fontSize: '0.65rem',
-              letterSpacing: '0.08em',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.7)',
+              fontSize: '0.6rem',
+              letterSpacing: '0.06em',
               textTransform: 'uppercase',
             }}
           >
@@ -91,7 +91,7 @@ export function OverlayController({
         </div>
 
         {goal ? (
-          <div style={{ marginTop: '0.45rem', color: '#94a3b8', fontSize: '0.78rem', lineHeight: 1.4 }}>
+          <div style={{ marginTop: '0.32rem', color: 'rgba(255,255,255,0.55)', fontSize: '0.72rem', lineHeight: 1.35 }}>
             {goal}
           </div>
         ) : null}
@@ -99,24 +99,25 @@ export function OverlayController({
 
       <div
         style={{
-          padding: '0.7rem 0.85rem',
+          padding: '0.5rem 0.75rem',
           display: 'grid',
-          gap: '0.45rem',
-          maxHeight: '150px',
+          gap: '0.32rem',
+          maxHeight: '110px',
           overflowY: 'auto',
         }}
       >
         {messagePreview.length === 0 ? (
-            <div
-              style={{
-                padding: '0.65rem 0.75rem',
-                borderRadius: '14px',
-                background: 'rgba(15,23,42,0.42)',
-                color: '#cbd5e1',
-                fontSize: '0.8rem',
-              }}
+          <div
+            style={{
+              padding: '0.5rem 0.6rem',
+              borderRadius: '10px',
+              background: 'rgba(255,255,255,0.06)',
+              color: 'rgba(255,255,255,0.5)',
+              fontSize: '0.74rem',
+              fontStyle: 'italic',
+            }}
           >
-            Short chat will appear here while GORKH works.
+            Working on your task...
           </div>
         ) : (
           messagePreview.map((message) => (
@@ -124,17 +125,17 @@ export function OverlayController({
               key={message.id}
               style={{
                 alignSelf: message.role === 'user' ? 'end' : 'start',
-                marginLeft: message.role === 'user' ? '2rem' : 0,
-                marginRight: message.role === 'agent' ? '2rem' : 0,
-                padding: '0.62rem 0.75rem',
-                borderRadius: '14px',
+                marginLeft: message.role === 'user' ? '1.5rem' : 0,
+                marginRight: message.role === 'agent' ? '1.5rem' : 0,
+                padding: '0.48rem 0.62rem',
+                borderRadius: '10px',
                 background: message.role === 'user'
-                  ? 'rgba(148,163,184,0.16)'
-                  : 'rgba(15,23,42,0.42)',
-                border: '1px solid rgba(148,163,184,0.16)',
-                color: '#f8fafc',
-                fontSize: '0.8rem',
-                lineHeight: 1.45,
+                  ? 'rgba(255,255,255,0.12)'
+                  : 'rgba(0,0,0,0.2)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                color: message.role === 'user' ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.85)',
+                fontSize: '0.74rem',
+                lineHeight: 1.35,
               }}
             >
               {message.text}
@@ -145,56 +146,56 @@ export function OverlayController({
 
       <div
         style={{
-          padding: '0 0.85rem 0.85rem',
+          padding: '0 0.75rem 0.65rem',
           display: 'flex',
           flexWrap: 'wrap',
-          gap: '0.45rem',
+          gap: '0.35rem',
         }}
       >
         <button
           onClick={onStop}
           style={{
-            padding: '0.6rem 0.85rem',
+            padding: '0.42rem 0.68rem',
             borderRadius: '999px',
-            border: '1px solid rgba(248,113,113,0.24)',
-            background: 'rgba(153,27,27,0.9)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            background: 'rgba(153,27,27,0.7)',
             color: '#fff',
             cursor: 'pointer',
-            fontWeight: 700,
-            fontSize: '0.8rem',
+            fontWeight: 600,
+            fontSize: '0.74rem',
           }}
         >
           Stop
         </button>
-          <button
-            onClick={onPauseToggle}
-            style={{
-              padding: '0.6rem 0.85rem',
-              borderRadius: '999px',
-              border: '1px solid rgba(148,163,184,0.18)',
-              background: 'rgba(15,23,42,0.34)',
-              color: '#f8fafc',
-              cursor: 'pointer',
-              fontWeight: 700,
-            fontSize: '0.8rem',
+        <button
+          onClick={onPauseToggle}
+          style={{
+            padding: '0.42rem 0.68rem',
+            borderRadius: '999px',
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.08)',
+            color: 'rgba(255,255,255,0.9)',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.74rem',
           }}
         >
           {isPaused ? 'Resume' : 'Pause'}
         </button>
-          <button
-            onClick={onOpenDetails}
-            style={{
-              padding: '0.6rem 0.85rem',
-              borderRadius: '999px',
-              border: '1px solid rgba(148,163,184,0.16)',
-              background: 'transparent',
-              color: '#cbd5e1',
-              cursor: 'pointer',
-            fontWeight: 700,
-            fontSize: '0.8rem',
+        <button
+          onClick={onOpenDetails}
+          style={{
+            padding: '0.42rem 0.68rem',
+            borderRadius: '999px',
+            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'transparent',
+            color: 'rgba(255,255,255,0.6)',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.74rem',
           }}
         >
-          {detailsOpen ? 'Hide details' : 'Show details'}
+          {detailsOpen ? 'Hide' : 'Details'}
         </button>
       </div>
     </div>

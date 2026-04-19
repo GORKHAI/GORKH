@@ -99,7 +99,30 @@ export function issueAccessToken(user: AuthUser): string {
   return jwt.sign(user, config.JWT_SECRET, {
     expiresIn: config.ACCESS_TOKEN_EXPIRES_IN as jwt.SignOptions['expiresIn'],
     subject: user.id,
+    // Key ID for rotation support: tokens include which key signed them
+    // Future rotation: add new key with v2, accept both during transition
+    keyid: config.JWT_KEY_ID,
   });
+}
+
+/**
+ * Verify an access token, with optional key rotation support.
+ * 
+ * During key rotation, this can be extended to try multiple keys
+ * based on the 'kid' header in the JWT.
+ */
+export function verifyAccessTokenWithRotation(token: string): AuthUser | null {
+  try {
+    // Decode without verification to get key ID for future rotation support
+    // const decodedHeader = jwt.decode(token, { complete: true })?.header;
+    // const keyId = decodedHeader?.kid;
+    // Future: if keyId === 'v2', use config.JWT_SECRET_V2, etc.
+
+    // For now, use the single configured secret
+    return verifyAccessToken(token);
+  } catch {
+    return null;
+  }
 }
 
 export function verifyAccessToken(token: string): AuthUser | null {

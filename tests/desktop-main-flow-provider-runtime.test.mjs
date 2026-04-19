@@ -10,7 +10,7 @@ test('desktop main Rust llm bridge keeps explicit adapters for the launch-paid p
 
   assert.match(llmSource, /pub mod claude;/, 'main llm module should expose a Claude adapter');
   assert.match(llmSource, /pub mod openai;/, 'main llm module should expose an OpenAI adapter');
-  assert.match(llmSource, /"claude"\s*=>\s*Ok\(Box::new\(claude::ClaudeProvider::new\(\)\)\)/, 'main llm module should map claude to its real adapter');
+  assert.match(llmSource, /"claude"\s*=>\s*Ok\(Box::new\(claude::ClaudeProvider\)\)/, 'main llm module should map claude to its real adapter');
   assert.match(llmSource, /"openai"\s*=>\s*Ok\(Box::new\(openai::OpenAiProvider\)\)/, 'main llm module should map openai to its real adapter');
 });
 

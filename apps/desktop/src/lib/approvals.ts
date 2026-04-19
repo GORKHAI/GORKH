@@ -161,6 +161,7 @@ export function getApprovalRiskForTool(toolCall: ToolCall): ApprovalRisk {
       return 'low';
     case 'fs.write_text':
     case 'fs.apply_patch':
+    case 'fs.delete':
     case 'terminal.exec':
       return 'high';
     default:

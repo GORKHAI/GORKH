@@ -38,7 +38,7 @@ Before pushing any stable tag, the following MUST be green:
 
 ### 1. CI Pipeline Status
 
-- [ ] `desktop-ci` workflow green (macOS and Windows builds)
+- [ ] `desktop-ci` workflow green for the current macOS release lane
 - [ ] `ci.yml` green (build, typecheck, tests, smoke)
 - [ ] All required status checks passing
 
@@ -115,6 +115,12 @@ curl -s https://api.github.com/repos/OWNER/REPO/releases/tags/v1.2.3-beta.1 | jq
 
 Beta releases appear on GitHub as "Pre-release" and are NOT picked up by the stable auto-updater.
 
+Download the workflow artifact `packaged-desktop-validation-beta`, fill it while testing the packaged Mac build, then verify it:
+
+```bash
+node scripts/release/verify-packaged-desktop-report.mjs --report /path/to/packaged-desktop-report-beta.template.json
+```
+
 ---
 
 ## Stable Releases
@@ -144,13 +150,19 @@ CI Workflow
     ↓
 Build + Test + Typecheck
     ↓
-Desktop Build (macOS, Windows)
+Desktop Build (macOS)
     ↓
 Code Signing + Notarization (macOS)
     ↓
 GitHub Release Created
     ↓
 Auto-updater Feed Updated
+```
+
+Before declaring the stable release ready, download the workflow artifact `packaged-desktop-validation-stable`, fill it on the packaged Mac test machine, then verify it:
+
+```bash
+node scripts/release/verify-packaged-desktop-report.mjs --report /path/to/packaged-desktop-report-stable.template.json
 ```
 
 ---
@@ -238,6 +250,20 @@ curl http://localhost:3001/updates/desktop/windows/x86_64/0.0.0.json | jq .
 
 # Expected: JSON manifest with version > 0.0.0
 ```
+
+### D) Packaged Desktop Sign-Off
+
+For the current stable rehearsal, the packaged Mac run must record:
+
+- confirmed local Free AI task execution
+- non-workspace / non-screen task execution
+- hosted fallback unavailable behavior
+- overlay and dragging behavior
+- stable updater truth
+
+Windows remains disabled for now, so stable sign-off is macOS-only.
+
+The rehearsal is incomplete until the corresponding packaged desktop report validates cleanly.
 
 #### GitHub Mode
 

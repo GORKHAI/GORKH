@@ -868,11 +868,10 @@ async function handleDeviceMessage(
             engine.start();
           }
         } else {
-          // For AI Assist, just mark as running and let device handle it
-          runStore.updateStatus(runId, 'running');
-          await persistRun(runId);
-          sseBroadcast({ type: 'run_update', run: runStore.get(runId)! });
-          fastify.log.info({ runId }, 'AI Assist run accepted - device will drive execution');
+          fastify.log.info(
+            { runId },
+            'AI Assist run accepted - waiting for first device activity before marking running'
+          );
         }
       }
       break;
@@ -1139,6 +1138,7 @@ async function handleDeviceMessage(
       const { deviceId, runId, step } = payload;
       fastify.log.info({ deviceId, runId, stepId: step.stepId, status: step.status }, 'Device step update received');
 
+      await markAiAssistRunRunningFromActivity(runId);
       const run = runStore.applyDeviceStepUpdate(runId, step as RunStep);
       if (run) {
         await persistRun(runId);
@@ -1155,12 +1155,16 @@ async function handleDeviceMessage(
       const { deviceId, runId, stepId, line, level, at } = payload;
       fastify.log.info({ deviceId, runId, stepId, level }, 'Device run log received');
 
+      const runBecameRunning = await markAiAssistRunRunningFromActivity(runId);
       const logLine: LogLine = { line: sanitizeRunLogLine(line), level, at };
       const run = runStore.addRunLog(runId, logLine);
       if (run) {
         await persistRun(runId);
         // Broadcast log via SSE
         sseBroadcast({ type: 'log_line', runId, stepId, log: logLine });
+        if (runBecameRunning) {
+          sseBroadcast({ type: 'run_update', run });
+        }
       }
       break;
     }
@@ -1169,6 +1173,7 @@ async function handleDeviceMessage(
       const { deviceId, runId, proposal } = payload;
       fastify.log.info({ deviceId, runId, proposalKind: proposal.kind }, 'Agent proposal received');
 
+      await markAiAssistRunRunningFromActivity(runId);
       const run = runStore.applyAgentProposal(runId, proposal as AgentProposal);
       if (run) {
         await persistRun(runId);
@@ -1202,6 +1207,10 @@ async function handleDeviceMessage(
         source,
         action: redactActionForLog(action),
       }, 'Device action create received');
+
+      const runBecameRunning = runId
+        ? await markAiAssistRunRunningFromActivity(runId)
+        : false;
 
       // Create action record (already approved locally)
       const deviceAction = actionStore.createActionFromDevice(
@@ -1242,6 +1251,8 @@ async function handleDeviceMessage(
         const run = runStore.get(runId);
         if (run) {
           sseBroadcast({ type: 'run_update', run });
+        } else if (runBecameRunning) {
+          fastify.log.warn({ runId }, 'AI Assist run transitioned to running but could not be reloaded for action update');
         }
       }
       break;
@@ -1329,6 +1340,7 @@ async function handleDeviceMessage(
       const redacted = redactToolCallForLogs(toolCall as ToolCall);
       fastify.log.info({ deviceId, runId, toolEventId, toolCallId, ...redacted }, 'Tool execution request received');
 
+      const runBecameRunning = await markAiAssistRunRunningFromActivity(runId);
       const summary: ToolSummary = {
         toolEventId,
         toolCallId,
@@ -1361,6 +1373,13 @@ async function handleDeviceMessage(
       });
 
       sseBroadcast({ type: 'tool_update', tool: stored });
+      if (runBecameRunning) {
+        const run = runStore.get(runId);
+        if (run) {
+          await persistRun(runId);
+          sseBroadcast({ type: 'run_update', run });
+        }
+      }
       break;
     }
 
@@ -1377,6 +1396,8 @@ async function handleDeviceMessage(
       ))) {
         return;
       }
+
+      const runBecameRunning = await markAiAssistRunRunningFromActivity(runId);
 
       // Determine final status
       const finalStatus: ToolEventStatus = result.ok ? 'executed' : 'failed';
@@ -1450,6 +1471,13 @@ async function handleDeviceMessage(
 
       // Broadcast tool update via SSE
       sseBroadcast({ type: 'tool_update', tool: summary });
+      if (runBecameRunning) {
+        const run = runStore.get(runId);
+        if (run) {
+          await persistRun(runId);
+          sseBroadcast({ type: 'run_update', run });
+        }
+      }
       break;
     }
 
@@ -1464,6 +1492,16 @@ async function persistRun(runId: string): Promise<void> {
   const ownerUserId = ownership.getRunOwner(runId);
   if (!run || !ownerUserId) return;
   await runsRepo.save(run, ownerUserId);
+}
+
+async function markAiAssistRunRunningFromActivity(runId: string): Promise<boolean> {
+  const run = runStore.get(runId);
+  if (!run || run.mode !== 'ai_assist' || run.status !== 'queued') {
+    return false;
+  }
+
+  runStore.updateStatus(runId, 'running');
+  return true;
 }
 
 // Helper to send message to a specific device
@@ -1495,6 +1533,56 @@ export function getConnectedDeviceIds(): string[] {
 
 export function getWsConnectionsCount(): number {
   return socketToDevice.size;
+}
+
+/**
+ * Close all WebSocket connections gracefully.
+ * Called during server shutdown to ensure clean disconnection of clients.
+ */
+export function closeAllConnections(log?: { info: (msg: string) => void; error: (msg: string) => void }): void {
+  const count = socketToDevice.size;
+  if (count === 0) {
+    log?.info('No WebSocket connections to close');
+    return;
+  }
+  
+  log?.info(`Closing ${count} WebSocket connections...`);
+  
+  for (const [socket, state] of socketToDevice) {
+    try {
+      // Send a server-going-away message if possible
+      if (state.helloReceived) {
+        const byeMsg = createServerMessage('server.error', {
+          code: ErrorCode.INTERNAL_ERROR,
+          message: 'Server is shutting down',
+        });
+        try {
+          socket.send(JSON.stringify(byeMsg));
+        } catch {
+          // Ignore send errors during shutdown
+        }
+      }
+      
+      // Close the socket
+      socket.close();
+      log?.info(`Closed connection ${state.connectionId} for device ${state.deviceId}`);
+    } catch (err) {
+      log?.error(`Failed to close connection ${state.connectionId}: ${err instanceof Error ? err.message : String(err)}`);
+      // Force terminate if close fails
+      try {
+        socket.terminate?.();
+      } catch {
+        // Ignore
+      }
+    }
+  }
+  
+  // Clear all tracking maps
+  socketToDevice.clear();
+  deviceGatewayLoops.clear();
+  deviceInFlightCommands.clear();
+  
+  log?.info('All WebSocket connections closed');
 }
 
 // SSE Broadcast functionality

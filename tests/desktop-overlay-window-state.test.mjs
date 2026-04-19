@@ -34,12 +34,12 @@ test('desktop chrome should expose a broader draggable shell than the current wo
 
   assert.match(
     appSource,
-    /data-tauri-drag-region[\s\S]{0,1500}BrandWordmark[\s\S]{0,1500}Open Settings/,
+    /data-tauri-drag-region[\s\S]{0,1600}BrandWordmark[\s\S]{0,1600}Stop All[\s\S]{0,1600}Settings/,
     'chrome should expose a larger draggable shell that spans beyond the wordmark-only handle'
   );
   assert.doesNotMatch(
     appSource,
-    /data-tauri-drag-region style=\{\{ paddingLeft: platform === 'macos' \? '5\.5rem' : 0, minHeight: platform === 'macos' \? '2\.25rem' : undefined \}\}/,
-    'chrome should not keep the tiny wordmark-only drag region'
+    /data-tauri-drag-region[\s\S]{0,240}position:\s*'absolute'[\s\S]{0,240}inset:\s*'0 0 auto 0'[\s\S]{0,240}height:\s*platform === 'macos' \? '4\.5rem' : '4rem'/,
+    'chrome should not keep the tiny hidden absolute drag strip'
   );
 });

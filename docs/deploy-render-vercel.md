@@ -1,4 +1,4 @@
-# Deploying AI Operator on Render + Vercel
+# Deploying GORKH on Render + Vercel
 
 This guide describes the recommended production topology for this repository:
 

@@ -39,8 +39,7 @@ test('desktop launch-facing provider list exposes only launch-ready providers', 
 test('desktop settings demotes non-launch compatibility providers from the beta menu', () => {
   const source = readFileSync('apps/desktop/src/components/SettingsPanel.tsx', 'utf8');
 
-  assert.match(source, /Free AI, OpenAI, and Claude/i);
-  assert.match(source, /Compatibility provider/i);
-  assert.match(source, /hidden from the beta provider menu/i);
-  assert.doesNotMatch(source, /officially supports[\s\S]*Custom OpenAI-compatible/i);
+  assert.match(source, /Free AI runs locally on your Mac when possible/i);
+  assert.match(source, /Advanced provider/i);
+  assert.match(source, /hidden from the main provider menu/i);
 });

@@ -98,7 +98,11 @@ export async function hasLlMProviderConfigured(provider: LlmProvider): Promise<b
   if (provider === 'native_qwen_ollama') {
     try {
       const status = await invoke<LocalAiRuntimeStatus>('local_ai_status');
-      return status.runtimeRunning && (Boolean(status.selectedModel) || status.externalServiceDetected);
+      return (
+        status.runtimeRunning
+        && status.targetModelAvailable === true
+        && (Boolean(status.selectedModel) || status.externalServiceDetected)
+      );
     } catch {
       return false;
     }

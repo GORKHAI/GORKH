@@ -9,6 +9,10 @@ const wsSmokeSource = readFileSync('scripts/smoke/wsSmoke.sh', 'utf8');
 const dbCheckSource = readFileSync('scripts/smoke/dbCheck.js', 'utf8');
 const githubVerifySource = readFileSync('scripts/release/verify-github-release.mjs', 'utf8');
 const apiVerifySource = readFileSync('scripts/release/verify-api-feed.mjs', 'utf8');
+const packagedVerifySource = readFileSync('scripts/release/verify-packaged-desktop-report.mjs', 'utf8');
+const releaseDocSource = readFileSync('docs/releasing.md', 'utf8');
+const releaseAcceptanceSource = readFileSync('docs/release-acceptance.md', 'utf8');
+const releaseRehearsalSource = readFileSync('docs/release-rehearsal.md', 'utf8');
 const darwinArmFeed = readFileSync('apps/api/updates/desktop-darwin-aarch64.json', 'utf8');
 const darwinIntelFeed = readFileSync('apps/api/updates/desktop-darwin-x86_64.json', 'utf8');
 const windowsFeed = readFileSync('apps/api/updates/desktop-windows-x86_64.json', 'utf8');
@@ -122,5 +126,55 @@ test('API release verification tolerates an omitted Windows download URL for mac
     apiVerifySource,
     /if \(data\.windowsUrl\) \{/,
     'API feed verification should only assert Windows download reachability when the API actually publishes a Windows URL'
+  );
+});
+
+test('release process documents stable macOS-only packaged sign-off with the packaged report verifier', () => {
+  assert.match(
+    packagedVerifySource,
+    /confirmed_task_local_free_ai[\s\S]*overlay_and_dragging[\s\S]*beta_updater_truth[\s\S]*stable_updater_truth/s,
+    'packaged desktop verifier should enforce the real-machine checks required for release sign-off'
+  );
+
+  assert.match(
+    releaseDocSource,
+    /verify-packaged-desktop-report\.mjs/,
+    'release documentation should point operators at the packaged desktop report verifier'
+  );
+
+  assert.match(
+    releaseDocSource,
+    /packaged-desktop-validation-stable/,
+    'release documentation should mention the stable workflow artifact that carries the packaged report template'
+  );
+
+  assert.match(
+    releaseDocSource,
+    /macOS-only|macOS only/i,
+    'release documentation should make the current macOS-only validation scope explicit'
+  );
+
+  assert.match(
+    releaseAcceptanceSource,
+    /Stable packaged report validated[\s\S]*macOS/i,
+    'release acceptance should require the stable packaged report from a real Mac'
+  );
+
+  assert.doesNotMatch(
+    releaseAcceptanceSource,
+    /Beta packaged report validated/,
+    'release acceptance should not require beta packaged sign-off in the current stable-only process'
+  );
+
+  assert.match(
+    releaseRehearsalSource,
+    /packaged-desktop-validation-stable/,
+    'release rehearsal should point operators at the stable packaged validation artifact'
+  );
+
+  assert.match(
+    releaseRehearsalSource,
+    /Windows.*disabled for now/i,
+    'release rehearsal should explicitly state that Windows remains disabled for now'
   );
 });

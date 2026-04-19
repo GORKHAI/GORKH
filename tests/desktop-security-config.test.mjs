@@ -58,10 +58,7 @@ test('desktop production security config is locked down', () => {
       'core:event:allow-listen',
       'core:event:allow-unlisten',
       'desktop-ipc',
-      'updater:allow-check',
-      'updater:allow-download',
-      'updater:allow-install',
-      'process:allow-restart',
+      'updater:default',
     ],
     'capability permissions must stay narrowly scoped while allowing the audited updater flow'
   );

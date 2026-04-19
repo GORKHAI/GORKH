@@ -26,6 +26,7 @@
     "check:desktop:security": "node scripts/check-desktop-security.mjs",
     "release:verify:github": "node scripts/release/verify-github-release.mjs",
     "release:verify:api": "node scripts/release/verify-api-feed.mjs",
+    "release:verify:packaged": "node scripts/release/verify-packaged-desktop-report.mjs",
     "release:verify": "pnpm release:verify:github && pnpm release:verify:api"
   },
   "devDependencies": {

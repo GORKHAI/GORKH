@@ -1,3 +1,23 @@
+//! Local AI runtime management
+//!
+//! Manages the lifecycle of a local Ollama-based AI runtime including:
+//! - Hardware detection and tier recommendation
+//! - Download and installation of the Ollama binary
+//! - Starting/stopping the local service
+//! - Model management and compatibility detection
+//!
+//! ## Architecture
+//!
+//! This module is organized into logical sections:
+//! - **TYPES**: Core types and state definitions
+//! - **PUBLIC API**: Main functions exposed to lib.rs
+//! - **INSTALLATION**: Download, extract, and setup runtime
+//! - **SERVICE MANAGEMENT**: Start, stop, and health check service
+//! - **HARDWARE DETECTION**: CPU, RAM, GPU detection
+//! - **MODEL COMPATIBILITY**: Model family matching and compatibility
+//! - **INTERNAL HELPERS**: Path management, utilities
+//! - **TESTS**: Unit tests for core logic
+
 use std::{
     env, fs, io,
     net::TcpStream,
@@ -20,6 +40,8 @@ use zip::ZipArchive;
 
 #[path = "local_ai_manifest.rs"]
 mod local_ai_manifest;
+
+mod model_compatibility;
 
 const LOCAL_AI_SERVICE_URL: &str = "http://127.0.0.1:11434";
 const LOCAL_AI_HOST: &str = "127.0.0.1:11434";
@@ -77,10 +99,13 @@ pub struct LocalAiRuntimeStatus {
     pub install_stage: LocalAiInstallStage,
     pub selected_tier: Option<LocalAiTier>,
     pub selected_model: Option<String>,
+    /// The actual model to use (may be a compatible variant of selected_model)
+    pub effective_model: Option<String>,
     pub installed_models: Vec<String>,
     pub runtime_source: Option<LocalAiRuntimeSource>,
     pub runtime_version: Option<String>,
     pub compatibility_mode: bool,
+    pub target_model_available: bool,
     pub last_error: Option<String>,
 }
 
@@ -167,6 +192,10 @@ struct LocalAiTierRuntimePlan {
     optional_vision_model: &'static str,
 }
 
+// =============================================================================
+// SECTION: TYPES - Core type and state definitions
+// =============================================================================
+
 #[derive(Clone)]
 pub struct LocalAiRuntimeState {
     install_progress: Arc<Mutex<LocalAiInstallProgress>>,
@@ -185,6 +214,10 @@ impl Default for LocalAiRuntimeState {
         }
     }
 }
+
+// =============================================================================
+// SECTION: PUBLIC API - Main functions exposed to lib.rs
+// =============================================================================
 
 pub async fn runtime_status(state: &LocalAiRuntimeState) -> Result<LocalAiRuntimeStatus, String> {
     let managed_runtime_dir = managed_runtime_dir();
@@ -206,6 +239,38 @@ pub async fn runtime_status(state: &LocalAiRuntimeState) -> Result<LocalAiRuntim
         matches!(runtime_ownership, LocalAiRuntimeOwnership::ExternalService);
     let last_error = state.last_error.lock().unwrap().clone();
 
+    let selected_tier = progress
+        .selected_tier
+        .or_else(|| metadata.as_ref().map(|value| value.selected_tier));
+    let selected_model = progress
+        .selected_model
+        .clone()
+        .or_else(|| metadata.as_ref().map(|value| value.selected_model.clone()));
+    let target_model = selected_model.clone().unwrap_or_else(|| {
+        let tier = selected_tier.unwrap_or(LocalAiTier::Light);
+        tier_runtime_plan(tier).default_model.to_string()
+    });
+
+    let (installed_models, target_model_available, compatible_model) = if running {
+        let live_models = fetch_installed_models(LOCAL_AI_SERVICE_URL).await;
+        let compatible = model_compatibility::find_compatible_model(&live_models, &target_model);
+        let available = compatible.is_some();
+        let model_to_use = compatible.map(|c| c.found_model).unwrap_or_else(|| target_model.clone());
+        (live_models, available, Some(model_to_use))
+    } else {
+        (
+            metadata
+                .as_ref()
+                .map(|value| value.installed_models.clone())
+                .unwrap_or_default(),
+            false,
+            None,
+        )
+    };
+
+    // Use the compatible model if found, otherwise fall back to target
+    let effective_model = compatible_model.unwrap_or_else(|| target_model.clone());
+
     Ok(LocalAiRuntimeStatus {
         managed_by_app: runtime_present
             || metadata.is_some()
@@ -220,25 +285,24 @@ pub async fn runtime_status(state: &LocalAiRuntimeState) -> Result<LocalAiRuntim
             progress.stage,
             runtime_present,
             running,
+            target_model_available,
             metadata.as_ref(),
         ),
-        selected_tier: progress
-            .selected_tier
-            .or_else(|| metadata.as_ref().map(|value| value.selected_tier)),
-        selected_model: progress
-            .selected_model
-            .clone()
-            .or_else(|| metadata.as_ref().map(|value| value.selected_model.clone())),
-        installed_models: metadata
-            .as_ref()
-            .map(|value| value.installed_models.clone())
-            .unwrap_or_default(),
+        selected_tier,
+        selected_model,
+        effective_model: if target_model_available {
+            Some(effective_model)
+        } else {
+            None
+        },
+        installed_models,
         runtime_source: metadata.as_ref().map(|value| value.runtime_source),
         runtime_version: metadata.as_ref().map(|value| value.runtime_version.clone()),
         compatibility_mode: metadata
             .as_ref()
             .map(|value| value.compatibility_mode)
             .unwrap_or(false),
+        target_model_available,
         last_error,
     })
 }
@@ -294,6 +358,13 @@ pub async fn compatibility_disposition(
         return Ok(LocalAiCompatibilityDisposition::ExternalService);
     }
 
+    // If our managed child is NOT running but the port IS occupied, the service
+    // belongs to an external process (e.g. system Ollama). GORKH cannot restart
+    // that process in CPU-safe mode, so treat it the same as an external service.
+    if !managed_child_running(state) && status.runtime_running {
+        return Ok(LocalAiCompatibilityDisposition::ExternalService);
+    }
+
     if status.compatibility_mode {
         return Ok(LocalAiCompatibilityDisposition::ManagedRuntimeAlreadyCompatible);
     }
@@ -315,7 +386,7 @@ pub fn managed_runtime_still_incompatible_message() -> String {
 
 pub fn external_service_compatibility_message(base_url: &str) -> String {
     format!(
-        "Free AI reached a Mac graphics compatibility problem inside the local AI service at {}. Restart or reconfigure that Ollama service outside GORKH, or let GORKH manage Free AI instead.",
+        "Free AI reached a Mac graphics compatibility problem inside the local AI service at {}. Stop that external Ollama service, then switch to GORKH-managed Free AI in Settings.",
         base_url.trim()
     )
 }
@@ -341,6 +412,12 @@ pub async fn install_start(
     let existing_metadata = read_metadata(&managed_dir);
 
     if let Some(metadata) = existing_metadata.as_ref() {
+        let port_open = is_service_port_open();
+        let target_available = if port_open {
+            runtime_status(state).await.map(|s| s.target_model_available).unwrap_or(false)
+        } else {
+            false
+        };
         if metadata.selected_tier == selected_tier
             && metadata
                 .installed_models
@@ -349,20 +426,20 @@ pub async fn install_start(
             && (expected_runtime_binary_path(&managed_dir)
                 .as_ref()
                 .is_some_and(|path| path.exists())
-                || is_service_port_open())
+                || target_available)
         {
             let ready_progress = LocalAiInstallProgress {
-                stage: if is_service_port_open() {
+                stage: if target_available {
                     LocalAiInstallStage::Ready
                 } else {
                     LocalAiInstallStage::Installed
                 },
                 selected_tier: Some(selected_tier),
                 selected_model: Some(plan.default_model.to_string()),
-                progress_percent: Some(if is_service_port_open() { 100 } else { 85 }),
+                progress_percent: Some(if target_available { 100 } else { 85 }),
                 downloaded_bytes: None,
                 total_bytes: None,
-                message: Some(if is_service_port_open() {
+                message: Some(if target_available {
                     format!("Free AI is ready with {}.", plan.default_model)
                 } else {
                     format!("Free AI files are installed for {}. Start the local runtime to finish setup.", plan.default_model)
@@ -394,7 +471,7 @@ pub async fn install_start(
 
     let worker_state = state.clone();
     thread::spawn(move || {
-        let result = run_install_worker(worker_state.clone(), managed_dir, selected_tier);
+        let result = run_install_worker(worker_state.clone(), managed_dir.clone(), selected_tier);
         if let Err(error) = result {
             set_last_error(&worker_state, error.clone());
             set_install_progress(
@@ -412,6 +489,7 @@ pub async fn install_start(
                     updated_at_ms: unix_time_ms(),
                 },
             );
+            clear_managed_takeover_marker(&managed_dir);
         }
         *worker_state.install_worker_active.lock().unwrap() = false;
     });
@@ -482,7 +560,7 @@ pub async fn enable_vision_boost(
     thread::spawn(move || {
         let result = run_enable_vision_boost_worker(
             worker_state.clone(),
-            managed_dir,
+            managed_dir.clone(),
             metadata.selected_tier,
         );
         if let Err(error) = result {
@@ -500,6 +578,7 @@ pub async fn enable_vision_boost(
                     updated_at_ms: unix_time_ms(),
                 },
             );
+            clear_managed_takeover_marker(&managed_dir);
         }
         *worker_state.install_worker_active.lock().unwrap() = false;
     });
@@ -512,7 +591,18 @@ pub async fn start_runtime(state: &LocalAiRuntimeState) -> Result<LocalAiRuntime
     ensure_managed_dirs(&managed_dir)?;
 
     if is_service_port_open() {
-        return runtime_status(state).await;
+        let status = runtime_status(state).await?;
+        if status.target_model_available {
+            return Ok(status);
+        }
+        let model = status
+            .selected_model
+            .as_deref()
+            .unwrap_or("the required model");
+        return Err(format!(
+            "Another local AI service is already running on {}, but {} is not available. Stop the other service or install the model so GORKH can use it.",
+            LOCAL_AI_SERVICE_URL, model
+        ));
     }
 
     let metadata = read_metadata(&managed_dir);
@@ -655,6 +745,36 @@ pub async fn enable_managed_runtime_compatibility_mode(
     start_runtime(state).await
 }
 
+pub async fn reset_to_managed(state: &LocalAiRuntimeState) -> Result<LocalAiRuntimeStatus, String> {
+    let managed_dir = managed_runtime_dir();
+    ensure_managed_dirs(&managed_dir)?;
+
+    if managed_child_running(state) {
+        let _ = stop_runtime(state).await?;
+    }
+
+    let path = metadata_path(&managed_dir);
+    if path.exists() {
+        fs::remove_file(&path).map_err(|error| {
+            format!(
+                "Failed to clear managed runtime metadata {}: {}",
+                path.display(),
+                error
+            )
+        })?;
+    }
+
+    write_managed_takeover_marker(&managed_dir)?;
+    set_install_progress(state, default_install_progress());
+    clear_last_error(state);
+
+    runtime_status(state).await
+}
+
+// =============================================================================
+// SECTION: HARDWARE DETECTION - CPU, RAM, GPU detection
+// =============================================================================
+
 pub fn hardware_profile() -> Result<LocalAiHardwareProfile, String> {
     let managed_dir = managed_runtime_dir();
 
@@ -713,6 +833,10 @@ pub fn recommend_tier(profile: &LocalAiHardwareProfile) -> LocalAiTierRecommenda
         standard_available: false,
     }
 }
+
+// =============================================================================
+// SECTION: INSTALLATION - Download, extract, and setup runtime
+// =============================================================================
 
 fn run_install_worker(
     state: LocalAiRuntimeState,
@@ -838,6 +962,7 @@ fn run_install_worker(
         },
     );
     clear_last_error(&state);
+    clear_managed_takeover_marker(&managed_dir);
     Ok(())
 }
 
@@ -1005,6 +1130,28 @@ fn models_dir(managed_dir: &Path) -> PathBuf {
 
 fn metadata_path(managed_dir: &Path) -> PathBuf {
     managed_dir.join(LOCAL_AI_METADATA_FILE)
+}
+
+fn managed_takeover_marker_path(managed_dir: &Path) -> PathBuf {
+    managed_dir.join("pending-managed-takeover")
+}
+
+fn has_managed_takeover_marker(managed_dir: &Path) -> bool {
+    managed_takeover_marker_path(managed_dir).exists()
+}
+
+fn write_managed_takeover_marker(managed_dir: &Path) -> Result<(), String> {
+    fs::write(managed_takeover_marker_path(managed_dir), b"1").map_err(|error| {
+        format!(
+            "Failed to write managed takeover marker to {}: {}",
+            managed_takeover_marker_path(managed_dir).display(),
+            error
+        )
+    })
+}
+
+fn clear_managed_takeover_marker(managed_dir: &Path) {
+    let _ = fs::remove_file(managed_takeover_marker_path(managed_dir));
 }
 
 fn read_metadata(managed_dir: &Path) -> Option<LocalAiInstallMetadata> {
@@ -1525,15 +1672,42 @@ fn detect_runtime_version(runtime_binary: &Path) -> Option<String> {
         .or_else(|| run_path_command_capture(runtime_binary, &["version"]))
 }
 
+// =============================================================================
+// SECTION: SERVICE MANAGEMENT - Start, stop, and health check service
+// =============================================================================
+
 fn ensure_service_running(
     state: &LocalAiRuntimeState,
     managed_dir: &Path,
     runtime_binary: &Path,
     compatibility_mode: bool,
 ) -> Result<bool, String> {
-    if managed_child_running(state) || is_service_port_open() {
+    if managed_child_running(state) {
+        clear_managed_takeover_marker(managed_dir);
         return Ok(false);
     }
+    if is_service_port_open() {
+        if has_managed_takeover_marker(managed_dir) {
+            return Err(format!(
+                "A local AI service is already running on {}. Stop it so GORKH can start its managed runtime.",
+                LOCAL_AI_SERVICE_URL
+            ));
+        }
+        let target_model = read_metadata(managed_dir)
+            .map(|m| m.selected_model)
+            .unwrap_or_default();
+        if !target_model.is_empty() {
+            let live_models = fetch_installed_models_sync(LOCAL_AI_SERVICE_URL);
+            if !live_models.iter().any(|m| m.trim() == target_model) {
+                return Err(format!(
+                    "A local AI service is already running on {}, but it does not have the required model ({}). Stop the external service so GORKH can start its managed runtime.",
+                    LOCAL_AI_SERVICE_URL, target_model
+                ));
+            }
+        }
+        return Ok(false);
+    }
+    clear_managed_takeover_marker(managed_dir);
 
     let mut command = managed_ollama_command(runtime_binary, managed_dir, compatibility_mode);
     command
@@ -1681,9 +1855,10 @@ fn derive_install_stage(
     progress_stage: LocalAiInstallStage,
     runtime_present: bool,
     running: bool,
+    target_model_available: bool,
     metadata: Option<&LocalAiInstallMetadata>,
 ) -> LocalAiInstallStage {
-    if running {
+    if running && target_model_available {
         return LocalAiInstallStage::Ready;
     }
     if matches!(
@@ -1725,6 +1900,10 @@ fn set_last_error(state: &LocalAiRuntimeState, error: String) {
 fn clear_last_error(state: &LocalAiRuntimeState) {
     *state.last_error.lock().unwrap() = None;
 }
+
+// =============================================================================
+// SECTION: INTERNAL HELPERS - Path management, utilities
+// =============================================================================
 
 fn managed_runtime_dir() -> PathBuf {
     let base_dir = dirs::data_local_dir()
@@ -1787,6 +1966,10 @@ fn unix_time_ms() -> u64 {
         .unwrap_or(0)
 }
 
+// =============================================================================
+// SECTION: SERVICE COMMUNICATION - HTTP API calls to local service
+// =============================================================================
+
 async fn is_service_running(base_url: &str) -> bool {
     let client = match Client::builder()
         .timeout(std::time::Duration::from_secs(2))
@@ -1805,6 +1988,75 @@ async fn is_service_running(base_url: &str) -> bool {
         Err(_) => false,
     }
 }
+
+async fn fetch_installed_models(base_url: &str) -> Vec<String> {
+    #[derive(Debug, Deserialize)]
+    struct TagsResponse {
+        models: Vec<ModelInfo>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct ModelInfo {
+        name: String,
+    }
+
+    let client = match Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return Vec::new(),
+    };
+
+    match client
+        .get(format!("{}/api/tags", base_url.trim_end_matches('/')))
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => {
+            match response.json::<TagsResponse>().await {
+                Ok(tags) => tags.models.into_iter().map(|m| m.name).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn fetch_installed_models_sync(base_url: &str) -> Vec<String> {
+    #[derive(Debug, Deserialize)]
+    struct TagsResponse {
+        models: Vec<ModelInfo>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct ModelInfo {
+        name: String,
+    }
+
+    let client = match BlockingClient::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return Vec::new(),
+    };
+
+    match client
+        .get(format!("{}/api/tags", base_url.trim_end_matches('/')))
+        .send()
+    {
+        Ok(response) if response.status().is_success() => {
+            match response.json::<TagsResponse>() {
+                Ok(tags) => tags.models.into_iter().map(|m| m.name).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+        _ => Vec::new(),
+    }
+}
+
+// =============================================================================
+// SECTION: HARDWARE DETECTION (implementation) - CPU, RAM, GPU detection
+// =============================================================================
 
 fn detect_cpu_model() -> Option<String> {
     #[cfg(target_os = "linux")]
@@ -2030,6 +2282,10 @@ fn run_path_command_capture(program: &Path, args: &[&str]) -> Option<String> {
     }
 }
 
+// =============================================================================
+// SECTION: TESTS - Unit tests for core logic
+// =============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2103,6 +2359,59 @@ mod tests {
                 key == "OLLAMA_LLM_LIBRARY" && value.as_deref() == Some("cpu")
             }),
             "compatibility mode should force the managed runtime onto the CPU-safe backend"
+        );
+    }
+
+    #[test]
+    fn derive_install_stage_transitions_correctly() {
+        use LocalAiInstallStage::*;
+
+        // Ready when running and model available
+        assert_eq!(
+            derive_install_stage(NotStarted, true, true, true, None),
+            Ready
+        );
+
+        // Active progress stages preserved during operations
+        assert_eq!(
+            derive_install_stage(Installing, true, true, false, None),
+            Installing
+        );
+        assert_eq!(
+            derive_install_stage(Starting, true, true, false, None),
+            Starting
+        );
+        assert_eq!(
+            derive_install_stage(Error, true, false, false, None),
+            Error
+        );
+
+        // Installed when runtime present but not running
+        assert_eq!(
+            derive_install_stage(NotStarted, true, false, false, None),
+            Installed
+        );
+
+        // Not started when nothing present
+        assert_eq!(
+            derive_install_stage(NotStarted, false, false, false, None),
+            NotStarted
+        );
+
+        // Metadata presence counts as installed
+        let metadata = LocalAiInstallMetadata {
+            runtime_version: "1.0".to_string(),
+            runtime_source: LocalAiRuntimeSource::Managed,
+            selected_tier: LocalAiTier::Light,
+            selected_model: "qwen2.5:1.5b".to_string(),
+            installed_models: vec!["qwen2.5:1.5b".to_string()],
+            optional_vision_model: None,
+            compatibility_mode: false,
+            updated_at_ms: 0,
+        };
+        assert_eq!(
+            derive_install_stage(NotStarted, false, false, false, Some(&metadata)),
+            Installed
         );
     }
 }
