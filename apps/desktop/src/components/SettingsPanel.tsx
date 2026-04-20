@@ -29,7 +29,6 @@ import {
   getDesktopUpdaterStatusMessage,
   type DesktopUpdaterState,
 } from '../lib/desktopUpdater.js';
-import type { DesktopApiRuntimeConfig } from '../lib/desktopRuntimeConfig.js';
 import {
   shouldRetryWithHostedFreeAiFallback,
   testHostedFreeAiFallback,
@@ -68,6 +67,8 @@ interface SettingsPanelProps {
   diagnosticsStatus?: string | null;
   overviewPanels?: ReactNode;
   hostedFreeAiEnabled?: boolean;
+  runtimeConfig?: import('../lib/desktopRuntimeConfig.js').DesktopApiRuntimeConfig | null;
+  sessionDeviceToken?: string | null;
 }
 
 export function SettingsPanel({
@@ -97,6 +98,8 @@ export function SettingsPanel({
   diagnosticsStatus,
   overviewPanels,
   hostedFreeAiEnabled = false,
+  runtimeConfig,
+  sessionDeviceToken,
 }: SettingsPanelProps) {
   const settings = llmSettings;
   const providerDefinition = getLlmProviderDefinition(settings.provider);

@@ -4219,6 +4219,8 @@ function App() {
           diagnosticsStatus={diagnosticsStatus}
           overviewPanels={settingsOperationalPanels}
           hostedFreeAiEnabled={desktopBootstrap?.readiness.hostedFreeAiEnabled ?? false}
+          runtimeConfig={runtimeConfig}
+          sessionDeviceToken={sessionDeviceToken}
         />
       )}
     </div>

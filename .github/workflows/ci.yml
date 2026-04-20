@@ -44,6 +44,9 @@ jobs:
       - name: Install dependencies
         run: pnpm -r install --frozen-lockfile
 
+      - name: Generate Prisma client
+        run: pnpm --filter @ai-operator/api prisma:generate
+
       - name: Wait for Redis
         run: |
           for i in {1..30}; do

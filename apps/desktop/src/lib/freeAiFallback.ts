@@ -1,4 +1,5 @@
 import type { DesktopApiRuntimeConfig } from './desktopRuntimeConfig.js';
+import { fetchDesktopApiJson } from './desktopApi.js';
 import { parseDesktopError } from './tauriError.js';
 
 export const HOSTED_FREE_AI_MODEL = 'gorkh-free-ai';
@@ -38,6 +39,18 @@ export function canUseHostedFreeAiFallback(
   input: HostedFreeAiAvailabilityInput
 ): boolean {
   return Boolean(input.hostedFreeAiEnabled && input.runtimeConfig && input.deviceToken);
+}
+
+export async function testHostedFreeAiFallback(
+  runtimeConfig: DesktopApiRuntimeConfig,
+  deviceToken: string
+): Promise<void> {
+  await fetchDesktopApiJson<{ ok: true }>(
+    runtimeConfig,
+    deviceToken,
+    '/desktop/free-ai/v1/models',
+    'Hosted Free AI fallback',
+  );
 }
 
 export function shouldRetryWithHostedFreeAiFallback(error: unknown): boolean {
