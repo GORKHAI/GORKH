@@ -17,7 +17,7 @@
     "smoke:from-zero": "bash scripts/smoke/httpSmoke.sh",
     "smoke:ws": "bash scripts/smoke/wsSmoke.sh",
     "smoke:final": "bash scripts/final-smoke.sh",
-    "test": "pnpm --filter @ai-operator/shared test && pnpm --filter @ai-operator/api test && node --import tsx --test --test-force-exit tests/**/*.test.mjs tests/**/*.test.ts",
+    "test": "pnpm --filter @ai-operator/shared test && pnpm --filter @ai-operator/api test && node --import tsx --test --test-force-exit tests/*.test.mjs tests/*.test.ts",
     "typecheck": "turbo run typecheck",
     "version:check": "node scripts/version-check.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
