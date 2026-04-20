@@ -50,3 +50,8 @@ apps/desktop/src/**/*.js.map
 apps/desktop/src/**/*.d.ts
 apps/desktop/src/**/*.d.ts.map
 !apps/desktop/src/vite-env.d.ts
+
+# Generated / local-only
+.codex
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
