@@ -573,6 +573,7 @@ jobs:
           printf 'MACOS_ASSET_PATH=%s\n' "$TARGET_NAME" >> "$GITHUB_ENV"
 
       - name: Notarize and staple macOS artifact
+        if: needs.prepare.outputs.channel == 'stable'
         shell: bash
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
