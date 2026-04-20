@@ -383,7 +383,7 @@ jobs:
               exit 1
             fi
 
-            ENDPOINT="${VITE_API_HTTP_BASE%/}/updates/desktop/{{platform}}/{{arch}}/{{current_version}}.json"
+            ENDPOINT="${VITE_API_HTTP_BASE%/}/updates/desktop/{{target}}/{{arch}}/{{current_version}}.json"
             node -e "const fs=require('fs'); const configPath=process.argv[1]; const endpoint=process.argv[2]; const pubkey=process.env.VITE_DESKTOP_UPDATER_PUBLIC_KEY; const config={plugins:{updater:{active:true,dialog:true,pubkey,endpoints:[endpoint]}}}; fs.writeFileSync(configPath, JSON.stringify(config, null, 2));" "$CONFIG_PATH" "$ENDPOINT"
           else
             node -e "const fs=require('fs'); const configPath=process.argv[1]; const config={plugins:{updater:{active:false,dialog:true}}}; fs.writeFileSync(configPath, JSON.stringify(config, null, 2));" "$CONFIG_PATH"
