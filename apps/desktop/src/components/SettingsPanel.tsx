@@ -1095,6 +1095,11 @@ export function SettingsPanel({
             }}
           >
             {updaterStatusMessage}
+            {desktopUpdaterState.status === 'downloaded' && (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: '#475569' }}>
+                On macOS, if the app does not restart automatically, right-click the tray icon and choose "Quit GORKH", then reopen the app.
+              </div>
+            )}
             {desktopUpdaterState.notes ? (
               <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: '#475569' }}>
                 {desktopUpdaterState.notes}

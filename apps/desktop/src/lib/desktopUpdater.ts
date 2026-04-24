@@ -152,7 +152,7 @@ export function getDesktopUpdaterStatusMessage(state: DesktopUpdaterState): stri
   }
 
   if (state.status === 'installing') {
-    return 'Restarting to finish the update.';
+    return 'Restarting to finish the update. If the app does not reopen automatically, quit it from the tray menu and reopen manually.';
   }
 
   if (state.status === 'upToDate') {

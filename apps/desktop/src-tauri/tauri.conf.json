@@ -50,7 +50,7 @@
   "plugins": {
     "updater": {
       "active": true,
-      "dialog": true,
+      "dialog": false,
       "endpoints": [
         "{{env:VITE_API_HTTP_BASE}}/updates/desktop/{{target}}/{{arch}}/{{current_version}}.json"
       ],
