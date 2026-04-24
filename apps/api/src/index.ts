@@ -139,7 +139,7 @@ const versionDriftWarnings = getVersionDriftWarnings();
 await fastify.register(cookie);
 await fastify.register(cors, {
   origin(origin, callback) {
-    if (isAllowedCorsOrigin(origin, config.WEB_ORIGINS)) {
+    if (!origin || isAllowedCorsOrigin(origin, config.WEB_ORIGINS)) {
       callback(null, true);
       return;
     }
