@@ -407,6 +407,52 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn repair_unescaped_quotes_fixes_llm_json_with_inner_quotes() {
+        let broken = r#"{"kind":"confirm_task","goal":"DELETE Downloads FILES","summary":"I will delete allFiles named "desktop-release-macos-aarch64" in Downloads folder.","prompt":"Confirm?"}"#;
+        let repaired = repair_unescaped_quotes_in_json(broken);
+        let parsed: ConversationTurnResult =
+            serde_json::from_str(&repaired).expect("repaired JSON should parse");
+        match parsed {
+            ConversationTurnResult::ConfirmTask { summary, .. } => {
+                assert_eq!(
+                    summary,
+                    "I will delete allFiles named \"desktop-release-macos-aarch64\" in Downloads folder."
+                );
+            }
+            _ => panic!("expected confirm_task"),
+        }
+    }
+
+    #[test]
+    fn repair_unescaped_quotes_does_not_double_escape_proper_json() {
+        let valid = r#"{"kind":"reply","message":"He said \"hello\""}"#;
+        let repaired = repair_unescaped_quotes_in_json(valid);
+        assert_eq!(repaired, valid);
+        let parsed: ConversationTurnResult =
+            serde_json::from_str(&repaired).expect("valid JSON should still parse");
+        match parsed {
+            ConversationTurnResult::Reply { message } => {
+                assert_eq!(message, "He said \"hello\"");
+            }
+            _ => panic!("expected reply"),
+        }
+    }
+
+    #[test]
+    fn repair_unescaped_quotes_handles_multiple_broken_strings() {
+        let broken = r#"{"kind":"reply","message":"The "quick" brown "fox" jumps"}"#;
+        let repaired = repair_unescaped_quotes_in_json(broken);
+        let parsed: ConversationTurnResult =
+            serde_json::from_str(&repaired).expect("repaired JSON should parse");
+        match parsed {
+            ConversationTurnResult::Reply { message } => {
+                assert_eq!(message, "The \"quick\" brown \"fox\" jumps");
+            }
+            _ => panic!("expected reply"),
+        }
+    }
 }
 
 /// Error type for LLM operations
@@ -696,13 +742,105 @@ fn parse_prefixed_variant_payload<T: DeserializeOwned>(
     Some(serde_json::from_value(serde_json::Value::Object(object)))
 }
 
+/// Repair common JSON escaping errors produced by small/local LLMs.
+///
+/// The most frequent failure mode is unescaped double quotes inside string values,
+/// e.g. `{"summary":"I will delete "files" here"}`.
+///
+/// Heuristic: when inside a string, a `"` is treated as a terminator only if the
+/// next non-whitespace character is a structural token (`:`, `,`, `}`, `]`, EOF
+/// or newline). Otherwise it is escaped as `\"`.
+pub fn repair_unescaped_quotes_in_json(content: &str) -> String {
+    let mut result = String::with_capacity(content.len() + 16);
+    let mut in_string = false;
+    let mut escaped = false;
+    let bytes = content.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        let ch = bytes[i] as char;
+
+        if in_string {
+            if escaped {
+                result.push(ch);
+                escaped = false;
+                i += 1;
+                continue;
+            }
+
+            if ch == '\\' {
+                result.push(ch);
+                escaped = true;
+                i += 1;
+                continue;
+            }
+
+            if ch == '"' {
+                // Look ahead to decide whether this quote terminates the string.
+                let mut j = i + 1;
+                let mut is_terminator = false;
+                while j < bytes.len() {
+                    let next = bytes[j] as char;
+                    if next.is_whitespace() {
+                        j += 1;
+                        continue;
+                    }
+                    // Structural characters indicate a string terminator.
+                    if next == ':' || next == ',' || next == '}' || next == ']' {
+                        is_terminator = true;
+                    }
+                    break;
+                }
+                // EOF also means terminator.
+                if j >= bytes.len() {
+                    is_terminator = true;
+                }
+
+                if is_terminator {
+                    result.push(ch);
+                    in_string = false;
+                } else {
+                    result.push('\\');
+                    result.push(ch);
+                }
+                i += 1;
+                continue;
+            }
+
+            result.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // Not inside a string.
+        if ch == '"' {
+            in_string = true;
+        }
+        result.push(ch);
+        i += 1;
+    }
+
+    result
+}
+
 pub fn parse_json_response<T: DeserializeOwned>(content: &str, label: &str) -> Result<T, LlmError> {
     match serde_json::from_str(content) {
         Ok(parsed) => Ok(parsed),
         Err(e) => {
             let cleaned = strip_markdown_code_fence(content);
 
-            serde_json::from_str(cleaned).map_err(|_| LlmError {
+            // Try cleaned text first.
+            if let Ok(parsed) = serde_json::from_str::<T>(cleaned) {
+                return Ok(parsed);
+            }
+
+            // Try repairing unescaped quotes (common with small/local LLMs).
+            let repaired = repair_unescaped_quotes_in_json(cleaned);
+            if let Ok(parsed) = serde_json::from_str::<T>(&repaired) {
+                return Ok(parsed);
+            }
+
+            Err(LlmError {
                 code: LlmErrorCode::InvalidJson,
                 message: format!(
                     "Failed to parse {}: {}. Content: {}",
@@ -909,22 +1047,30 @@ pub fn parse_conversation_turn_result(content: &str) -> Result<ConversationTurnR
         .unwrap_or(content)
         .trim();
 
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(cleaned) {
-        // Model returned {"message": "..."} without kind → treat as reply.
-        if let Some(msg) = value.get("message").and_then(|v| v.as_str()) {
-            if !msg.is_empty() {
-                return Ok(ConversationTurnResult::Reply { message: msg.to_string() });
+    // Try parsing cleaned text, then repaired text (fixes unescaped quotes from small LLMs).
+    let json_attempts = [
+        cleaned,
+        &repair_unescaped_quotes_in_json(cleaned),
+    ];
+    for attempt in &json_attempts {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(attempt) {
+            // Model returned {"message": "..."} without kind → treat as reply.
+            if let Some(msg) = value.get("message").and_then(|v| v.as_str()) {
+                if !msg.is_empty() {
+                    return Ok(ConversationTurnResult::Reply { message: msg.to_string() });
+                }
             }
-        }
-        // Model returned some other JSON object → extract any string value as reply.
-        if let Some(map) = value.as_object() {
-            for v in map.values() {
-                if let Some(s) = v.as_str() {
-                    if !s.is_empty() && s.len() > 3 {
-                        return Ok(ConversationTurnResult::Reply { message: s.to_string() });
+            // Model returned some other JSON object → extract any string value as reply.
+            if let Some(map) = value.as_object() {
+                for v in map.values() {
+                    if let Some(s) = v.as_str() {
+                        if !s.is_empty() && s.len() > 3 {
+                            return Ok(ConversationTurnResult::Reply { message: s.to_string() });
+                        }
                     }
                 }
             }
+            break;
         }
     }
 
