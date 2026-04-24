@@ -44,11 +44,17 @@ function parseDurationSeconds(expiresIn: string): number {
 }
 
 function getCookieBaseOptions() {
-  return {
+  const options = {
     sameSite: 'lax' as const,
     secure: config.NODE_ENV === 'production',
     path: '/',
-  };
+  } as { sameSite: 'lax'; secure: boolean; path: string; domain?: string };
+
+  if (config.COOKIE_DOMAIN) {
+    options.domain = config.COOKIE_DOMAIN;
+  }
+
+  return options;
 }
 
 function getAccessCookieOptions() {

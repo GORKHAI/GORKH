@@ -17,6 +17,7 @@ const configSchema = z.object({
   CSRF_COOKIE_NAME: z.string().default('csrf_token'),
   ACCESS_COOKIE_NAME: z.string().default('access_token'),
   REFRESH_COOKIE_NAME: z.string().default('refresh_token'),
+  COOKIE_DOMAIN: z.string().optional(),
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
   ALLOW_INSECURE_DEV: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   STRIPE_SECRET_KEY: z.string().default(''),
@@ -80,6 +81,7 @@ function loadConfig() {
     CSRF_COOKIE_NAME: process.env.CSRF_COOKIE_NAME,
     ACCESS_COOKIE_NAME: process.env.ACCESS_COOKIE_NAME,
     REFRESH_COOKIE_NAME: process.env.REFRESH_COOKIE_NAME,
+    COOKIE_DOMAIN: process.env.COOKIE_DOMAIN,
     WEB_ORIGIN: process.env.WEB_ORIGIN,
     ALLOW_INSECURE_DEV: process.env.ALLOW_INSECURE_DEV,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
@@ -146,6 +148,7 @@ function loadConfig() {
     console.error('   CSRF_COOKIE_NAME (default: csrf_token)');
     console.error('   ACCESS_COOKIE_NAME (default: access_token)');
     console.error('   REFRESH_COOKIE_NAME (default: refresh_token)');
+    console.error('   COOKIE_DOMAIN (optional, e.g. .example.com)');
     console.error('   WEB_ORIGIN (default: http://localhost:3000)');
     console.error('   ALLOW_INSECURE_DEV (default: false)');
     console.error('   STRIPE_SECRET_KEY');
