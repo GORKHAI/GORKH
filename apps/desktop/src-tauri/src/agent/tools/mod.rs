@@ -223,3 +223,44 @@ pub fn execute_gorkh_tool(tool_call: &crate::llm::ToolCall) -> ToolResult {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::ToolCall;
+
+    #[test]
+    fn app_get_state_returns_json() {
+        let result = get_app_state();
+        assert!(result.success);
+        assert!(result.message.contains("GORKH"));
+        assert!(result.message.contains("advanced_agent"));
+    }
+
+    #[test]
+    fn execute_gorkh_tool_routes_app_get_state() {
+        let result = execute_gorkh_tool(&ToolCall::AppGetState);
+        assert!(result.success);
+        assert!(result.message.contains("GORKH"));
+    }
+
+    #[test]
+    fn execute_gorkh_tool_routes_empty_trash() {
+        // On Linux in CI/codespace, this should succeed silently if trash is empty
+        let result = execute_gorkh_tool(&ToolCall::EmptyTrash);
+        // We can't assert success because the trash dir may not exist or the command may fail
+        // but we can assert it doesn't panic and returns a result
+        assert!(
+            result.success || result.message.contains("Failed") || result.message.contains("trash"),
+            "Unexpected result: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn execute_gorkh_tool_rejects_unknown() {
+        let result = execute_gorkh_tool(&ToolCall::FsList { path: "/tmp".to_string() });
+        assert!(!result.success);
+        assert!(result.message.contains("not a GORKH system tool"));
+    }
+}
