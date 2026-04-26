@@ -1738,7 +1738,6 @@ export type ServerEventType =
 // AI Engineering System (Iteration 30)
 // ============================================================================
 
-export * from './agent/index.js';
 
 // ============================================================================
 // LLM Error Codes (Phase 3 Observability)
