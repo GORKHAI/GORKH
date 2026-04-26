@@ -27,6 +27,7 @@ import {
 } from './lib/assistantEngine.js';
 import {
   DEFAULT_LLM_PROVIDER,
+  FREE_AI_ENABLED,
   getLlmDefaults,
   getLlmProviderLabel,
   mergeLlmSettings,
@@ -281,7 +282,7 @@ function toAssistantConversationMessages(items: ChatItem[]): AssistantConversati
 
 function getAssistantConversationGreeting(provider: string, providerConfigured: boolean): string {
   if (!providerConfigured) {
-    return provider === DEFAULT_LLM_PROVIDER
+    return provider === 'native_qwen_ollama'
       ? GORKH_ONBOARDING.freeAiNotReady
       : GORKH_ONBOARDING.providerNotConfigured;
   }
@@ -392,7 +393,9 @@ function App() {
   const assistantEngineRef = useRef<AssistantEngineHandle | null>(null);
   const [aiState, setAiState] = useState<AssistantEngineState | null>(null);
   const [currentProposal, setCurrentProposal] = useState<AgentProposal | undefined>(undefined);
-  const [llmSettings, setLlmSettings] = useState<LlmSettings>(() => getLlmDefaults(DEFAULT_LLM_PROVIDER));
+  const [llmSettings, setLlmSettings] = useState<LlmSettings>(() =>
+    getLlmDefaults(FREE_AI_ENABLED ? DEFAULT_LLM_PROVIDER : 'openai')
+  );
   const [providerConfigured, setProviderConfigured] = useState(false);
   const [providerCheckBusy, setProviderCheckBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -3887,7 +3890,7 @@ function App() {
                 </div>
               )}
 
-              {(showFreeAiSetup || showVisionBoostSetup) && (
+              {FREE_AI_ENABLED && (showFreeAiSetup || showVisionBoostSetup) && (
                 <FreeAiSetupCard
                   status={localAiStatus}
                   installProgress={localAiInstallProgress}

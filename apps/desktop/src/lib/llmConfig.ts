@@ -32,6 +32,8 @@ export interface LlmProviderDefinition {
 
 export const DEFAULT_LLM_PROVIDER: LlmProvider = 'native_qwen_ollama';
 
+export const FREE_AI_ENABLED = import.meta.env.VITE_FREE_AI_ENABLED === 'true';
+
 const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
   native_qwen_ollama: {
     provider: 'native_qwen_ollama',
@@ -144,7 +146,10 @@ export function isLlmProvider(value: string | undefined | null): value is LlmPro
 }
 
 export function normalizeLlmProvider(value: string | undefined | null): LlmProvider {
-  return isLlmProvider(value) ? value : DEFAULT_LLM_PROVIDER;
+  if (isLlmProvider(value)) {
+    return value;
+  }
+  return FREE_AI_ENABLED ? DEFAULT_LLM_PROVIDER : 'openai';
 }
 
 export function getLlmDefaults(provider: LlmProvider): LlmSettings {
@@ -190,11 +195,17 @@ export function getLlmProviderDefinition(provider: LlmProvider): LlmProviderDefi
 }
 
 export function isLaunchLlmProvider(provider: LlmProvider): boolean {
-  return LAUNCH_PROVIDER_ORDER.includes(provider);
+  const launchOrder = FREE_AI_ENABLED
+    ? LAUNCH_PROVIDER_ORDER
+    : LAUNCH_PROVIDER_ORDER.filter((p) => p !== 'native_qwen_ollama');
+  return launchOrder.includes(provider);
 }
 
 export function getSupportedLlmProviders(): LlmProviderDefinition[] {
-  return LAUNCH_PROVIDER_ORDER.map((provider) => PROVIDER_DEFINITIONS[provider]);
+  const order = FREE_AI_ENABLED
+    ? LAUNCH_PROVIDER_ORDER
+    : LAUNCH_PROVIDER_ORDER.filter((p) => p !== 'native_qwen_ollama');
+  return order.map((provider) => PROVIDER_DEFINITIONS[provider]);
 }
 
 export function getAdvancedLlmProviders(): LlmProviderDefinition[] {
@@ -204,5 +215,8 @@ export function getAdvancedLlmProviders(): LlmProviderDefinition[] {
 }
 
 export function getAllLlmProviders(): LlmProviderDefinition[] {
-  return ALL_PROVIDER_ORDER.map((provider) => PROVIDER_DEFINITIONS[provider]);
+  const order = FREE_AI_ENABLED
+    ? ALL_PROVIDER_ORDER
+    : ALL_PROVIDER_ORDER.filter((p) => p !== 'native_qwen_ollama');
+  return order.map((provider) => PROVIDER_DEFINITIONS[provider]);
 }

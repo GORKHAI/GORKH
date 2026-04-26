@@ -15,6 +15,7 @@ import {
   type PermissionTarget,
 } from '../lib/permissions.js';
 import {
+  FREE_AI_ENABLED,
   getAdvancedLlmProviders,
   getLlmDefaults,
   getLlmProviderDefinition,
@@ -433,7 +434,7 @@ export function SettingsPanel({
             🤖 AI Assist Configuration
           </h3>
           <p style={{ margin: '0 0 1rem', fontSize: '0.875rem', color: '#666' }}>
-            Configure the assistant model. Free AI runs locally on your Mac when possible and can fall back to a hosted service when you&apos;re signed in. OpenAI and Claude use your own API keys. API keys stay in the OS keychain and are never sent to the server.
+            Configure the assistant model.{FREE_AI_ENABLED && ' Free AI runs locally on your Mac when possible and can fall back to a hosted service when you\'re signed in.'} OpenAI, Claude, DeepSeek, and Kimi use your own API keys. API keys stay in the OS keychain and are never sent to the server.
           </p>
 
           {/* Provider */}
@@ -619,8 +620,9 @@ export function SettingsPanel({
             </div>
           )}
           
-          {/* Free AI note */}
-          {settings.provider === 'native_qwen_ollama' && (
+          {/* Free AI note — hidden from retail launch per v1 product decision.
+              Re-enable by setting VITE_FREE_AI_ENABLED=true at build time. */}
+          {FREE_AI_ENABLED && settings.provider === 'native_qwen_ollama' && (
             <div style={{ 
               marginBottom: '1rem', 
               padding: '0.75rem', 
