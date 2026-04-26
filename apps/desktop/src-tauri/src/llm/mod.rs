@@ -186,6 +186,15 @@ pub enum ToolCall {
     },
     #[serde(rename = "free_ai.install")]
     FreeAiInstall { tier: String },
+    // Phase 1 system tools
+    #[serde(rename = "system.empty_trash")]
+    EmptyTrash,
+    #[serde(rename = "fs.move_files")]
+    MoveFiles { paths: Vec<String>, destination: String },
+    #[serde(rename = "system.get_clipboard")]
+    GetClipboard,
+    #[serde(rename = "system.set_clipboard")]
+    SetClipboard { text: String },
 }
 
 impl ToolCall {
@@ -200,6 +209,9 @@ impl ToolCall {
                 | ToolCall::TerminalExec { .. }
                 | ToolCall::SettingsSet { .. }
                 | ToolCall::FreeAiInstall { .. }
+                | ToolCall::EmptyTrash
+                | ToolCall::MoveFiles { .. }
+                | ToolCall::SetClipboard { .. }
         )
     }
 
@@ -216,6 +228,10 @@ impl ToolCall {
             ToolCall::AppGetState => "app",
             ToolCall::SettingsSet { key, .. } => key,
             ToolCall::FreeAiInstall { tier } => tier,
+            ToolCall::EmptyTrash => "trash",
+            ToolCall::MoveFiles { .. } => "files",
+            ToolCall::GetClipboard => "clipboard",
+            ToolCall::SetClipboard { .. } => "clipboard",
         }
     }
 }
@@ -343,8 +359,8 @@ pub struct RunConstraints {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_conversation_user_prompt, parse_json_response, ConversationTurnMessage,
-        ConversationTurnResult, RunConstraints,
+        build_conversation_user_prompt, parse_json_response, repair_unescaped_quotes_in_json,
+        ConversationTurnMessage, ConversationTurnResult, RunConstraints,
     };
 
     #[test]

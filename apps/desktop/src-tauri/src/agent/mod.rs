@@ -8,6 +8,8 @@ pub mod providers;
 #[allow(dead_code)]
 pub mod recorder;
 #[allow(dead_code)]
+pub mod tools;
+#[allow(dead_code)]
 pub mod vision;
 
 use crate::llm::{
@@ -288,7 +290,7 @@ enum PendingInteraction {
 
 enum PendingExecution {
     Action(executor::Action),
-    Tool(workspace::ToolCall),
+    Tool(RetailToolCall),
 }
 
 enum StepOutcome {
@@ -1138,7 +1140,25 @@ async fn execute_pending(
             }
         }
         PendingExecution::Tool(tool_call) => {
-            workspace::tool_execute_for_agent(tool_call).map_err(AgentError::Approval)
+            // Route workspace tools through workspace module, GORKH tools through tools module.
+            match &tool_call {
+                RetailToolCall::EmptyTrash
+                | RetailToolCall::GetClipboard
+                | RetailToolCall::SetClipboard { .. }
+                | RetailToolCall::MoveFiles { .. }
+                | RetailToolCall::AppGetState => {
+                    let result = tools::execute_gorkh_tool(&tool_call);
+                    if result.success {
+                        Ok(result.message)
+                    } else {
+                        Err(AgentError::Approval(result.message))
+                    }
+                }
+                _ => {
+                    let ws_tool = retail_tool_to_workspace(&tool_call);
+                    workspace::tool_execute_for_agent(ws_tool).map_err(AgentError::Approval)
+                }
+            }
         }
     }
 }
@@ -1229,11 +1249,16 @@ fn summarize_retail_tool(tool_call: &RetailToolCall) -> String {
         RetailToolCall::TerminalExec { .. } => {
             "Run a terminal command in the workspace".to_string()
         }
-        // GORKH internal app tools — handled in the TypeScript layer, not via workspace dispatch
         RetailToolCall::AppGetState => "Read GORKH app state".to_string(),
         RetailToolCall::SettingsSet { key, .. } => format!("Update GORKH setting: {}", key),
         RetailToolCall::FreeAiInstall { tier } => {
             format!("Start Free AI installation (tier: {})", tier)
+        }
+        RetailToolCall::EmptyTrash => "Empty the system Trash".to_string(),
+        RetailToolCall::GetClipboard => "Read clipboard contents".to_string(),
+        RetailToolCall::SetClipboard { .. } => "Write to clipboard".to_string(),
+        RetailToolCall::MoveFiles { paths, destination } => {
+            format!("Move {} file(s) to {}", paths.len(), destination)
         }
     }
 }
@@ -1355,7 +1380,7 @@ fn parse_next_operation(input: &str) -> Result<NextOperation, AgentError> {
         "tool" => {
             let tool_call = parse_tool_call(&proposal)?;
             Ok(NextOperation::Approval {
-                execution: PendingExecution::Tool(retail_tool_to_workspace(&tool_call)),
+                execution: PendingExecution::Tool(tool_call.clone()),
                 proposal: RetailAgentProposal::ProposeTool {
                     tool_call,
                     rationale: proposal.rationale,
@@ -1397,7 +1422,7 @@ fn agent_proposal_to_next_operation(proposal: &llm::AgentProposal) -> Result<Nex
                 AgentError::Provider("This tool is not supported by the advanced agent yet.".to_string())
             })?;
             Ok(NextOperation::Approval {
-                execution: PendingExecution::Tool(retail_tool_to_workspace(&retail_tool)),
+                execution: PendingExecution::Tool(retail_tool.clone()),
                 proposal: RetailAgentProposal::ProposeTool {
                     tool_call: retail_tool,
                     rationale: rationale.clone(),
@@ -1426,6 +1451,11 @@ fn llm_tool_to_retail(tool_call: &llm::ToolCall) -> Option<RetailToolCall> {
         llm::ToolCall::FsApplyPatch { path, patch } => Some(RetailToolCall::FsApplyPatch { path: path.clone(), patch: patch.clone() }),
         llm::ToolCall::FsDelete { path } => Some(RetailToolCall::FsDelete { path: path.clone() }),
         llm::ToolCall::TerminalExec { cmd, args, cwd } => Some(RetailToolCall::TerminalExec { cmd: cmd.clone(), args: args.clone(), cwd: cwd.clone() }),
+        llm::ToolCall::EmptyTrash => Some(RetailToolCall::EmptyTrash),
+        llm::ToolCall::GetClipboard => Some(RetailToolCall::GetClipboard),
+        llm::ToolCall::SetClipboard { text } => Some(RetailToolCall::SetClipboard { text: text.clone() }),
+        llm::ToolCall::MoveFiles { paths, destination } => Some(RetailToolCall::MoveFiles { paths: paths.clone(), destination: destination.clone() }),
+        llm::ToolCall::AppGetState => Some(RetailToolCall::AppGetState),
         _ => None,
     }
 }
@@ -1459,6 +1489,16 @@ fn parse_tool_call(proposal: &RawProposalEnvelope) -> Result<RetailToolCall, Age
             args: read_string_vec(&proposal.params, "args").unwrap_or_default(),
             cwd: read_optional_string(&proposal.params, "cwd"),
         }),
+        "system.empty_trash" => Ok(RetailToolCall::EmptyTrash),
+        "system.get_clipboard" => Ok(RetailToolCall::GetClipboard),
+        "system.set_clipboard" => Ok(RetailToolCall::SetClipboard {
+            text: read_string(&proposal.params, "text")?,
+        }),
+        "fs.move_files" => Ok(RetailToolCall::MoveFiles {
+            paths: read_string_vec(&proposal.params, "paths").unwrap_or_default(),
+            destination: read_string(&proposal.params, "destination")?,
+        }),
+        "app.get_state" => Ok(RetailToolCall::AppGetState),
         other => Err(AgentError::Provider(format!(
             "Unsupported tool '{}' from provider",
             other
@@ -1510,12 +1550,15 @@ fn retail_tool_to_workspace(tool_call: &RetailToolCall) -> workspace::ToolCall {
             args: args.clone(),
             cwd: cwd.clone(),
         },
-        // GORKH internal app tools are handled in the TypeScript layer (parse_tool_call rejects
-        // them before they reach this function). These arms are required for exhaustiveness.
+        // GORKH system/app tools are handled in execute_pending before reaching workspace dispatch.
         RetailToolCall::AppGetState
         | RetailToolCall::SettingsSet { .. }
-        | RetailToolCall::FreeAiInstall { .. } => {
-            unreachable!("GORKH app tools must not reach workspace dispatch")
+        | RetailToolCall::FreeAiInstall { .. }
+        | RetailToolCall::EmptyTrash
+        | RetailToolCall::GetClipboard
+        | RetailToolCall::SetClipboard { .. }
+        | RetailToolCall::MoveFiles { .. } => {
+            unreachable!("GORKH tools must not reach workspace dispatch")
         }
     }
 }
