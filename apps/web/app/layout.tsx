@@ -3,8 +3,13 @@ import './globals.css';
 import { SiteShell } from '../components/site-shell';
 
 export const metadata: Metadata = {
-  title: 'GORKH',
-  description: 'Desktop intelligence layer for local-first operator workflows',
+  title: 'GORKH — AI That Runs on Your Mac',
+  description:
+    'GORKH is a desktop-native AI agent that controls your Mac with your approval. Local-first, privacy-centric, and built for real workflows.',
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({

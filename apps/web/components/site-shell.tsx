@@ -92,7 +92,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                   Log In
                 </Link>
                 <Link href="/register">
-                  <span className="button">Initiate</span>
+                  <span className="button">Get Started</span>
                 </Link>
               </>
             )}
@@ -103,7 +103,14 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
       <main className="site-main">{children}</main>
 
       <footer className="site-footer">
-        <div className="site-footer__inner">2026 GORKH. Desktop Intelligence Layer.</div>
+        <div className="site-footer__inner">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+            <span>GORKH — Desktop Intelligence Layer</span>
+            <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>
+              macOS-native AI agent. Privacy-first. Investor-ready.
+            </span>
+          </div>
+        </div>
       </footer>
     </div>
   );

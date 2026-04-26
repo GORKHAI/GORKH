@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Activity, ArrowLeft, Download as DownloadIcon, Laptop, MonitorCog } from 'lucide-react';
+import { Activity, ArrowLeft, Download as DownloadIcon, Laptop } from 'lucide-react';
 import Link from 'next/link';
 import { getDesktopDownloads, type DesktopDownloadInfo } from '../../lib/auth';
 import { Badge, Button, Card, Banner } from '../../components/ui';
@@ -38,8 +38,6 @@ export default function Download() {
     };
   }, []);
 
-  const hasWindowsDownload = Boolean(downloads?.windowsUrl);
-
   return (
     <main className="page--narrow">
       <Link href="/" className="button button--ghost" style={{ width: 'fit-content' }}>
@@ -48,21 +46,20 @@ export default function Download() {
       </Link>
 
       <section className="hero" style={{ marginTop: 24 }}>
-        <Badge>Desktop acquisition</Badge>
+        <Badge>macOS App</Badge>
         <h1 className="section-heading" style={{ fontSize: 'clamp(2rem, 5vw, 3.6rem)' }}>
           Download GORKH
         </h1>
         <p className="hero__subtitle" style={{ maxWidth: 640 }}>
-          Install the desktop app to start with the free local assistant on your own machine. This beta
-          page serves direct installer downloads for early testing, while automatic updates are configured
-          separately for stable releases.
+          Install the GORKH desktop app on your Mac. It runs locally, keeps your data on your
+          machine, and asks before every action.
         </p>
       </section>
 
       {loading ? (
         <div className="banner" style={{ marginTop: 28 }}>
           <Activity size={16} className="spinner" />
-          Loading current desktop release...
+          Loading current release...
         </div>
       ) : error ? (
         <div style={{ marginTop: 28 }}>
@@ -74,7 +71,7 @@ export default function Download() {
             <div className="split">
               <div className="stack" style={{ gap: 12 }}>
                 <p className="section-title" style={{ marginBottom: 0 }}>
-                  Current desktop version
+                  Current version
                 </p>
                 <h2 className="section-heading" style={{ fontSize: 32 }}>
                   v{downloads.version}
@@ -82,8 +79,9 @@ export default function Download() {
                 {downloads.notes ? <p className="copy">{downloads.notes}</p> : null}
               </div>
               <div className="stack" style={{ gap: 10, minWidth: 180 }}>
-                <Badge tone="warning">{hasWindowsDownload ? 'Mac-first beta' : 'macOS-first release'}</Badge>
-                <Badge>Direct installer downloads</Badge>
+                <Badge tone="success">macOS</Badge>
+                <Badge>Developer ID Signed</Badge>
+                <Badge>Notarized</Badge>
                 {downloads.publishedAt ? (
                   <p className="small-note mono">Published {new Date(downloads.publishedAt).toLocaleString()}</p>
                 ) : null}
@@ -92,49 +90,28 @@ export default function Download() {
           </Card>
 
           <div className="stack" style={{ marginTop: 18, gap: 12 }}>
-            <Banner tone="warning">
-              macOS beta builds are Developer ID signed and notarized. {hasWindowsDownload
-                ? 'Windows beta builds are available for early testing and may show SmartScreen warnings because they are not yet Authenticode signed.'
-                : 'Stable releases currently publish macOS artifacts only.'}
-            </Banner>
             <Banner tone="success">
-              These are direct installer downloads for the current beta. Stable auto-update feeds are configured
-              separately from this download page.
+              macOS builds are Developer ID signed and notarized by Apple. GateKeeper-friendly.
+            </Banner>
+            <Banner tone="warning">
+              GORKH is currently available for macOS only. Windows support is on the roadmap.
             </Banner>
           </div>
 
-          <section className="downloads-grid" style={{ marginTop: 24 }}>
-            {downloads.windowsUrl ? (
-              <Card hover>
-                <MonitorCog size={22} />
-                <h2 className="section-heading" style={{ fontSize: 22, marginTop: 18 }}>
-                  Windows
-                </h2>
-                <p className="copy" style={{ marginTop: 10 }}>
-                  Early Windows beta build for 64-bit testers. Expect SmartScreen prompts until stable
-                  signing is enabled.
-                </p>
-                <a href={downloads.windowsUrl} style={{ marginTop: 20 }}>
-                  <Button className="button--wide">
-                    <DownloadIcon size={16} />
-                    Download for Windows
-                  </Button>
-                </a>
-              </Card>
-            ) : null}
-
+          <section className="downloads-grid" style={{ marginTop: 24, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
             <Card hover>
               <Laptop size={22} />
               <h2 className="section-heading" style={{ fontSize: 22, marginTop: 18 }}>
                 macOS Apple Silicon
               </h2>
               <p className="copy" style={{ marginTop: 10 }}>
-                Developer ID signed and notarized macOS beta for M-series Macs.
+                Optimized for M1, M2, M3, and M4 Macs. Native ARM64 build with maximum performance
+                and battery efficiency.
               </p>
               <a href={downloads.macArmUrl} style={{ marginTop: 20 }}>
                 <Button className="button--wide" variant="secondary">
                   <DownloadIcon size={16} />
-                  Download for macOS (Apple Silicon)
+                  Download for Apple Silicon
                 </Button>
               </a>
             </Card>
@@ -145,12 +122,13 @@ export default function Download() {
                 macOS Intel
               </h2>
               <p className="copy" style={{ marginTop: 10 }}>
-                Developer ID signed and notarized macOS beta for Intel-based Macs.
+                Full support for Intel-based Macs. x86_64 build with identical features and
+                security.
               </p>
               <a href={downloads.macIntelUrl} style={{ marginTop: 20 }}>
                 <Button className="button--wide" variant="secondary">
                   <DownloadIcon size={16} />
-                  Download for macOS (Intel)
+                  Download for Intel Macs
                 </Button>
               </a>
             </Card>
