@@ -140,6 +140,14 @@ pub struct LlmResponse {
     pub finish_reason: String,
 }
 
+/// Result of an LLM call with content and token usage.
+#[derive(Debug, Clone)]
+pub struct LlmResult {
+    pub content: String,
+    pub input_tokens: usize,
+    pub output_tokens: usize,
+}
+
 /// Cost estimate for a request
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,17 +174,17 @@ pub trait LlmProvider: Send + Sync {
     fn capabilities(&self) -> ProviderCapabilities;
 
     /// Plan a task
-    async fn plan_task(&self, request: PlanRequest) -> Result<String, ProviderError>;
+    async fn plan_task(&self, request: PlanRequest) -> Result<LlmResult, ProviderError>;
 
     /// Analyze a screen
     async fn analyze_screen(&self, request: ScreenAnalysisRequest)
-        -> Result<String, ProviderError>;
+        -> Result<LlmResult, ProviderError>;
 
     /// Propose next action
-    async fn propose_next_step(&self, request: ActionRequest) -> Result<String, ProviderError>;
+    async fn propose_next_step(&self, request: ActionRequest) -> Result<LlmResult, ProviderError>;
 
     /// Summarize result
-    async fn summarize_result(&self, result_text: &str) -> Result<String, ProviderError>;
+    async fn summarize_result(&self, result_text: &str) -> Result<LlmResult, ProviderError>;
 
     /// Estimate cost for a request
     fn estimate_cost(&self, input_tokens: usize, output_tokens: usize) -> f64;
@@ -409,26 +417,26 @@ mod tests {
             }
         }
 
-        async fn plan_task(&self, _request: PlanRequest) -> Result<String, ProviderError> {
-            Ok("[]".to_string())
+        async fn plan_task(&self, _request: PlanRequest) -> Result<LlmResult, ProviderError> {
+            Ok(LlmResult { content: "[]".to_string(), input_tokens: 0, output_tokens: 0 })
         }
 
         async fn analyze_screen(
             &self,
             _request: ScreenAnalysisRequest,
-        ) -> Result<String, ProviderError> {
-            Ok("{}".to_string())
+        ) -> Result<LlmResult, ProviderError> {
+            Ok(LlmResult { content: "{}".to_string(), input_tokens: 0, output_tokens: 0 })
         }
 
         async fn propose_next_step(
             &self,
             _request: ActionRequest,
-        ) -> Result<String, ProviderError> {
-            Ok("{}".to_string())
+        ) -> Result<LlmResult, ProviderError> {
+            Ok(LlmResult { content: "{}".to_string(), input_tokens: 0, output_tokens: 0 })
         }
 
-        async fn summarize_result(&self, _result_text: &str) -> Result<String, ProviderError> {
-            Ok("done".to_string())
+        async fn summarize_result(&self, _result_text: &str) -> Result<LlmResult, ProviderError> {
+            Ok(LlmResult { content: "done".to_string(), input_tokens: 0, output_tokens: 0 })
         }
 
         fn estimate_cost(&self, _input_tokens: usize, _output_tokens: usize) -> f64 {

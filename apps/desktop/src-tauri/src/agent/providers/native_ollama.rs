@@ -131,7 +131,7 @@ impl LlmProvider for NativeOllamaProvider {
         }
     }
 
-    async fn plan_task(&self, request: PlanRequest) -> Result<String, ProviderError> {
+    async fn plan_task(&self, request: PlanRequest) -> Result<LlmResult, ProviderError> {
         let system = r#"You are GORKH, an AI desktop assistant. Break down the user's goal into a step-by-step plan.
 
 Output format: Return ONLY a JSON array of steps. No markdown, no explanation. Each step has:
@@ -168,13 +168,13 @@ Rules:
         );
 
         let response = self.generate(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult { content: response.content, input_tokens: response.input_tokens, output_tokens: response.output_tokens })
     }
 
     async fn analyze_screen(
         &self,
         request: ScreenAnalysisRequest,
-    ) -> Result<String, ProviderError> {
+    ) -> Result<LlmResult, ProviderError> {
         let system = r#"You are GORKH, an AI desktop assistant with vision. Analyze the screenshot and provide a structured observation.
 
 Output format: Return valid JSON with this structure:
@@ -206,10 +206,10 @@ Guidelines:
         let response = self
             .generate(system, &user, Some(&request.screenshot_base64))
             .await?;
-        Ok(response.content)
+        Ok(LlmResult { content: response.content, input_tokens: response.input_tokens, output_tokens: response.output_tokens })
     }
 
-    async fn propose_next_step(&self, request: ActionRequest) -> Result<String, ProviderError> {
+    async fn propose_next_step(&self, request: ActionRequest) -> Result<LlmResult, ProviderError> {
         let system = r#"You are GORKH, an AI desktop assistant. Based on the current screen observation, propose the next action.
 
 Output format: Return ONLY valid JSON with ONE of these structures. No markdown, no explanation.
@@ -256,15 +256,15 @@ Guidelines:
         );
 
         let response = self.generate(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult { content: response.content, input_tokens: response.input_tokens, output_tokens: response.output_tokens })
     }
 
-    async fn summarize_result(&self, result_text: &str) -> Result<String, ProviderError> {
+    async fn summarize_result(&self, result_text: &str) -> Result<LlmResult, ProviderError> {
         let system = "Summarize the task result in 1-2 sentences for the user.";
         let user = format!("Result:\n{}\n\nProvide a brief summary:", result_text);
 
         let response = self.generate(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult { content: response.content, input_tokens: response.input_tokens, output_tokens: response.output_tokens })
     }
 
     fn estimate_cost(&self, _input_tokens: usize, _output_tokens: usize) -> f64 {

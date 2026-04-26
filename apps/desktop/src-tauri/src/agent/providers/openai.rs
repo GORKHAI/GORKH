@@ -143,7 +143,7 @@ impl LlmProvider for OpenAiProvider {
         }
     }
 
-    async fn plan_task(&self, request: PlanRequest) -> Result<String, ProviderError> {
+    async fn plan_task(&self, request: PlanRequest) -> Result<LlmResult, ProviderError> {
         let system = r#"You are a computer automation agent. Break down the user's goal into a step-by-step plan.
 
 Output format: Return a JSON array of steps, where each step has:
@@ -166,13 +166,17 @@ Rules:
         );
 
         let response = self.chat_completion(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
     async fn analyze_screen(
         &self,
         request: ScreenAnalysisRequest,
-    ) -> Result<String, ProviderError> {
+    ) -> Result<LlmResult, ProviderError> {
         if !self.capabilities().supports_vision {
             return Err(ProviderError {
                 code: "VISION_NOT_SUPPORTED".to_string(),
@@ -206,10 +210,14 @@ Output format: Return valid JSON with this structure:
         let response = self
             .chat_completion(system, &user, Some(&request.screenshot_base64))
             .await?;
-        Ok(response.content)
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
-    async fn propose_next_step(&self, request: ActionRequest) -> Result<String, ProviderError> {
+    async fn propose_next_step(&self, request: ActionRequest) -> Result<LlmResult, ProviderError> {
         let system = r#"Based on the current screen observation, propose the next action.
 
 Output format: Return valid JSON with ONE action structure. Be precise about coordinates (normalized 0-1). Use open_app when the next step is to launch a desktop app or browser by name."#;
@@ -220,15 +228,23 @@ Output format: Return valid JSON with ONE action structure. Be precise about coo
         );
 
         let response = self.chat_completion(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
-    async fn summarize_result(&self, result_text: &str) -> Result<String, ProviderError> {
+    async fn summarize_result(&self, result_text: &str) -> Result<LlmResult, ProviderError> {
         let system = "Summarize the task result in 1-2 sentences.";
         let user = format!("Result:\n{}\n\nSummarize:", result_text);
 
         let response = self.chat_completion(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
     fn estimate_cost(&self, input_tokens: usize, output_tokens: usize) -> f64 {

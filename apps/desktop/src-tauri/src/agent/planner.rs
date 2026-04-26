@@ -97,13 +97,13 @@ impl<'a> HierarchicalPlanner<'a> {
     }
 
     /// Create a plan for the given goal
-    pub async fn create_plan(&self, goal: &str) -> Result<TaskPlan, String> {
+    pub async fn create_plan(&self, goal: &str) -> Result<(TaskPlan, usize, usize), String> {
         let request = super::providers::PlanRequest {
             goal: goal.to_string(),
             context: None,
         };
 
-        let response = self
+        let result = self
             .provider
             .plan_task(request)
             .await
@@ -111,7 +111,7 @@ impl<'a> HierarchicalPlanner<'a> {
 
         // Parse the JSON response into a TaskPlan
         let steps =
-            parse_plan_steps(&response).map_err(|e| format!("Failed to parse plan: {}", e))?;
+            parse_plan_steps(&result.content).map_err(|e| format!("Failed to parse plan: {}", e))?;
 
         // Ensure all steps have unique IDs
         let mut steps = steps;
@@ -124,12 +124,16 @@ impl<'a> HierarchicalPlanner<'a> {
         let estimated_duration_secs = estimate_duration(&steps);
         let required_apps = detect_required_apps(goal, &steps);
 
-        Ok(TaskPlan {
-            goal: goal.to_string(),
-            steps,
-            estimated_duration_secs,
-            required_apps,
-        })
+        Ok((
+            TaskPlan {
+                goal: goal.to_string(),
+                steps,
+                estimated_duration_secs,
+                required_apps,
+            },
+            result.input_tokens,
+            result.output_tokens,
+        ))
     }
 
     /// Revise a plan when something goes wrong
@@ -139,7 +143,7 @@ impl<'a> HierarchicalPlanner<'a> {
         current_plan: &TaskPlan,
         failed_step_id: &str,
         failure_reason: &str,
-    ) -> Result<TaskPlan, String> {
+    ) -> Result<(TaskPlan, usize, usize), String> {
         let context = format!(
             "Previous plan failed at step '{}'. Reason: {}. Original goal: {}",
             failed_step_id, failure_reason, current_plan.goal
@@ -150,13 +154,13 @@ impl<'a> HierarchicalPlanner<'a> {
             context: Some(context),
         };
 
-        let response = self
+        let result = self
             .provider
             .plan_task(request)
             .await
             .map_err(|e| e.message)?;
 
-        let steps = parse_plan_steps(&response)
+        let steps = parse_plan_steps(&result.content)
             .map_err(|e| format!("Failed to parse revised plan: {}", e))?;
 
         let mut steps = steps;
@@ -169,12 +173,16 @@ impl<'a> HierarchicalPlanner<'a> {
         let estimated_duration_secs = estimate_duration(&steps);
         let required_apps = detect_required_apps(&current_plan.goal, &steps);
 
-        Ok(TaskPlan {
-            goal: current_plan.goal.clone(),
-            steps,
-            estimated_duration_secs,
-            required_apps,
-        })
+        Ok((
+            TaskPlan {
+                goal: current_plan.goal.clone(),
+                steps,
+                estimated_duration_secs,
+                required_apps,
+            },
+            result.input_tokens,
+            result.output_tokens,
+        ))
     }
 }
 

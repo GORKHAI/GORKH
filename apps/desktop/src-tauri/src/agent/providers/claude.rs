@@ -140,7 +140,7 @@ impl LlmProvider for ClaudeProvider {
         }
     }
 
-    async fn plan_task(&self, request: PlanRequest) -> Result<String, ProviderError> {
+    async fn plan_task(&self, request: PlanRequest) -> Result<LlmResult, ProviderError> {
         let system = r#"You are a computer automation agent. Break down the user's goal into a step-by-step plan.
 
 Output format: Return a JSON array of steps with id, title, description, and type fields. Use open_app when the task requires launching a desktop app or browser by name."#;
@@ -152,13 +152,17 @@ Output format: Return a JSON array of steps with id, title, description, and typ
         );
 
         let response = self.messages(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
     async fn analyze_screen(
         &self,
         request: ScreenAnalysisRequest,
-    ) -> Result<String, ProviderError> {
+    ) -> Result<LlmResult, ProviderError> {
         let system = r#"Analyze the screenshot and provide structured observations in JSON format with screen_summary, ui_elements, notable_warnings, and inferred_app fields."#;
 
         let user = format!(
@@ -169,10 +173,14 @@ Output format: Return a JSON array of steps with id, title, description, and typ
         let response = self
             .messages(system, &user, Some(&request.screenshot_base64))
             .await?;
-        Ok(response.content)
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
-    async fn propose_next_step(&self, request: ActionRequest) -> Result<String, ProviderError> {
+    async fn propose_next_step(&self, request: ActionRequest) -> Result<LlmResult, ProviderError> {
         let system = r#"Based on the screen observation, propose the next action in JSON format. Use open_app when the next step is to launch a desktop app or browser by name."#;
 
         let user = format!(
@@ -181,15 +189,23 @@ Output format: Return a JSON array of steps with id, title, description, and typ
         );
 
         let response = self.messages(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
-    async fn summarize_result(&self, result_text: &str) -> Result<String, ProviderError> {
+    async fn summarize_result(&self, result_text: &str) -> Result<LlmResult, ProviderError> {
         let system = "Summarize the task result briefly.";
         let user = format!("Result:\n{}\n\nSummarize:", result_text);
 
         let response = self.messages(system, &user, None).await?;
-        Ok(response.content)
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
     fn estimate_cost(&self, input_tokens: usize, output_tokens: usize) -> f64 {

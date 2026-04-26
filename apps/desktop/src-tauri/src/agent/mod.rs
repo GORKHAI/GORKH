@@ -216,6 +216,58 @@ pub enum AgentError {
     Approval(String),
     #[error("Cancelled")]
     Cancelled,
+    #[error("Cost limit exceeded: {0}")]
+    CostLimitExceeded(String),
+}
+
+/// Heuristic check for retryable provider errors based on error codes in the message.
+fn is_retryable_provider_error(message: &str) -> bool {
+    message.contains("NETWORK_ERROR")
+        || message.contains("RATE_LIMITED")
+        || message.contains("API_ERROR")
+        || message.contains("TIMEOUT")
+}
+
+/// Accumulate cost into the current task and emit a CostUpdated event.
+async fn update_task_cost(
+    current_task: &Arc<RwLock<Option<AgentTask>>>,
+    callback: &AgentEventCallback,
+    provider: &dyn providers::LlmProvider,
+    input_tokens: usize,
+    output_tokens: usize,
+) {
+    let cost = provider.estimate_cost(input_tokens, output_tokens);
+    let mut guard = current_task.write().await;
+    if let Some(task) = guard.as_mut() {
+        task.current_cost += cost;
+        let total = task.current_cost;
+        let task_id = task.task_id.clone();
+        drop(guard);
+        (callback)(AgentEvent::CostUpdated {
+            task_id,
+            total_cost: total,
+        });
+    }
+}
+
+/// Check whether the next LLM call would exceed the cost limit.
+/// Uses a conservative $0.01 estimate per call when exact token counts are unknown.
+async fn check_cost_limit(
+    current_task: &Arc<RwLock<Option<AgentTask>>>,
+    config: &AgentConfig,
+) -> Result<(), AgentError> {
+    const ESTIMATED_CALL_COST: f64 = 0.01;
+    let guard = current_task.read().await;
+    if let Some(task) = guard.as_ref() {
+        if task.current_cost + ESTIMATED_CALL_COST > config.cost_limit_per_task {
+            return Err(AgentError::CostLimitExceeded(format!(
+                "Estimated cost {:.4} exceeds limit {:.2}",
+                task.current_cost + ESTIMATED_CALL_COST,
+                config.cost_limit_per_task
+            )));
+        }
+    }
+    Ok(())
 }
 
 type AgentEventCallback = Arc<dyn Fn(AgentEvent) + Send + Sync + 'static>;
@@ -480,8 +532,14 @@ async fn run_task_loop(
     let planner = planner::HierarchicalPlanner::new(provider.as_ref());
 
     let mut plan = match planner.create_plan(&goal).await {
-        Ok(plan) if !plan.steps.is_empty() => plan,
-        Ok(_) => planner::create_simple_plan(&goal),
+        Ok((plan, input_tokens, output_tokens)) if !plan.steps.is_empty() => {
+            update_task_cost(&current_task, &callback, provider.as_ref(), input_tokens, output_tokens).await;
+            plan
+        }
+        Ok((_, input_tokens, output_tokens)) => {
+            update_task_cost(&current_task, &callback, provider.as_ref(), input_tokens, output_tokens).await;
+            planner::create_simple_plan(&goal)
+        }
         Err(_) => planner::create_simple_plan(&goal),
     };
 
@@ -506,8 +564,29 @@ async fn run_task_loop(
     let mut previous_actions: Vec<String> = Vec::new();
     let mut completed_steps: Vec<String> = Vec::new();
     let total_steps = plan.steps.len();
+    let mut step_count: u32 = 0;
+    let mut current_provider = provider;
 
     for (index, step) in plan.steps.clone().into_iter().enumerate() {
+        step_count += 1;
+        if step_count > config.max_steps {
+            let msg = format!("Task did not complete in {} steps", config.max_steps);
+            {
+                let mut guard = current_task.write().await;
+                if let Some(task) = guard.as_mut() {
+                    task.status = AgentTaskStatus::Failed {
+                        reason: msg.clone(),
+                    };
+                    task.updated_at = now();
+                }
+            }
+            (callback)(AgentEvent::TaskFailed {
+                task_id: task_id.clone(),
+                reason: msg.clone(),
+            });
+            return Err(AgentError::Provider(msg));
+        }
+
         if cancelled.load(Ordering::SeqCst) {
             return Err(AgentError::Cancelled);
         }
@@ -530,11 +609,12 @@ async fn run_task_loop(
             step: step.clone(),
         });
 
-        let outcome = execute_step(
+        // Execute step with fallback logic on retryable provider errors.
+        let outcome = match execute_step(
             &task_id,
             &goal,
             &step,
-            provider.as_ref(),
+            current_provider.as_ref(),
             &executor,
             callback.clone(),
             current_task.clone(),
@@ -543,7 +623,49 @@ async fn run_task_loop(
             &previous_actions,
             &config,
         )
-        .await?;
+        .await
+        {
+            Ok(outcome) => outcome,
+            Err(AgentError::Provider(ref msg)) if is_retryable_provider_error(msg) => {
+                if let Some(fallback_type) = config.fallback_provider {
+                    if let Ok(fallback) = router.route(Some(fallback_type)).await {
+                        (callback)(AgentEvent::ProviderSwitched {
+                            task_id: task_id.clone(),
+                            from: config.primary_provider,
+                            to: fallback_type,
+                            reason: format!("Primary provider failed: {}", msg),
+                        });
+                        current_provider = fallback;
+                        // Retry the step with the fallback provider.
+                        execute_step(
+                            &task_id,
+                            &goal,
+                            &step,
+                            current_provider.as_ref(),
+                            &executor,
+                            callback.clone(),
+                            current_task.clone(),
+                            pending.clone(),
+                            cancelled.clone(),
+                            &previous_actions,
+                            &config,
+                        )
+                        .await?
+                    } else {
+                        return Err(AgentError::Provider(format!(
+                            "Primary provider failed and no fallback available: {}",
+                            msg
+                        )));
+                    }
+                } else {
+                    return Err(AgentError::Provider(format!(
+                        "Primary provider failed and no fallback configured: {}",
+                        msg
+                    )));
+                }
+            }
+            Err(e) => return Err(e),
+        };
 
         match outcome {
             StepOutcome::Completed { summary } => {
@@ -564,7 +686,7 @@ async fn run_task_loop(
                 return complete_task(
                     &task_id,
                     &summary,
-                    provider.as_ref(),
+                    current_provider.as_ref(),
                     callback,
                     current_task,
                 )
@@ -582,7 +704,7 @@ async fn run_task_loop(
     complete_task(
         &task_id,
         &fallback_summary,
-        provider.as_ref(),
+        current_provider.as_ref(),
         callback,
         current_task,
     )
@@ -596,10 +718,16 @@ async fn complete_task(
     callback: AgentEventCallback,
     current_task: Arc<RwLock<Option<AgentTask>>>,
 ) -> Result<(), AgentError> {
-    let summary = provider
+    let result = provider
         .summarize_result(raw_summary)
         .await
-        .unwrap_or_else(|_| raw_summary.to_string());
+        .unwrap_or_else(|_| providers::LlmResult {
+            content: raw_summary.to_string(),
+            input_tokens: 0,
+            output_tokens: 0,
+        });
+    update_task_cost(&current_task, &callback, provider, result.input_tokens, result.output_tokens).await;
+    let summary = result.content;
 
     {
         let mut guard = current_task.write().await;
@@ -657,7 +785,7 @@ async fn execute_step(
             ));
         }
 
-        let observation = observe_screen(provider, goal, previous_actions, config).await?;
+        let observation = observe_screen(provider, goal, previous_actions, config, &current_task, &callback).await?;
         (callback)(AgentEvent::ScreenObserved {
             task_id: task_id.to_string(),
             observation: observation.clone(),
@@ -667,7 +795,7 @@ async fn execute_step(
         ScreenObservation::empty()
     };
 
-    let operation = propose_next_operation(provider, goal, step, &observation).await?;
+    let operation = propose_next_operation(provider, goal, step, &observation, &current_task, &callback, config).await?;
 
     match operation {
         NextOperation::AutoAction { action, summary } => {
@@ -872,27 +1000,54 @@ async fn observe_screen(
     goal: &str,
     previous_actions: &[String],
     config: &AgentConfig,
+    current_task: &Arc<RwLock<Option<AgentTask>>>,
+    callback: &AgentEventCallback,
 ) -> Result<ScreenObservation, AgentError> {
+    check_cost_limit(current_task, config).await?;
+
     let capture = crate::capture_display_png(config.display_id.clone(), Some(1280))
         .map_err(|error| AgentError::Vision(error.message))?;
 
-    let response = provider
-        .analyze_screen(providers::ScreenAnalysisRequest {
-            screenshot_base64: capture.png_base64,
-            goal: goal.to_string(),
-            previous_actions: previous_actions.to_vec(),
-        })
-        .await
-        .map_err(|error| AgentError::Vision(error.message))?;
+    let mut last_error = None;
+    for attempt in 0..=config.max_retries {
+        match provider
+            .analyze_screen(providers::ScreenAnalysisRequest {
+                screenshot_base64: capture.png_base64.clone(),
+                goal: goal.to_string(),
+                previous_actions: previous_actions.to_vec(),
+            })
+            .await
+        {
+            Ok(result) => {
+                update_task_cost(
+                    current_task,
+                    callback,
+                    provider,
+                    result.input_tokens,
+                    result.output_tokens,
+                )
+                .await;
+                return serde_json::from_str::<ScreenObservation>(&result.content).or_else(|_| {
+                    Ok(ScreenObservation {
+                        screen_summary: result.content,
+                        ui_elements: vec![],
+                        notable_warnings: vec![],
+                        inferred_app: None,
+                    })
+                });
+            }
+            Err(e) if attempt < config.max_retries && e.is_retryable => {
+                last_error = Some(e);
+                update_task_for_step(current_task, "observe", StepStatus::FailedRetryable).await;
+                continue;
+            }
+            Err(e) => return Err(AgentError::Vision(e.message)),
+        }
+    }
 
-    serde_json::from_str::<ScreenObservation>(&response).or_else(|_| {
-        Ok(ScreenObservation {
-            screen_summary: response,
-            ui_elements: vec![],
-            notable_warnings: vec![],
-            inferred_app: None,
-        })
-    })
+    Err(AgentError::Vision(
+        last_error.map(|e| e.message).unwrap_or_else(|| "Vision analysis failed".to_string()),
+    ))
 }
 
 fn task_needs_vision(goal: &str, step: &PlanStep) -> bool {
@@ -925,18 +1080,46 @@ async fn propose_next_operation(
     goal: &str,
     step: &PlanStep,
     observation: &ScreenObservation,
+    current_task: &Arc<RwLock<Option<AgentTask>>>,
+    callback: &AgentEventCallback,
+    config: &AgentConfig,
 ) -> Result<NextOperation, AgentError> {
-    let response = provider
-        .propose_next_step(providers::ActionRequest {
-            observation: serde_json::to_string(observation)
-                .unwrap_or_else(|_| observation.screen_summary.clone()),
-            goal: goal.to_string(),
-            step_description: step.description.clone(),
-        })
-        .await
-        .map_err(|error| AgentError::Provider(error.message))?;
+    check_cost_limit(current_task, config).await?;
 
-    parse_next_operation(&response)
+    let mut last_error = None;
+    for attempt in 0..=config.max_retries {
+        match provider
+            .propose_next_step(providers::ActionRequest {
+                observation: serde_json::to_string(observation)
+                    .unwrap_or_else(|_| observation.screen_summary.clone()),
+                goal: goal.to_string(),
+                step_description: step.description.clone(),
+            })
+            .await
+        {
+            Ok(result) => {
+                update_task_cost(
+                    current_task,
+                    callback,
+                    provider,
+                    result.input_tokens,
+                    result.output_tokens,
+                )
+                .await;
+                return parse_next_operation(&result.content);
+            }
+            Err(e) if attempt < config.max_retries && e.is_retryable => {
+                last_error = Some(e);
+                update_task_for_step(current_task, &step.id, StepStatus::FailedRetryable).await;
+                continue;
+            }
+            Err(e) => return Err(AgentError::Provider(e.message)),
+        }
+    }
+
+    Err(AgentError::Provider(
+        last_error.map(|e| e.message).unwrap_or_else(|| "Propose next step failed".to_string()),
+    ))
 }
 
 async fn execute_pending(

@@ -116,14 +116,14 @@ impl VisionEngine {
             previous_actions: vec![],
         };
 
-        let response = provider
+        let result = provider
             .analyze_screen(request)
             .await
             .map_err(|e| VisionError::AnalysisError(e.message))?;
 
         // 4. Parse response
         let observation: ScreenObservation =
-            serde_json::from_str(&response).map_err(|e| VisionError::ParseError(e.to_string()))?;
+            serde_json::from_str(&result.content).map_err(|e| VisionError::ParseError(e.to_string()))?;
 
         Ok(observation)
     }
@@ -148,13 +148,13 @@ impl VisionEngine {
             previous_actions,
         };
 
-        let response = provider
+        let result = provider
             .analyze_screen(request)
             .await
             .map_err(|e| VisionError::AnalysisError(e.message))?;
 
         let observation: ScreenObservation =
-            serde_json::from_str(&response).map_err(|e| VisionError::ParseError(e.to_string()))?;
+            serde_json::from_str(&result.content).map_err(|e| VisionError::ParseError(e.to_string()))?;
 
         Ok(observation)
     }
