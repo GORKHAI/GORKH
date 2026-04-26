@@ -1630,3 +1630,56 @@ fn read_string_vec(params: &Value, key: &str) -> Option<Vec<String>> {
             .collect()
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_empty_trash_tool_call() {
+        let json = r#"{
+            "action_type": "tool",
+            "tool": "system.empty_trash",
+            "params": {},
+            "rationale": "User asked to empty trash",
+            "confidence": 0.95
+        }"#;
+        let result = parse_next_operation(json);
+        if let Err(ref e) = result {
+            panic!("parse failed: {}", e);
+        }
+        match result.unwrap() {
+            NextOperation::Approval { execution, .. } => {
+                match execution {
+                    PendingExecution::Tool(RetailToolCall::EmptyTrash) => {},
+                    _ => panic!("Expected EmptyTrash"),
+                }
+            }
+            _ => panic!("Expected Approval"),
+        }
+    }
+
+    #[test]
+    fn parse_app_get_state_tool_call() {
+        let json = r#"{
+            "action_type": "tool",
+            "tool": "app.get_state",
+            "params": {},
+            "rationale": "Check app state",
+            "confidence": 0.9
+        }"#;
+        let result = parse_next_operation(json);
+        if let Err(ref e) = result {
+            panic!("parse failed: {}", e);
+        }
+        match result.unwrap() {
+            NextOperation::Approval { execution, .. } => {
+                match execution {
+                    PendingExecution::Tool(RetailToolCall::AppGetState) => {},
+                    _ => panic!("Expected AppGetState"),
+                }
+            }
+            _ => panic!("Expected Approval"),
+        }
+    }
+}
