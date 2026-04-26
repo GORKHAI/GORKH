@@ -975,6 +975,20 @@ fn build_provider(config: &AgentConfig) -> Result<Box<dyn providers::LlmProvider
             })?,
             config.provider_model.clone(),
         ))),
+        ProviderType::DeepSeek => Ok(Box::new(providers::DeepSeekProvider::new(
+            config.provider_api_key.clone().ok_or_else(|| {
+                AgentError::Provider("DeepSeek provider is missing an API key".to_string())
+            })?,
+            config.provider_base_url.clone(),
+            config.provider_model.clone(),
+        ))),
+        ProviderType::Moonshot => Ok(Box::new(providers::MoonshotProvider::new(
+            config.provider_api_key.clone().ok_or_else(|| {
+                AgentError::Provider("Moonshot provider is missing an API key".to_string())
+            })?,
+            config.provider_base_url.clone(),
+            config.provider_model.clone(),
+        ))),
     }
 }
 

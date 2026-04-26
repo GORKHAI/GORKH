@@ -2150,6 +2150,8 @@ fn agent_provider_kind(provider_type: &str) -> Result<ProviderType, String> {
         "local_openai_compat" => Ok(ProviderType::LocalOpenAiCompat),
         "openai" => Ok(ProviderType::OpenAi),
         "claude" => Ok(ProviderType::Claude),
+        "deepseek" => Ok(ProviderType::DeepSeek),
+        "kimi" => Ok(ProviderType::Moonshot),
         _ => Err(format!("Unknown provider: {}", provider_type)),
     }
 }
@@ -2164,7 +2166,7 @@ async fn is_agent_provider_available(provider_type: &str) -> Result<bool, String
             let provider = agent::providers::LocalCompatProvider::new(None, None, None, None);
             Ok(provider.is_available().await)
         }
-        ProviderType::OpenAi | ProviderType::Claude => {
+        ProviderType::OpenAi | ProviderType::Claude | ProviderType::DeepSeek | ProviderType::Moonshot => {
             Ok(keyring_get_secret(&format!("llm_api_key:{}", provider_type)).is_some())
         }
     }
@@ -2185,6 +2187,8 @@ async fn list_agent_providers(_state: State<'_, AgentState>) -> Result<Vec<Provi
         ),
         ("openai", "OpenAI-compatible cloud", false, true),
         ("claude", "Claude", false, true),
+        ("deepseek", "DeepSeek", false, false),
+        ("kimi", "Moonshot (Kimi)", false, false),
     ] {
         providers.push(ProviderInfo {
             provider_type: provider_type.to_string(),
@@ -2237,7 +2241,7 @@ async fn start_agent_task(
     let primary_provider = agent_provider_kind(&provider_name)?;
     let key_provider = credential_provider.unwrap_or_else(|| provider_name.clone());
     let resolved_provider_api_key = provider_api_key.or_else(|| match primary_provider {
-        ProviderType::OpenAi | ProviderType::Claude => {
+        ProviderType::OpenAi | ProviderType::Claude | ProviderType::DeepSeek | ProviderType::Moonshot => {
             keyring_get_secret(&format!("llm_api_key:{}", key_provider))
         }
         _ => None,

@@ -30,6 +30,14 @@ const providerDetails: Record<ProviderType, { name: string; description: string 
     name: 'Claude 3.5 Sonnet',
     description: 'Advanced reasoning. Pay per use.',
   },
+  deepseek: {
+    name: 'DeepSeek',
+    description: 'Cost-efficient reasoning. Pay per use.',
+  },
+  kimi: {
+    name: 'Moonshot (Kimi)',
+    description: 'Long-context reasoning. Pay per use.',
+  },
 };
 
 export function AgentProviderSelector({ value, onChange }: AgentProviderSelectorProps) {
@@ -81,7 +89,7 @@ export function AgentProviderSelector({ value, onChange }: AgentProviderSelector
   };
 
   const isPaidProvider = (provider: ProviderType) =>
-    provider === 'openai' || provider === 'claude';
+    provider === 'openai' || provider === 'claude' || provider === 'deepseek' || provider === 'kimi';
 
   const styles: Record<string, React.CSSProperties> = {
     container: {

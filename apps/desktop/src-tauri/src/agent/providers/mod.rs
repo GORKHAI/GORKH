@@ -35,12 +35,17 @@ use std::collections::HashMap;
 use tokio::sync::RwLock;
 
 pub mod claude;
+pub mod deepseek;
 pub mod local_compat;
+pub mod moonshot;
 pub mod native_ollama;
 pub mod openai;
+pub mod openai_format;
 
 pub use claude::ClaudeProvider;
+pub use deepseek::DeepSeekProvider;
 pub use local_compat::LocalCompatProvider;
+pub use moonshot::MoonshotProvider;
 pub use native_ollama::NativeOllamaProvider;
 pub use openai::OpenAiProvider;
 
@@ -56,6 +61,10 @@ pub enum ProviderType {
     OpenAi,
     /// Anthropic Claude API (paid)
     Claude,
+    /// DeepSeek API (paid, OpenAI-compatible)
+    DeepSeek,
+    /// Moonshot (Kimi) API (paid, OpenAI-compatible)
+    Moonshot,
 }
 
 impl ProviderType {
@@ -65,6 +74,8 @@ impl ProviderType {
             ProviderType::LocalOpenAiCompat => "Local (OpenAI-compatible)",
             ProviderType::OpenAi => "OpenAI",
             ProviderType::Claude => "Claude",
+            ProviderType::DeepSeek => "DeepSeek",
+            ProviderType::Moonshot => "Moonshot (Kimi)",
         }
     }
 
@@ -232,6 +243,8 @@ impl ProviderRouter {
                 ProviderType::LocalOpenAiCompat,
                 ProviderType::Claude,
                 ProviderType::OpenAi,
+                ProviderType::DeepSeek,
+                ProviderType::Moonshot,
             ]),
             user_preferences: RwLock::new(UserPreferences::default()),
         }
