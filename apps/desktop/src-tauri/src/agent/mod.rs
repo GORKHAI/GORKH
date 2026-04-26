@@ -281,6 +281,7 @@ struct RawProposalEnvelope {
 /// existing workspace and input primitives.
 pub struct AdvancedAgent {
     config: AgentConfig,
+    router: Arc<ProviderRouter>,
     callback: AgentEventCallback,
     current_task: Arc<RwLock<Option<AgentTask>>>,
     pending: Arc<Mutex<Option<PendingInteraction>>>,
@@ -290,11 +291,12 @@ pub struct AdvancedAgent {
 impl AdvancedAgent {
     pub fn new(
         config: AgentConfig,
-        _router: Arc<ProviderRouter>,
+        router: Arc<ProviderRouter>,
         callback: Box<dyn Fn(AgentEvent) + Send + Sync + 'static>,
     ) -> Self {
         Self {
             config,
+            router,
             callback: Arc::from(callback),
             current_task: Arc::new(RwLock::new(None)),
             pending: Arc::new(Mutex::new(None)),
@@ -329,6 +331,8 @@ impl AdvancedAgent {
         let task_id_for_runtime = task_id.clone();
         let goal_for_runtime = goal.clone();
 
+        let router = self.router.clone();
+
         tokio::spawn(async move {
             (callback)(AgentEvent::TaskStarted {
                 task_id: task_id_for_runtime.clone(),
@@ -339,6 +343,7 @@ impl AdvancedAgent {
                 task_id_for_runtime.clone(),
                 goal_for_runtime,
                 config,
+                router,
                 callback.clone(),
                 current_task.clone(),
                 pending.clone(),
@@ -461,12 +466,17 @@ async fn run_task_loop(
     task_id: String,
     goal: String,
     config: AgentConfig,
+    router: Arc<ProviderRouter>,
     callback: AgentEventCallback,
     current_task: Arc<RwLock<Option<AgentTask>>>,
     pending: Arc<Mutex<Option<PendingInteraction>>>,
     cancelled: Arc<AtomicBool>,
 ) -> Result<(), AgentError> {
-    let provider = build_provider(&config)?;
+    // Use the router instead of build_provider so fallback logic is live.
+    let provider = router
+        .route(Some(config.primary_provider))
+        .await
+        .map_err(|e| AgentError::Provider(e.message))?;
     let planner = planner::HierarchicalPlanner::new(provider.as_ref());
 
     let mut plan = match planner.create_plan(&goal).await {

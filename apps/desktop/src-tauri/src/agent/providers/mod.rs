@@ -32,6 +32,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub mod claude;
@@ -199,7 +200,7 @@ impl std::error::Error for ProviderError {}
 
 /// Provider router - manages multiple providers and routing logic
 pub struct ProviderRouter {
-    providers: RwLock<HashMap<ProviderType, Box<dyn LlmProvider>>>,
+    providers: RwLock<HashMap<ProviderType, Arc<dyn LlmProvider>>>,
     default_provider: RwLock<ProviderType>,
     fallback_order: RwLock<Vec<ProviderType>>,
     user_preferences: RwLock<UserPreferences>,
@@ -251,21 +252,19 @@ impl ProviderRouter {
     }
 
     /// Register a provider
-    pub async fn register_provider(&self, provider: Box<dyn LlmProvider>) {
+    pub async fn register_provider(&self, provider: Arc<dyn LlmProvider>) {
         let mut providers = self.providers.write().await;
         providers.insert(provider.provider_type(), provider);
     }
 
-    /// Get a specific provider
-    pub async fn get_provider(&self, _provider_type: ProviderType) -> Option<Box<dyn LlmProvider>> {
-        let _providers = self.providers.read().await;
-        // In a real implementation, we'd need to handle this differently
-        // since we can't clone Box<dyn Trait> easily
-        None
+    /// Get a specific provider by type.
+    pub async fn get_provider(&self, provider_type: ProviderType) -> Option<Arc<dyn LlmProvider>> {
+        let providers = self.providers.read().await;
+        providers.get(&provider_type).cloned()
     }
 
     /// Get the default provider
-    pub async fn get_default_provider(&self) -> Option<Box<dyn LlmProvider>> {
+    pub async fn get_default_provider(&self) -> Option<Arc<dyn LlmProvider>> {
         let default = self.default_provider.read().await;
         self.get_provider(*default).await
     }
@@ -304,45 +303,32 @@ impl ProviderRouter {
         *default = provider_type;
     }
 
-    /// Route to best available provider
+    /// Route to the best available provider.
+    ///
+    /// Logic:
+    /// 1. Try the preferred provider. If registered, return it.
+    /// 2. If not registered, walk the fallback chain and return the first registered provider.
+    /// 3. If nothing is registered, return an error.
     pub async fn route(
         &self,
         preferred: Option<ProviderType>,
-    ) -> Result<Box<dyn LlmProvider>, ProviderError> {
+    ) -> Result<Arc<dyn LlmProvider>, ProviderError> {
         let prefs = self.user_preferences.read().await;
         let providers = self.providers.read().await;
 
-        // Try preferred or default
         let to_try = preferred.unwrap_or(prefs.default_provider);
 
+        // 1. Try preferred provider
         if let Some(provider) = providers.get(&to_try) {
-            if provider.is_available().await {
-                return Err(ProviderError {
-                    code: "NOT_IMPLEMENTED".to_string(),
-                    message: "Provider cloning not implemented in stub".to_string(),
-                    is_retryable: false,
-                });
-            }
+            return Ok(Arc::clone(provider));
         }
 
-        // Try fallback chain if enabled
+        // 2. Try fallback chain
         if prefs.fallback_enabled {
             let fallback_order = self.fallback_order.read().await;
             for ptype in fallback_order.iter() {
                 if let Some(provider) = providers.get(ptype) {
-                    if provider.is_available().await {
-                        // Check if we need to ask before using paid provider
-                        if ptype.is_cloud() && prefs.ask_before_paid {
-                            // This should trigger UI confirmation
-                            // For now, skip
-                            continue;
-                        }
-                        return Err(ProviderError {
-                            code: "NOT_IMPLEMENTED".to_string(),
-                            message: "Provider cloning not implemented in stub".to_string(),
-                            is_retryable: false,
-                        });
-                    }
+                    return Ok(Arc::clone(provider));
                 }
             }
         }
@@ -387,4 +373,113 @@ pub struct ProviderInfo {
     pub available: bool,
     pub is_free: bool,
     pub capabilities: ProviderCapabilities,
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct MockProvider {
+        ptype: ProviderType,
+        name: &'static str,
+    }
+
+    #[async_trait]
+    impl LlmProvider for MockProvider {
+        fn provider_type(&self) -> ProviderType {
+            self.ptype
+        }
+
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        async fn is_available(&self) -> bool {
+            true
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities {
+                supports_vision: false,
+                supports_streaming: true,
+                supports_functions: false,
+                max_context_tokens: 4096,
+                max_output_tokens: 1024,
+            }
+        }
+
+        async fn plan_task(&self, _request: PlanRequest) -> Result<String, ProviderError> {
+            Ok("[]".to_string())
+        }
+
+        async fn analyze_screen(
+            &self,
+            _request: ScreenAnalysisRequest,
+        ) -> Result<String, ProviderError> {
+            Ok("{}".to_string())
+        }
+
+        async fn propose_next_step(
+            &self,
+            _request: ActionRequest,
+        ) -> Result<String, ProviderError> {
+            Ok("{}".to_string())
+        }
+
+        async fn summarize_result(&self, _result_text: &str) -> Result<String, ProviderError> {
+            Ok("done".to_string())
+        }
+
+        fn estimate_cost(&self, _input_tokens: usize, _output_tokens: usize) -> f64 {
+            0.0
+        }
+    }
+
+    #[tokio::test]
+    async fn test_route_returns_preferred_provider() {
+        let router = ProviderRouter::new();
+        let openai = Arc::new(MockProvider {
+            ptype: ProviderType::OpenAi,
+            name: "OpenAI",
+        });
+        let claude = Arc::new(MockProvider {
+            ptype: ProviderType::Claude,
+            name: "Claude",
+        });
+        router.register_provider(openai.clone()).await;
+        router.register_provider(claude.clone()).await;
+
+        let result = router.route(Some(ProviderType::OpenAi)).await.unwrap();
+        assert_eq!(result.provider_type(), ProviderType::OpenAi);
+        assert_eq!(result.name(), "OpenAI");
+    }
+
+    #[tokio::test]
+    async fn test_route_fallback_when_preferred_missing() {
+        let router = ProviderRouter::new();
+        let claude = Arc::new(MockProvider {
+            ptype: ProviderType::Claude,
+            name: "Claude",
+        });
+        router.register_provider(claude.clone()).await;
+
+        // OpenAI is not registered, so fallback chain should return Claude
+        let result = router.route(Some(ProviderType::OpenAi)).await.unwrap();
+        assert_eq!(result.provider_type(), ProviderType::Claude);
+        assert_eq!(result.name(), "Claude");
+    }
+
+    #[tokio::test]
+    async fn test_get_provider_returns_none_for_unregistered() {
+        let router = ProviderRouter::new();
+        let openai = Arc::new(MockProvider {
+            ptype: ProviderType::OpenAi,
+            name: "OpenAI",
+        });
+        router.register_provider(openai.clone()).await;
+
+        assert!(router.get_provider(ProviderType::OpenAi).await.is_some());
+        assert!(router.get_provider(ProviderType::Claude).await.is_none());
+    }
 }
