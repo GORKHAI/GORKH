@@ -49,6 +49,31 @@ function getToolDetails(toolCall: ToolCall): {
         warning: getTerminalWarning(toolCall.cmd, toolCall.args),
         destructive: isDestructiveTerminalCommand(toolCall.cmd, toolCall.args),
       };
+    case 'system.empty_trash':
+      return {
+        title: 'Empty System Trash',
+        warning: 'This will permanently delete all items in the Trash. This action cannot be undone.',
+        destructive: true,
+      };
+    case 'system.get_clipboard':
+      return {
+        title: 'Read Clipboard',
+        warning: undefined,
+        destructive: false,
+      };
+    case 'system.set_clipboard':
+      return {
+        title: 'Write to Clipboard',
+        warning: 'This will replace the current clipboard contents.',
+        destructive: false,
+      };
+    case 'fs.move_files':
+      return {
+        title: 'Move Files',
+        target: `${toolCall.paths.length} file(s) → ${toolCall.destination}`,
+        warning: 'This will move files to a new location.',
+        destructive: false,
+      };
     default:
       return { title: 'Tool Request' };
   }

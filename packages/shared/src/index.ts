@@ -315,11 +315,15 @@ export const ToolName = {
   FS_WRITE_TEXT: 'fs.write_text',
   FS_APPLY_PATCH: 'fs.apply_patch',
   FS_DELETE: 'fs.delete',
+  FS_MOVE_FILES: 'fs.move_files',
   TERMINAL_EXEC: 'terminal.exec',
   // GORKH internal app tools (STEP 2)
   APP_GET_STATE: 'app.get_state',
   SETTINGS_SET: 'settings.set',
   FREE_AI_INSTALL: 'free_ai.install',
+  SYSTEM_EMPTY_TRASH: 'system.empty_trash',
+  SYSTEM_GET_CLIPBOARD: 'system.get_clipboard',
+  SYSTEM_SET_CLIPBOARD: 'system.set_clipboard',
 } as const;
 export type ToolName = (typeof ToolName)[keyof typeof ToolName];
 
@@ -351,6 +355,12 @@ export interface FsDeleteToolCall {
   path: string;
 }
 
+export interface FsMoveFilesToolCall {
+  tool: 'fs.move_files';
+  paths: string[];
+  destination: string;
+}
+
 export interface TerminalExecToolCall {
   tool: 'terminal.exec';
   cmd: string;
@@ -377,18 +387,50 @@ export interface AppFreeAiInstallToolCall {
   tier: 'light' | 'standard' | 'vision';
 }
 
-export type GorkhToolCall = AppGetStateToolCall | AppSettingsSetToolCall | AppFreeAiInstallToolCall;
+export interface EmptyTrashToolCall {
+  tool: 'system.empty_trash';
+}
 
-export type ToolCall = FsListToolCall | FsReadTextToolCall | FsWriteTextToolCall | FsApplyPatchToolCall | FsDeleteToolCall | TerminalExecToolCall | GorkhToolCall;
+export interface GetClipboardToolCall {
+  tool: 'system.get_clipboard';
+}
+
+export interface SetClipboardToolCall {
+  tool: 'system.set_clipboard';
+  text: string;
+}
+
+export type GorkhToolCall =
+  | AppGetStateToolCall
+  | AppSettingsSetToolCall
+  | AppFreeAiInstallToolCall
+  | EmptyTrashToolCall
+  | GetClipboardToolCall
+  | SetClipboardToolCall;
+
+export type ToolCall =
+  | FsListToolCall
+  | FsReadTextToolCall
+  | FsWriteTextToolCall
+  | FsApplyPatchToolCall
+  | FsDeleteToolCall
+  | FsMoveFilesToolCall
+  | TerminalExecToolCall
+  | GorkhToolCall;
 
 /** Returns true for GORKH internal read-only tools (no approval needed). */
-export function isGorkhReadOnlyToolCall(toolCall: ToolCall): toolCall is AppGetStateToolCall {
-  return toolCall.tool === 'app.get_state';
+export function isGorkhReadOnlyToolCall(toolCall: ToolCall): toolCall is AppGetStateToolCall | GetClipboardToolCall {
+  return toolCall.tool === 'app.get_state' || toolCall.tool === 'system.get_clipboard';
 }
 
 /** Returns true for GORKH internal write tools (require approval). */
-export function isGorkhWriteToolCall(toolCall: ToolCall): toolCall is AppSettingsSetToolCall | AppFreeAiInstallToolCall {
-  return toolCall.tool === 'settings.set' || toolCall.tool === 'free_ai.install';
+export function isGorkhWriteToolCall(toolCall: ToolCall): toolCall is AppSettingsSetToolCall | AppFreeAiInstallToolCall | EmptyTrashToolCall | SetClipboardToolCall {
+  return (
+    toolCall.tool === 'settings.set' ||
+    toolCall.tool === 'free_ai.install' ||
+    toolCall.tool === 'system.empty_trash' ||
+    toolCall.tool === 'system.set_clipboard'
+  );
 }
 
 /** Returns true for any GORKH internal tool. */
@@ -534,10 +576,19 @@ export function sanitizeToolCallForPersistence(toolCall: ToolCall): ToolCall {
         args: [],
         cwd: undefined,
       };
+    case 'fs.move_files':
+      return {
+        tool: toolCall.tool,
+        paths: toolCall.paths.map(() => REDACTED_WORKSPACE_PATH),
+        destination: REDACTED_WORKSPACE_PATH,
+      };
     // GORKH app tools contain no sensitive paths or content
     case 'app.get_state':
     case 'settings.set':
     case 'free_ai.install':
+    case 'system.empty_trash':
+    case 'system.get_clipboard':
+    case 'system.set_clipboard':
       return toolCall;
     default:
       return toolCall;
@@ -557,10 +608,15 @@ export function redactToolCallForLog(toolCall: ToolCall): { tool: ToolName; path
       return { tool: t, pathRel: (sanitized as { path: string }).path };
     case 'terminal.exec':
       return { tool: t, cmd: (sanitized as { cmd: string }).cmd };
+    case 'fs.move_files':
+      return { tool: t, pathRel: (sanitized as { destination: string }).destination };
     // GORKH tools: tool name only, no sensitive metadata
     case 'app.get_state':
     case 'settings.set':
     case 'free_ai.install':
+    case 'system.empty_trash':
+    case 'system.get_clipboard':
+    case 'system.set_clipboard':
       return { tool: t };
     default:
       return { tool: t as ToolName };
@@ -1094,6 +1150,12 @@ const fsDeleteToolCallSchema = z.object({
   path: z.string().max(260),
 });
 
+const fsMoveFilesToolCallSchema = z.object({
+  tool: z.literal('fs.move_files'),
+  paths: z.array(z.string().max(260)),
+  destination: z.string().max(260),
+});
+
 const terminalExecToolCallSchema = z.object({
   tool: z.literal('terminal.exec'),
   cmd: z.string().max(64),
@@ -1117,16 +1179,33 @@ const appFreeAiInstallToolCallSchema = z.object({
   tier: z.enum(['light', 'standard', 'vision']),
 });
 
+const emptyTrashToolCallSchema = z.object({
+  tool: z.literal('system.empty_trash'),
+});
+
+const getClipboardToolCallSchema = z.object({
+  tool: z.literal('system.get_clipboard'),
+});
+
+const setClipboardToolCallSchema = z.object({
+  tool: z.literal('system.set_clipboard'),
+  text: z.string().max(10000),
+});
+
 const toolCallSchema = z.union([
   fsListToolCallSchema,
   fsReadTextToolCallSchema,
   fsWriteTextToolCallSchema,
   fsApplyPatchToolCallSchema,
   fsDeleteToolCallSchema,
+  fsMoveFilesToolCallSchema,
   terminalExecToolCallSchema,
   appGetStateToolCallSchema,
   appSettingsSetToolCallSchema,
   appFreeAiInstallToolCallSchema,
+  emptyTrashToolCallSchema,
+  getClipboardToolCallSchema,
+  setClipboardToolCallSchema,
 ]);
 
 const proposeToolProposalSchema = z.object({

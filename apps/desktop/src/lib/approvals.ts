@@ -158,12 +158,20 @@ export function getApprovalRiskForTool(toolCall: ToolCall): ApprovalRisk {
   switch (toolCall.tool) {
     case 'fs.list':
     case 'fs.read_text':
+    case 'system.get_clipboard':
+    case 'app.get_state':
       return 'low';
     case 'fs.write_text':
     case 'fs.apply_patch':
     case 'fs.delete':
+    case 'fs.move_files':
     case 'terminal.exec':
+    case 'system.empty_trash':
       return 'high';
+    case 'system.set_clipboard':
+    case 'settings.set':
+    case 'free_ai.install':
+      return 'medium';
     default:
       return 'medium';
   }

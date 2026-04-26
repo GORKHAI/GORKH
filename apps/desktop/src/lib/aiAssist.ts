@@ -15,7 +15,7 @@ import {
   executeGorkhReadTool,
   executeGorkhWriteTool,
 } from './gorkhTools.js';
-import { sanitizeRunLogLine, isGorkhReadOnlyToolCall, isGorkhWriteToolCall } from '@ai-operator/shared';
+import { sanitizeRunLogLine } from '@ai-operator/shared';
 import type {
   AgentProposal,
   InputAction,
@@ -199,7 +199,8 @@ export class AiAssistController {
 
     try {
       // GORKH write tools dispatch differently (no workspace execution, no tool_execute IPC)
-      if (isGorkhWriteToolCall(toolCall)) {
+      // Legacy engine only supports settings.set and free_ai.install
+      if (toolCall.tool === 'settings.set' || toolCall.tool === 'free_ai.install') {
         const resultText = await executeGorkhWriteTool(toolCall);
         this.actionResults.push(`${toolCall.tool} result: ${resultText}`);
         this.sendSafeRunLog(`GORKH tool executed: ${toolCall.tool}`, 'info');
@@ -696,7 +697,8 @@ export class AiAssistController {
             const toolName = proposal.toolCall.tool;
 
             // GORKH read-only tools are auto-approved: execute silently, inject result into history
-            if (isGorkhReadOnlyToolCall(proposal.toolCall)) {
+            // Legacy engine only supports app.get_state
+            if (proposal.toolCall.tool === 'app.get_state') {
               this.log('info', `Auto-executing GORKH read tool: ${toolName}`);
               try {
                 const result = await executeGorkhReadTool(proposal.toolCall);
