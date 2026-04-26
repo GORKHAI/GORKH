@@ -225,8 +225,8 @@ Output format: Return ONLY valid JSON with ONE of these structures. No markdown,
 2. Tool Call:
 {
   "action_type": "tool",
-  "tool": "fs.list|fs.read_text|fs.write_text|fs.apply_patch|fs.delete|terminal.exec",
-  "params": {"path": "..."} or {"cmd": "..."},
+  "tool": "fs.list|fs.read_text|fs.write_text|fs.apply_patch|fs.delete|fs.move_files|terminal.exec|system.empty_trash|system.get_clipboard|system.set_clipboard|app.get_state",
+  "params": {"path": "..."} or {"cmd": "..."} or {"text": "..."},
   "rationale": "Why this tool",
   "confidence": 0.9
 }

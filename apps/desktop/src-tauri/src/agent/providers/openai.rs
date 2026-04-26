@@ -220,7 +220,9 @@ Output format: Return valid JSON with this structure:
     async fn propose_next_step(&self, request: ActionRequest) -> Result<LlmResult, ProviderError> {
         let system = r#"Based on the current screen observation, propose the next action.
 
-Output format: Return valid JSON with ONE action structure. Be precise about coordinates (normalized 0-1). Use open_app when the next step is to launch a desktop app or browser by name."#;
+Output format: Return valid JSON with ONE action structure. Be precise about coordinates (normalized 0-1). Use open_app when the next step is to launch a desktop app or browser by name.
+
+Available tools: fs.list, fs.read_text, fs.write_text, fs.apply_patch, fs.delete, fs.move_files, terminal.exec, system.empty_trash, system.get_clipboard, system.set_clipboard, app.get_state"#;
 
         let user = format!(
             "Goal: {}\n\nStep: {}\n\nScreen observation: {}\n\nWhat should I do next?",

@@ -248,7 +248,9 @@ impl LlmProvider for LocalCompatProvider {
     }
 
     async fn propose_next_step(&self, request: ActionRequest) -> Result<LlmResult, ProviderError> {
-        let system = "Based on the screen observation, propose the next action in JSON format. Use open_app when the next step is to launch a desktop app or browser by name.";
+        let system = "Based on the screen observation, propose the next action in JSON format. Use open_app when the next step is to launch a desktop app or browser by name.
+
+Available tools: fs.list, fs.read_text, fs.write_text, fs.apply_patch, fs.delete, fs.move_files, terminal.exec, system.empty_trash, system.get_clipboard, system.set_clipboard, app.get_state";
 
         let user = format!(
             "Goal: {}\n\nStep: {}\n\nObservation: {}\n\nPropose next action:",
