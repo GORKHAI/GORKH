@@ -41,6 +41,7 @@ use std::time::{Duration, Instant};
 
 pub mod claude;
 pub mod error;
+pub mod gorkh_free;
 pub mod native_ollama;
 pub mod openai;
 pub mod openai_compat;
@@ -634,6 +635,7 @@ pub fn create_provider(provider: &str) -> Result<Box<dyn LlmProvider>, LlmError>
         "kimi" => Ok(Box::new(openai_compat::OpenAiCompatProvider)),
         "openai" => Ok(Box::new(openai::OpenAiProvider)),
         "openai_compat" => Ok(Box::new(openai_compat::OpenAiCompatProvider)),
+        "gorkh_free" => Ok(Box::new(gorkh_free::GorkhFreeProvider)),
         _ => Err(LlmError {
             code: LlmErrorCode::UnsupportedProvider,
             message: format!("Provider '{}' is not supported", provider),

@@ -2152,6 +2152,7 @@ fn agent_provider_kind(provider_type: &str) -> Result<ProviderType, String> {
         "claude" => Ok(ProviderType::Claude),
         "deepseek" => Ok(ProviderType::DeepSeek),
         "kimi" => Ok(ProviderType::Moonshot),
+        "gorkh_free" => Ok(ProviderType::GorkhFree),
         _ => Err(format!("Unknown provider: {}", provider_type)),
     }
 }
@@ -2168,6 +2169,10 @@ async fn is_agent_provider_available(provider_type: &str) -> Result<bool, String
         }
         ProviderType::OpenAi | ProviderType::Claude | ProviderType::DeepSeek | ProviderType::Moonshot => {
             Ok(keyring_get_secret(&format!("llm_api_key:{}", provider_type)).is_some())
+        }
+        ProviderType::GorkhFree => {
+            // GORKH Free tier availability depends on backend connectivity
+            Ok(true)
         }
     }
 }
@@ -2189,6 +2194,7 @@ async fn list_agent_providers(_state: State<'_, AgentState>) -> Result<Vec<Provi
         ("claude", "Claude", false, true),
         ("deepseek", "DeepSeek", false, false),
         ("kimi", "Moonshot (Kimi)", false, false),
+        ("gorkh_free", "GORKH AI (Free)", true, false),
     ] {
         providers.push(ProviderInfo {
             provider_type: provider_type.to_string(),

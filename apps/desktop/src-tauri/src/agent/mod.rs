@@ -1202,6 +1202,10 @@ fn build_provider(config: &AgentConfig) -> Result<Box<dyn providers::LlmProvider
             config.provider_base_url.clone(),
             config.provider_model.clone(),
         ))),
+        ProviderType::GorkhFree => Ok(Box::new(providers::GorkhFreeProvider::new(
+            config.provider_base_url.clone().unwrap_or_else(|| "http://localhost:3001".to_string()),
+            config.provider_api_key.clone().unwrap_or_default(),
+        ))),
     }
 }
 

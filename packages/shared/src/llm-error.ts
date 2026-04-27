@@ -56,6 +56,9 @@ export const LlmErrorCode = {
 
   /** Free AI fallback service encountered an upstream error */
   FREE_AI_FALLBACK_UPSTREAM_ERROR: 'FREE_AI_FALLBACK_UPSTREAM_ERROR',
+
+  /** Free tier quota exhausted — user has used all daily tasks */
+  FREE_TIER_EXHAUSTED: 'FREE_TIER_EXHAUSTED',
 } as const;
 
 /**

@@ -37,6 +37,7 @@ use tokio::sync::RwLock;
 
 pub mod claude;
 pub mod deepseek;
+pub mod gorkh_free;
 pub mod local_compat;
 pub mod moonshot;
 pub mod native_ollama;
@@ -45,6 +46,7 @@ pub mod openai_format;
 
 pub use claude::ClaudeProvider;
 pub use deepseek::DeepSeekProvider;
+pub use gorkh_free::GorkhFreeProvider;
 pub use local_compat::LocalCompatProvider;
 pub use moonshot::MoonshotProvider;
 pub use native_ollama::NativeOllamaProvider;
@@ -66,6 +68,8 @@ pub enum ProviderType {
     DeepSeek,
     /// Moonshot (Kimi) API (paid, OpenAI-compatible)
     Moonshot,
+    /// GORKH AI Free tier (hosted DeepSeek, rate-limited)
+    GorkhFree,
 }
 
 impl ProviderType {
@@ -77,13 +81,14 @@ impl ProviderType {
             ProviderType::Claude => "Claude",
             ProviderType::DeepSeek => "DeepSeek",
             ProviderType::Moonshot => "Moonshot (Kimi)",
+            ProviderType::GorkhFree => "GORKH AI (Free)",
         }
     }
 
     pub fn is_free(&self) -> bool {
         matches!(
             self,
-            ProviderType::NativeQwenOllama | ProviderType::LocalOpenAiCompat
+            ProviderType::NativeQwenOllama | ProviderType::LocalOpenAiCompat | ProviderType::GorkhFree
         )
     }
 

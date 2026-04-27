@@ -56,6 +56,9 @@ pub enum LlmErrorCode {
 
     /// Free AI fallback service encountered an upstream error
     FreeAiFallbackUpstreamError,
+
+    /// Free tier quota exhausted — user has used all daily tasks
+    FreeTierExhausted,
 }
 
 impl LlmErrorCode {
@@ -77,6 +80,7 @@ impl LlmErrorCode {
             LlmErrorCode::OllamaError => "OLLAMA_ERROR",
             LlmErrorCode::FreeAiFallbackUnavailable => "FREE_AI_FALLBACK_UNAVAILABLE",
             LlmErrorCode::FreeAiFallbackUpstreamError => "FREE_AI_FALLBACK_UPSTREAM_ERROR",
+            LlmErrorCode::FreeTierExhausted => "FREE_TIER_EXHAUSTED",
         }
     }
 
@@ -130,6 +134,7 @@ mod tests {
             (LlmErrorCode::OllamaError, "OLLAMA_ERROR"),
             (LlmErrorCode::FreeAiFallbackUnavailable, "FREE_AI_FALLBACK_UNAVAILABLE"),
             (LlmErrorCode::FreeAiFallbackUpstreamError, "FREE_AI_FALLBACK_UPSTREAM_ERROR"),
+            (LlmErrorCode::FreeTierExhausted, "FREE_TIER_EXHAUSTED"),
         ];
 
         for (code, expected) in codes {
