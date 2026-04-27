@@ -59,6 +59,8 @@ const configSchema = z.object({
   FREE_AI_FALLBACK_VISION_MODEL: z.string().default(''),
   FREE_AI_FALLBACK_API_KEY: z.string().default(''),
   FREE_AI_FALLBACK_DAILY_LIMIT: z.string().transform((s) => parseInt(s, 10)).default('5'),
+  FREE_TIER_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  DEEPSEEK_FREE_TIER_API_KEY: z.string().default(''),
   RUN_RECOVERY_POLICY: z.enum(['fail', 'cancel']).default('fail'),
   // Error tracking (optional)
   SENTRY_DSN: z.string().default(''),
@@ -123,6 +125,8 @@ function loadConfig() {
     FREE_AI_FALLBACK_VISION_MODEL: process.env.FREE_AI_FALLBACK_VISION_MODEL,
     FREE_AI_FALLBACK_API_KEY: process.env.FREE_AI_FALLBACK_API_KEY,
     FREE_AI_FALLBACK_DAILY_LIMIT: process.env.FREE_AI_FALLBACK_DAILY_LIMIT,
+    FREE_TIER_ENABLED: process.env.FREE_TIER_ENABLED,
+    DEEPSEEK_FREE_TIER_API_KEY: process.env.DEEPSEEK_FREE_TIER_API_KEY,
     RUN_RECOVERY_POLICY: process.env.RUN_RECOVERY_POLICY,
     SENTRY_DSN: process.env.SENTRY_DSN,
     SENTRY_ENVIRONMENT: process.env.SENTRY_ENVIRONMENT,
