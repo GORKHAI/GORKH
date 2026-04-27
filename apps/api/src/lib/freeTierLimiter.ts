@@ -35,6 +35,12 @@ export const FREE_TIER_MAX_INPUT_TOKENS_PER_TASK = 16000;
 /** Maximum internal LLM iterations per free task */
 export const FREE_TIER_MAX_INTERNAL_LLM_ITERATIONS = 10;
 
+/** Maximum requests per IP per hour across all users (abuse prevention) */
+export const FREE_TIER_IP_HOURLY_LIMIT = 100;
+
+/** IP rate limit window in seconds (1 hour) */
+export const FREE_TIER_IP_WINDOW_SECONDS = 60 * 60;
+
 // DeepSeek pricing as of 2026-04-27
 // https://api-docs.deepseek.com/quick_start/pricing
 const DEEPSEEK_INPUT_TOKEN_COST_PER_1M = 0.27;
@@ -46,6 +52,10 @@ const DEEPSEEK_OUTPUT_TOKEN_COST_PER_1M = 1.10;
 
 function freeTierUserKey(userId: string): string {
   return `freetier:user:${userId}:requests`;
+}
+
+function freeTierIpKey(ip: string): string {
+  return `freetier:ip:${ip}:requests`;
 }
 
 // =============================================================================
@@ -160,6 +170,73 @@ async function redisGetUsage(userId: string): Promise<{ usedToday: number; remai
   } catch {
     return null;
   }
+}
+
+// =============================================================================
+// IP Rate Limiting (abuse prevention)
+// =============================================================================
+
+interface IpCheckResult {
+  allowed: boolean;
+  retryAfterSeconds: number;
+}
+
+function memoryIpCheck(ip: string): IpCheckResult {
+  const now = Date.now();
+  const key = `ip:${ip}`;
+  const entry = memoryBuckets.get(key) ?? { timestamps: [] };
+  const cutoff = now - FREE_TIER_IP_WINDOW_SECONDS * 1000;
+  entry.timestamps = entry.timestamps.filter((ts) => ts > cutoff);
+
+  if (entry.timestamps.length >= FREE_TIER_IP_HOURLY_LIMIT) {
+    const retryAfterMs = FREE_TIER_IP_WINDOW_SECONDS * 1000 - (now - entry.timestamps[0]);
+    memoryBuckets.set(key, entry);
+    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) };
+  }
+
+  entry.timestamps.push(now);
+  memoryBuckets.set(key, entry);
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+async function redisIpCheck(ip: string): Promise<IpCheckResult | null> {
+  const redisUrl = config.REDIS_URL;
+  const key = freeTierIpKey(ip);
+  const now = Date.now();
+  const nowSec = Math.floor(now / 1000);
+  const windowStart = nowSec - FREE_TIER_IP_WINDOW_SECONDS;
+
+  try {
+    await redisClient.zremrangebyscore(redisUrl, key, 0, windowStart);
+    const count = await redisClient.zcard(redisUrl, key);
+    if (count === null) return null;
+
+    if (count >= FREE_TIER_IP_HOURLY_LIMIT) {
+      const oldest = await redisClient.zrange(redisUrl, key, 0, 0);
+      const retryAfter = oldest.length > 0
+        ? Math.max(1, Number.parseInt(oldest[0], 10) + FREE_TIER_IP_WINDOW_SECONDS - nowSec)
+        : FREE_TIER_IP_WINDOW_SECONDS;
+      return { allowed: false, retryAfterSeconds: retryAfter };
+    }
+
+    const requestId = `${now}-${Math.random().toString(36).slice(2, 10)}`;
+    await redisClient.zadd(redisUrl, key, nowSec, requestId);
+    await redisClient.expire(redisUrl, key, FREE_TIER_IP_WINDOW_SECONDS * 2);
+    return { allowed: true, retryAfterSeconds: 0 };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if an IP has exceeded the coarse hourly rate limit.
+ *
+ * Returns { allowed: false, retryAfterSeconds } if the IP has made too many requests.
+ */
+export async function checkIpRateLimit(ip: string): Promise<IpCheckResult> {
+  const redisResult = await redisIpCheck(ip);
+  if (redisResult !== null) return redisResult;
+  return memoryIpCheck(ip);
 }
 
 // =============================================================================

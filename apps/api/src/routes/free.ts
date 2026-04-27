@@ -11,10 +11,12 @@ import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../lib/auth.js';
 import { authenticateDesktopDeviceSession } from '../lib/desktop-session.js';
 import { devicesRepo } from '../repos/devices.js';
+import { usersRepo } from '../repos/users.js';
 import {
   checkAndIncrement,
   getUsage,
   recordCompletion,
+  checkIpRateLimit,
   calculateDeepSeekCost,
   FREE_TIER_MAX_INPUT_TOKENS_PER_TASK,
   FREE_TIER_MAX_OUTPUT_TOKENS_PER_TASK,
@@ -141,11 +143,43 @@ export async function registerFreeTierRoutes(fastify: FastifyInstance): Promise<
       };
     }
 
+    // IP rate limit (abuse prevention)
+    const ipLimit = await checkIpRateLimit(request.ip);
+    if (!ipLimit.allowed) {
+      reply.status(429);
+      reply.header('Retry-After', ipLimit.retryAfterSeconds);
+      return {
+        error: 'ip_rate_limited',
+        message: 'Too many requests from this network. Please try again later.',
+      };
+    }
+
     // Auth
     const user = await resolveFreeTierUser(request, reply);
     if (!user) {
       reply.status(401);
       return { error: 'Unauthorized' };
+    }
+
+    // Anomaly logging: flag accounts that burn through quota suspiciously fast
+    const userRecord = await usersRepo.findById(user.userId);
+    if (userRecord) {
+      const accountAgeMs = Date.now() - userRecord.createdAt.getTime();
+      const isVeryNew = accountAgeMs < 30 * 60 * 1000; // 30 minutes
+      if (isVeryNew) {
+        const usage = await getUsage(user.userId);
+        if (usage.usedToday >= 4) {
+          reportError(new Error('Free tier anomaly: new account consuming quota rapidly'), {
+            userId: user.userId,
+            correlationId,
+            tags: {
+              phase: 'free_tier_anomaly',
+              usedToday: usage.usedToday,
+              accountAgeMinutes: Math.floor(accountAgeMs / 60000),
+            },
+          });
+        }
+      }
     }
 
     // Validate body
