@@ -32,6 +32,10 @@ export interface RedisClientLike {
   set(redisUrl: string, key: string, value: string, ttlSeconds: number): Promise<boolean>;
   get(redisUrl: string, key: string): Promise<string | null>;
   del(redisUrl: string, key: string): Promise<void>;
+  zadd(redisUrl: string, key: string, score: number, member: string): Promise<number | null>;
+  zremrangebyscore(redisUrl: string, key: string, min: number, max: number): Promise<number | null>;
+  zcard(redisUrl: string, key: string): Promise<number | null>;
+  zrange(redisUrl: string, key: string, start: number, stop: number): Promise<string[]>;
   xgroupCreateMkstream(redisUrl: string, streamKey: string, groupName: string): Promise<boolean>;
   xadd(redisUrl: string, streamKey: string, fields: Record<string, string>): Promise<string | null>;
   xreadgroup(
@@ -491,6 +495,41 @@ export const redisClient: RedisClientLike = {
       return asNumber(await runRawCommand(redisUrl, ['XLEN', streamKey]));
     } catch {
       return null;
+    }
+  },
+
+  async zadd(redisUrl: string, key: string, score: number, member: string): Promise<number | null> {
+    try {
+      return asNumber(await runRawCommand(redisUrl, ['ZADD', key, String(score), member]));
+    } catch {
+      return null;
+    }
+  },
+
+  async zremrangebyscore(redisUrl: string, key: string, min: number, max: number): Promise<number | null> {
+    try {
+      return asNumber(await runRawCommand(redisUrl, ['ZREMRANGEBYSCORE', key, String(min), String(max)]));
+    } catch {
+      return null;
+    }
+  },
+
+  async zcard(redisUrl: string, key: string): Promise<number | null> {
+    try {
+      return asNumber(await runRawCommand(redisUrl, ['ZCARD', key]));
+    } catch {
+      return null;
+    }
+  },
+
+  async zrange(redisUrl: string, key: string, start: number, stop: number): Promise<string[]> {
+    try {
+      const result = await runRawCommand(redisUrl, ['ZRANGE', key, String(start), String(stop)]);
+      const arr = asArray(result);
+      if (!arr) return [];
+      return arr.map((item) => asString(item) ?? '').filter(Boolean);
+    } catch {
+      return [];
     }
   },
 };
