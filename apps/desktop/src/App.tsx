@@ -27,7 +27,9 @@ import {
 } from './lib/assistantEngine.js';
 import {
   DEFAULT_LLM_PROVIDER,
+  DEFAULT_NEW_USER_PROVIDER,
   FREE_AI_ENABLED,
+  PLUS_TIER_ENABLED,
   getLlmDefaults,
   getLlmProviderLabel,
   mergeLlmSettings,
@@ -43,6 +45,7 @@ import {
   resolveHostedFreeAiBinding,
   shouldRetryWithHostedFreeAiFallback,
 } from './lib/freeAiFallback.js';
+import { fetchFreeTierUsage, type FreeTierUsage } from './lib/freeTier.js';
 import {
   buildFreeAiSetupPreflightReport,
   ensureAssistantRunForMessage,
@@ -394,7 +397,7 @@ function App() {
   const [aiState, setAiState] = useState<AssistantEngineState | null>(null);
   const [currentProposal, setCurrentProposal] = useState<AgentProposal | undefined>(undefined);
   const [llmSettings, setLlmSettings] = useState<LlmSettings>(() =>
-    getLlmDefaults(FREE_AI_ENABLED ? DEFAULT_LLM_PROVIDER : 'openai')
+    getLlmDefaults(FREE_AI_ENABLED ? DEFAULT_NEW_USER_PROVIDER : 'openai')
   );
   const [providerConfigured, setProviderConfigured] = useState(false);
   const [providerCheckBusy, setProviderCheckBusy] = useState(false);
@@ -413,6 +416,7 @@ function App() {
     dayKey: getTodayUsageKey(),
     tasksStarted: 0,
   }));
+  const [freeTierUsage, setFreeTierUsage] = useState<FreeTierUsage | null>(null);
   const [overlayModeStatus, setOverlayModeStatus] = useState<OverlayModeStatus | null>(null);
   const [overlayDetailsOpen, setOverlayDetailsOpen] = useState(false);
   const [visionBoostRequested, setVisionBoostRequested] = useState(false);
@@ -522,6 +526,16 @@ function App() {
       setProviderCheckBusy(false);
     }
   }, [llmSettings.provider]);
+
+  const refreshFreeTierUsage = useCallback(async () => {
+    if (!runtimeConfig || !sessionDeviceToken) return;
+    try {
+      const usage = await fetchFreeTierUsage(runtimeConfig, sessionDeviceToken);
+      setFreeTierUsage(usage);
+    } catch {
+      setFreeTierUsage(null);
+    }
+  }, [runtimeConfig, sessionDeviceToken]);
 
   const notePermissionIssue = useCallback((target: PermissionTarget, message: string) => {
     setPermissionHintTarget(target);
@@ -749,10 +763,14 @@ function App() {
       }
     });
 
+    if (llmSettings.provider === 'gorkh_free') {
+      void refreshFreeTierUsage();
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [refreshProviderConfigured, localAiStatus?.runtimeRunning]);
+  }, [refreshProviderConfigured, localAiStatus?.runtimeRunning, llmSettings.provider, refreshFreeTierUsage]);
 
   useEffect(() => {
     setLocalSettingsState(getSettings());
@@ -1668,13 +1686,15 @@ function App() {
         const shouldForceHostedFallback = pendingTaskConfirmation?.goal === trimmed
           && pendingTaskConfirmation.providerMode === 'hosted_free_ai';
 
-        if (shouldForceHostedFallback || localTaskBinding.requiresVisionBoost) {
+        if (shouldForceHostedFallback || (PLUS_TIER_ENABLED && localTaskBinding.requiresVisionBoost)) {
           if (!hostedFreeAiAvailable) {
             setMessages((prev) => [
               ...prev,
               createChatItem(
                 'agent',
-                'This task needs Vision Boost or the hosted Free AI fallback, but that fallback is not available for this desktop right now. Enable Vision Boost locally or try again when hosted fallback is available.'
+                PLUS_TIER_ENABLED
+                  ? 'This task needs Vision Boost or the hosted Free AI fallback, but that fallback is not available for this desktop right now. Enable Vision Boost locally or try again when hosted fallback is available.'
+                  : 'The hosted Free AI fallback is not available for this desktop right now. Please try again in a moment.'
               ),
             ]);
             return false;
@@ -1787,6 +1807,7 @@ function App() {
     setAssistantConversationBusy(true);
     void (async () => {
       try {
+        const isGorkhFree = llmSettings.provider === 'gorkh_free';
         const conversationSettings = llmSettings.provider === DEFAULT_LLM_PROVIDER
           ? resolveManagedLocalLlmBinding(localAiStatus, localAiRecommendation)
           : llmSettings;
@@ -1802,10 +1823,13 @@ function App() {
         try {
           result = await assistantConversationTurn({
             provider: llmSettings.provider,
-            baseUrl: conversationSettings.baseUrl,
+            baseUrl: isGorkhFree
+              ? (runtimeConfig?.httpBase ?? 'http://localhost:3001')
+              : conversationSettings.baseUrl,
             model: conversationSettings.model,
             messages: conversationMessages,
             appContext: gorkhAppContext ?? undefined,
+            apiKeyOverride: isGorkhFree ? sessionDeviceToken ?? undefined : undefined,
             correlationId,
           });
         } catch (error) {
@@ -1880,6 +1904,11 @@ function App() {
           return;
         }
 
+        // Refresh free tier usage after a successful turn
+        if (llmSettings.provider === 'gorkh_free') {
+          void refreshFreeTierUsage();
+        }
+
         if (result.kind === 'reply') {
           setMessages((prev) => [
             ...prev,
@@ -1911,7 +1940,8 @@ function App() {
             }
 
             if (
-              llmSettings.provider === DEFAULT_LLM_PROVIDER
+              PLUS_TIER_ENABLED
+              && llmSettings.provider === DEFAULT_LLM_PROVIDER
               && hostedFreeAiAvailable
               && resolveManagedLocalTaskBinding(localAiStatus, localAiRecommendation, result.goal)
                 .requiresVisionBoost
@@ -1932,11 +1962,14 @@ function App() {
         }
 
         const parsedError = parseDesktopError(err, 'The assistant could not respond right now.');
+        const isFreeTierExhausted = parsedError.code === 'FREE_TIER_EXHAUSTED';
         setMessages((prev) => [
           ...prev,
           createChatItem(
             'agent',
-            parsedError.message
+            isFreeTierExhausted
+              ? 'You have used all your free tasks for today. Your limit resets in 24 hours. Open Settings to add your own API key for unlimited tasks.'
+              : parsedError.message
           ),
         ]);
       } finally {
@@ -2346,6 +2379,10 @@ function App() {
   }, [startFreeAiSetup]);
 
   const handleEnableVisionBoost = useCallback(async () => {
+    if (!PLUS_TIER_ENABLED) {
+      setLocalAiError('Vision Boost is not available.');
+      return;
+    }
     setLocalAiActionBusy(true);
     setLocalAiError(null);
     try {
@@ -2817,7 +2854,8 @@ function App() {
     && llmSettings.provider === DEFAULT_LLM_PROVIDER
     && !providerConfigured;
   const showVisionBoostSetup =
-    isSignedIn
+    PLUS_TIER_ENABLED
+    && isSignedIn
     && llmSettings.provider === DEFAULT_LLM_PROVIDER
     && (visionBoostRequested || Boolean(localAiRecommendation?.visionAvailable || localAiStatus?.selectedTier === 'vision'));
   const assistantSetupMessage = showFreeAiSetup
@@ -3063,9 +3101,11 @@ function App() {
             )}
 
             <div style={{ marginTop: '1rem', display: 'grid', gap: '0.45rem' }}>
-              <div style={{ fontSize: '0.875rem' }}>
-                <strong>Plan:</strong> {localPlanPolicy.plan === 'plus' ? 'Plus' : 'Free local'}
-              </div>
+              {PLUS_TIER_ENABLED && (
+                <div style={{ fontSize: '0.875rem' }}>
+                  <strong>Plan:</strong> {localPlanPolicy.plan === 'plus' ? 'Plus' : 'Free local'}
+                </div>
+              )}
               <div style={{ fontSize: '0.875rem' }}>
                 <strong>Billing subscription:</strong> {subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
               </div>
@@ -3753,20 +3793,22 @@ function App() {
                   >
                     Assistant engine: {llmSettings.provider === DEFAULT_LLM_PROVIDER ? 'Free AI' : getLlmProviderLabel(llmSettings.provider)}
                   </span>
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      padding: '0.35rem 0.75rem',
-                      borderRadius: '9999px',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      background: localPlanPolicy.plan === 'plus' ? '#ede9fe' : '#fef3c7',
-                      color: localPlanPolicy.plan === 'plus' ? '#6d28d9' : '#92400e',
-                    }}
-                  >
-                    {localPlanPolicy.plan === 'plus' ? 'Plus plan' : 'Free plan'}
-                  </span>
+                  {PLUS_TIER_ENABLED && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '0.35rem 0.75rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        background: localPlanPolicy.plan === 'plus' ? '#ede9fe' : '#fef3c7',
+                        color: localPlanPolicy.plan === 'plus' ? '#6d28d9' : '#92400e',
+                      }}
+                    >
+                      {localPlanPolicy.plan === 'plus' ? 'Plus plan' : 'Free plan'}
+                    </span>
+                  )}
                   {activeRun && (
                     <span
                       style={{
@@ -3916,26 +3958,28 @@ function App() {
               )}
 
               <div style={{ marginTop: '1rem' }}>
-                <div
-                  style={{
-                    marginBottom: '0.75rem',
-                    padding: '0.75rem',
-                    background: localPlanPolicy.plan === 'plus' ? '#f5f3ff' : '#fffbeb',
-                    border: `1px solid ${localPlanPolicy.plan === 'plus' ? '#c4b5fd' : '#fde68a'}`,
-                    borderRadius: '8px',
-                    color: localPlanPolicy.plan === 'plus' ? '#5b21b6' : '#92400e',
-                    fontSize: '0.875rem',
-                  }}
-                >
-                  {localPlanPolicy.plan === 'plus'
-                    ? 'Plus plan: unlimited local tasks and Vision Boost are enabled on this desktop.'
-                    : `Free plan: ${localAiTaskUsage.tasksStarted}/${localPlanPolicy.localTaskLimit ?? 0} local tasks used today. Vision Boost is reserved for Plus.`}
-                  {localTaskAllowance.remaining != null && (
-                    <div style={{ marginTop: '0.35rem' }}>
-                      {localTaskAllowance.remaining} free local task{localTaskAllowance.remaining === 1 ? '' : 's'} remaining today.
-                    </div>
-                  )}
-                </div>
+                {llmSettings.provider === DEFAULT_LLM_PROVIDER && (
+                  <div
+                    style={{
+                      marginBottom: '0.75rem',
+                      padding: '0.75rem',
+                      background: PLUS_TIER_ENABLED && localPlanPolicy.plan === 'plus' ? '#f5f3ff' : '#fffbeb',
+                      border: `1px solid ${PLUS_TIER_ENABLED && localPlanPolicy.plan === 'plus' ? '#c4b5fd' : '#fde68a'}`,
+                      borderRadius: '8px',
+                      color: PLUS_TIER_ENABLED && localPlanPolicy.plan === 'plus' ? '#5b21b6' : '#92400e',
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    {PLUS_TIER_ENABLED && localPlanPolicy.plan === 'plus'
+                      ? 'Plus plan: unlimited local tasks and Vision Boost are enabled on this desktop.'
+                      : `Free plan: ${localAiTaskUsage.tasksStarted}/${localPlanPolicy.localTaskLimit ?? 0} local tasks used today.${PLUS_TIER_ENABLED ? ' Vision Boost is reserved for Plus.' : ''}`}
+                    {localTaskAllowance.remaining != null && (
+                      <div style={{ marginTop: '0.35rem' }}>
+                        {localTaskAllowance.remaining} free local task{localTaskAllowance.remaining === 1 ? '' : 's'} remaining today.
+                      </div>
+                    )}
+                  </div>
+                )}
                 <ChatOverlay
                   messages={messages}
                   status={status}
@@ -3952,6 +3996,8 @@ function App() {
                   onOpenPendingFreeAiSetupSettings={handleOpenPendingFreeAiSetupSettings}
                   onConfirmPendingTask={handleConfirmPendingTask}
                   onCancelPendingTask={handleCancelPendingTask}
+                  freeTierUsage={freeTierUsage}
+                  provider={llmSettings.provider}
                 />
               </div>
             </section>

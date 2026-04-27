@@ -31,6 +31,13 @@ interface PendingFreeAiSetup {
   error: string | null;
 }
 
+interface FreeTierUsage {
+  remaining_today: number;
+  used_today: number;
+  reset_at: string;
+  daily_limit: number;
+}
+
 interface ChatOverlayProps {
   messages: ChatItem[];
   status: ConnectionStatus;
@@ -47,6 +54,8 @@ interface ChatOverlayProps {
   onOpenPendingFreeAiSetupSettings?: () => void;
   onConfirmPendingTask?: () => void;
   onCancelPendingTask?: () => void;
+  freeTierUsage?: FreeTierUsage | null;
+  provider?: string;
 }
 
 export function ChatOverlay({
@@ -65,6 +74,8 @@ export function ChatOverlay({
   onOpenPendingFreeAiSetupSettings,
   onConfirmPendingTask,
   onCancelPendingTask,
+  freeTierUsage = null,
+  provider = '',
 }: ChatOverlayProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -135,25 +146,45 @@ export function ChatOverlay({
             </div>
           ) : null}
         </div>
-        <span
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '12px',
-            color: statusColors[status],
-          }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {provider === 'gorkh_free' && freeTierUsage && (
+            <span
+              style={{
+                padding: '4px 10px',
+                borderRadius: '999px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: freeTierUsage.remaining_today === 0 ? '#fee2e2' : '#dcfce7',
+                color: freeTierUsage.remaining_today === 0 ? '#991b1b' : '#166534',
+                border: `1px solid ${freeTierUsage.remaining_today === 0 ? '#fca5a5' : '#86efac'}`,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {freeTierUsage.remaining_today === 0
+                ? 'Daily limit reached'
+                : `${freeTierUsage.remaining_today} task${freeTierUsage.remaining_today === 1 ? '' : 's'} remaining`}
+            </span>
+          )}
           <span
             style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: statusColors[status],
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              color: statusColors[status],
             }}
-          />
-          {statusLabels[status]}
-        </span>
+          >
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: statusColors[status],
+              }}
+            />
+            {statusLabels[status]}
+          </span>
+        </div>
       </div>
 
       <div
@@ -180,9 +211,11 @@ export function ChatOverlay({
           >
             <p style={{ margin: 0, fontWeight: 600 }}>Try asking something natural</p>
             <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem' }}>
-              {status === 'connected'
-                ? 'Examples: "Organize my Downloads", "Fix tests in this repo", or "Open Photoshop and remove the background". GORKH will tell you what it plans to do before it starts.'
-                : 'The desktop needs to reconnect before the assistant can start working.'}
+              {status !== 'connected'
+                ? 'The desktop needs to reconnect before the assistant can start working.'
+                : provider === 'gorkh_free'
+                  ? `Examples: "Organize my Downloads", "Fix tests in this repo", or "Open Photoshop and remove the background". You have ${freeTierUsage?.remaining_today ?? 5} free task${(freeTierUsage?.remaining_today ?? 5) === 1 ? '' : 's'} remaining today. GORKH will tell you what it plans to do before it starts.`
+                  : 'Examples: "Organize my Downloads", "Fix tests in this repo", or "Open Photoshop and remove the background". GORKH will tell you what it plans to do before it starts.'}
             </p>
           </div>
         ) : (
@@ -204,6 +237,28 @@ export function ChatOverlay({
           background: 'white',
         }}
       >
+        {provider === 'gorkh_free' && freeTierUsage && freeTierUsage.remaining_today === 0 && (
+          <div
+            style={{
+              width: '100%',
+              marginBottom: '0.9rem',
+              padding: '0.95rem 1rem',
+              borderRadius: '14px',
+              background: '#fff1f2',
+              border: '1px solid #fda4af',
+              color: '#9f1239',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>Daily limit reached</div>
+            <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
+              You have used all {freeTierUsage.daily_limit} free tasks for today. Your limit resets at{' '}
+              {new Date(freeTierUsage.reset_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+            </div>
+            <div style={{ marginTop: '0.35rem', fontSize: '0.78rem', color: '#be123c' }}>
+              Want more? Open Settings and add your own API key for unlimited tasks.
+            </div>
+          </div>
+        )}
         {pendingFreeAiSetup && (
           <div
             style={{

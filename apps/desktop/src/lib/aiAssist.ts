@@ -771,7 +771,7 @@ export class AiAssistController {
     }
 
     if (!modelSupportsVision(settings)) {
-      throw new Error('This task needs Vision Boost or a vision-capable model before the assistant can inspect the screen.');
+      throw new Error('This task needs a vision-capable model before the assistant can inspect the screen. Try switching to Claude or GPT-4o in Settings.');
     }
 
     return this.captureScreenshot();

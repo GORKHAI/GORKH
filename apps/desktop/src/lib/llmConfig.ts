@@ -1,4 +1,5 @@
 export type LlmProvider =
+  | 'gorkh_free'
   | 'native_qwen_ollama'
   | 'openai'
   | 'claude'
@@ -7,7 +8,7 @@ export type LlmProvider =
   | 'kimi'
   | 'openai_compat';
 
-export type LlmRuntimeProvider = 'native_qwen_ollama' | 'openai' | 'claude' | 'openai_compat';
+export type LlmRuntimeProvider = 'gorkh_free' | 'native_qwen_ollama' | 'openai' | 'claude' | 'openai_compat';
 
 export interface LlmSettings {
   provider: LlmProvider;
@@ -32,9 +33,24 @@ export interface LlmProviderDefinition {
 
 export const DEFAULT_LLM_PROVIDER: LlmProvider = 'native_qwen_ollama';
 
+/** Default provider for brand-new users (no saved settings) */
+export const DEFAULT_NEW_USER_PROVIDER: LlmProvider = 'gorkh_free';
+
 export const FREE_AI_ENABLED = import.meta.env.VITE_FREE_AI_ENABLED === 'true';
+export const PLUS_TIER_ENABLED = import.meta.env.VITE_PLUS_TIER_ENABLED === 'true';
 
 const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
+  gorkh_free: {
+    provider: 'gorkh_free',
+    label: 'GORKH AI (Free)',
+    shortLabel: 'GORKH AI',
+    baseUrl: '', // resolved at runtime from VITE_API_HTTP_BASE
+    model: 'deepseek-chat',
+    runtimeProvider: 'gorkh_free',
+    requiresApiKey: false,
+    paid: false,
+    setupHint: '5 tasks per day. No setup needed. Powered by DeepSeek.',
+  },
   native_qwen_ollama: {
     provider: 'native_qwen_ollama',
     label: 'Free AI',
@@ -120,6 +136,7 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
 };
 
 const ALL_PROVIDER_ORDER: LlmProvider[] = [
+  'gorkh_free',
   'native_qwen_ollama',
   'openai',
   'claude',
@@ -130,13 +147,15 @@ const ALL_PROVIDER_ORDER: LlmProvider[] = [
 ];
 
 const LAUNCH_PROVIDER_ORDER: LlmProvider[] = [
+  'gorkh_free',
   'native_qwen_ollama',
   'openai',
   'claude',
 ];
 
 export function isLlmProvider(value: string | undefined | null): value is LlmProvider {
-  return value === 'native_qwen_ollama'
+  return value === 'gorkh_free'
+    || value === 'native_qwen_ollama'
     || value === 'openai'
     || value === 'claude'
     || value === 'deepseek'

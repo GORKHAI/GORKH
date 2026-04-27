@@ -1,3 +1,11 @@
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::too_many_arguments)]
+#![allow(dead_code)]
+#![allow(clippy::io_other_error)]
+#![allow(clippy::needless_borrows_for_generic_args)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::unnecessary_sort_by)]
+
 use std::sync::{Arc, Mutex};
 
 use enigo::{

@@ -68,6 +68,6 @@ export function shouldRetryWithHostedFreeAiFallback(error: unknown): boolean {
     || normalizedMessage.includes('free ai reached a mac graphics compatibility problem')
     || normalizedMessage.includes('failed to connect to local llm server')
     || normalizedMessage.includes('failed to connect to local server')
-    || normalizedMessage.includes('this task needs vision boost')
+    || normalizedMessage.includes('this task needs a vision-capable model')
   );
 }
