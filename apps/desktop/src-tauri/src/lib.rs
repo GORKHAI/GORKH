@@ -2561,20 +2561,38 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let overlay_runtime = window.state::<OverlayModeRuntimeState>();
-                if overlay_runtime.state.lock().unwrap().active {
-                    let _ =
-                        main_window_exit_overlay_mode_impl(window.app_handle(), &overlay_runtime);
-                    return;
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let overlay_runtime = window.state::<OverlayModeRuntimeState>();
+                    let is_overlay_active = overlay_runtime.state.lock().unwrap().active;
+                    if is_overlay_active {
+                        let _ = main_window_exit_overlay_mode_impl(
+                            window.app_handle(),
+                            &overlay_runtime,
+                        );
+                    }
+                    let runtime = window.state::<TrayRuntimeState>();
+                    if let Some(main_window) = window.app_handle().get_webview_window("main") {
+                        hide_window_to_tray(&main_window, &runtime);
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
-                let runtime = window.state::<TrayRuntimeState>();
-                if let Some(main_window) = window.app_handle().get_webview_window("main") {
-                    hide_window_to_tray(&main_window, &runtime);
-                } else {
-                    let _ = window.hide();
+                WindowEvent::Focused(true) => {
+                    // macOS dock-icon click (and other app-activation paths)
+                    // should show the window if it is currently hidden.
+                    if let Ok(false) = window.is_visible() {
+                        let runtime = window.state::<TrayRuntimeState>();
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = window.emit("tray.show", ());
+                        let mut guard = runtime.menu.lock().unwrap();
+                        guard.window_visible = true;
+                        let _ = refresh_tray_menu(window.app_handle(), &guard.clone());
+                    }
                 }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())
