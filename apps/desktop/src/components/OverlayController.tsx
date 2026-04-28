@@ -40,11 +40,13 @@ export function OverlayController({
         zIndex: 140,
         width: 'min(272px, calc(100vw - 1.5rem))',
         borderRadius: '16px',
-        background: 'rgba(15,23,42,0.66)',
+        background: 'rgba(15,23,42,0.72)',
         border: '1px solid rgba(255,255,255,0.15)',
         boxShadow: '0 14px 34px rgba(2,6,23,0.28)',
         color: '#f8fafc',
         overflow: 'hidden',
+        backdropFilter: 'blur(12px) saturate(130%)',
+        WebkitBackdropFilter: 'blur(12px) saturate(130%)',
       }}
     >
       <div

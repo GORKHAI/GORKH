@@ -583,6 +583,10 @@ struct OverlayWindowSnapshot {
     maximized: bool,
     decorations: bool,
     resizable: bool,
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
 }
 
 #[derive(Serialize)]
@@ -1069,11 +1073,17 @@ fn overlay_mode_supported() -> bool {
 }
 
 fn capture_overlay_window_snapshot(window: &tauri::WebviewWindow) -> OverlayWindowSnapshot {
+    let size = window.inner_size().unwrap_or(tauri::PhysicalSize::new(1200, 800));
+    let pos = window.inner_position().unwrap_or(tauri::PhysicalPosition::new(0, 0));
     OverlayWindowSnapshot {
         fullscreen: window.is_fullscreen().unwrap_or(false),
         maximized: window.is_maximized().unwrap_or(false),
         decorations: window.is_decorated().unwrap_or(true),
         resizable: window.is_resizable().unwrap_or(true),
+        width: size.width,
+        height: size.height,
+        x: pos.x,
+        y: pos.y,
     }
 }
 
@@ -1093,13 +1103,23 @@ fn restore_overlay_window_snapshot(
     window
         .set_resizable(snapshot.resizable)
         .map_err(|e| format!("Failed to restore window resize state: {}", e))?;
+    window
+        .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+            snapshot.width, snapshot.height,
+        )))
+        .map_err(|e| format!("Failed to restore window size: {}", e))?;
+    window
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+            snapshot.x, snapshot.y,
+        )))
+        .map_err(|e| format!("Failed to restore window position: {}", e))?;
     if snapshot.maximized {
         window
             .maximize()
             .map_err(|e| format!("Failed to restore maximized state: {}", e))?;
     } else {
         window
-            .unmaximize()
+        .unmaximize()
             .map_err(|e| format!("Failed to restore maximized state: {}", e))?;
     }
     Ok(())
@@ -1139,14 +1159,44 @@ fn main_window_enter_overlay_mode_impl(
     window
         .set_always_on_top(true)
         .map_err(|e| format!("Failed to enable always-on-top for overlay mode: {}", e))?;
-    if let Err(error) = window.set_fullscreen(true) {
+
+    // Instead of native fullscreen (which traps the window in its own Space
+    // on macOS and blocks seeing other apps), size the window to the current
+    // monitor so it covers the screen while remaining on the normal desktop.
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| format!("Failed to get current monitor: {}", e))?
+        .ok_or_else(|| "No current monitor found".to_string())?;
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
+    if let Err(error) = window.set_size(tauri::Size::Physical(*monitor_size)) {
         let _ = restore_overlay_window_snapshot(&window, &snapshot);
-        let message = format!("Failed to enter fullscreen overlay mode: {}", error);
+        let message = format!("Failed to resize window for overlay mode: {}", error);
         let mut guard = runtime.state.lock().unwrap();
         guard.active = false;
         guard.previous = None;
         guard.last_error = Some(message.clone());
         return Err(message);
+    }
+    if let Err(error) = window.set_position(tauri::Position::Physical(*monitor_pos)) {
+        let _ = restore_overlay_window_snapshot(&window, &snapshot);
+        let message = format!("Failed to position window for overlay mode: {}", error);
+        let mut guard = runtime.state.lock().unwrap();
+        guard.active = false;
+        guard.previous = None;
+        guard.last_error = Some(message.clone());
+        return Err(message);
+    }
+
+    // Apply macOS vibrancy for the frosted-glass see-through effect.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window_vibrancy::apply_vibrancy(
+            &window,
+            window_vibrancy::NSVisualEffectMaterial::HudWindow,
+            None,
+            None,
+        );
     }
 
     let mut guard = runtime.state.lock().unwrap();
@@ -1164,6 +1214,12 @@ fn main_window_exit_overlay_mode_impl(
         .get_webview_window("main")
         .ok_or_else(|| "Main window not found".to_string())?;
 
+    // Clear macOS vibrancy before restoring normal window state.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window_vibrancy::clear_vibrancy(&window);
+    }
+
     let previous = {
         let guard = runtime.state.lock().unwrap();
         guard.previous.clone()
@@ -1172,9 +1228,6 @@ fn main_window_exit_overlay_mode_impl(
     if let Some(snapshot) = previous.as_ref() {
         restore_overlay_window_snapshot(&window, snapshot)?;
     } else {
-        window
-            .set_fullscreen(false)
-            .map_err(|e| format!("Failed to clear fullscreen overlay mode: {}", e))?;
         window
             .set_always_on_top(false)
             .map_err(|e| format!("Failed to clear always-on-top overlay mode: {}", e))?;

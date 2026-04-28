@@ -19,6 +19,20 @@ export function ActiveOverlayShell({
         background: 'transparent',
       }}
     >
+      {/* Soft translucent dim layer — click-through so the user can interact
+          with apps underneath, while vibrancy + backdrop-filter give the glass
+          feel that makes the overlay feel present without blocking the view. */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(0,0,0,0.12)',
+          backdropFilter: 'blur(20px) saturate(140%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+          pointerEvents: 'none',
+        }}
+      />
+
       {/* GORKH branding - minimal top-left status pill */}
       <div
         style={{
@@ -30,10 +44,11 @@ export function ActiveOverlayShell({
           gap: '0.6rem',
           padding: '0.5rem 0.75rem',
           borderRadius: '999px',
-          background: 'rgba(0,0,0,0.6)',
-          border: '1px solid rgba(255,255,255,0.15)',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+          background: 'rgba(0,0,0,0.45)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
           color: '#ffffff',
+          pointerEvents: 'auto',
         }}
       >
         {/* Status dot */}
@@ -69,6 +84,7 @@ export function ActiveOverlayShell({
             background: 'rgba(0,0,0,0.5)',
             padding: '0.3rem 0.6rem',
             borderRadius: '6px',
+            pointerEvents: 'auto',
           }}
         >
           Focus mode (overlay not available)
