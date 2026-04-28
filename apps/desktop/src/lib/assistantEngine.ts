@@ -181,6 +181,10 @@ function mapAdvancedProvider(settings: LlmSettings): {
       };
     case 'claude':
       return { provider: 'claude', credentialProvider: 'claude' };
+    case 'gorkh_free':
+      throw new Error(
+        'gorkh_free provider is not yet wired in the advanced agent layer. Use the standard chat flow instead.'
+      );
     default:
       if (getLlmRuntimeProvider(settings.provider) === 'openai_compat') {
         return { provider: 'openai', credentialProvider: settings.provider };

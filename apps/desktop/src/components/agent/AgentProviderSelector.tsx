@@ -40,6 +40,10 @@ const providerDetails: Record<ProviderType, { name: string; description: string 
     name: 'Moonshot (Kimi)',
     description: 'Long-context reasoning. Pay per use.',
   },
+  gorkh_free: {
+    name: 'GORKH AI (Free)',
+    description: 'Hosted free tier. No API key needed.',
+  },
 };
 
 export function AgentProviderSelector({ value, onChange }: AgentProviderSelectorProps) {
