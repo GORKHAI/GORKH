@@ -56,6 +56,8 @@ interface ChatOverlayProps {
   onCancelPendingTask?: () => void;
   freeTierUsage?: FreeTierUsage | null;
   provider?: string;
+  providerConfigured?: boolean;
+  onOpenSettings?: () => void;
 }
 
 export function ChatOverlay({
@@ -76,6 +78,8 @@ export function ChatOverlay({
   onCancelPendingTask,
   freeTierUsage = null,
   provider = '',
+  providerConfigured = false,
+  onOpenSettings,
 }: ChatOverlayProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -198,7 +202,41 @@ export function ChatOverlay({
           background: '#fcfdff',
         }}
       >
-        {messages.length === 0 ? (
+        {messages.length === 0 && !providerConfigured ? (
+          <div
+            style={{
+              marginTop: '24px',
+              padding: '1.25rem',
+              borderRadius: '14px',
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              color: '#7f1d1d',
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 600 }}>AI provider not configured</p>
+            <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem' }}>
+              Add an API key in Settings to get started.
+            </p>
+            {onOpenSettings && (
+              <button
+                onClick={onOpenSettings}
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#fff',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Open Settings
+              </button>
+            )}
+          </div>
+        ) : messages.length === 0 ? (
           <div
             style={{
               marginTop: '24px',

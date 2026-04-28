@@ -429,7 +429,6 @@ function App() {
   const [visionBoostRequested, setVisionBoostRequested] = useState(false);
   const controlEnabledRef = useRef(localSettings.allowControlEnabled);
   const workspaceConfiguredRef = useRef(workspaceState.configured);
-  const assistantGreetingSeededRef = useRef(false);
   const assistantStartingRunIdRef = useRef<string | null>(null);
   const assistantConversationRequestIdRef = useRef(0);
   const [assistantConversationBusy, setAssistantConversationBusy] = useState(false);
@@ -740,7 +739,6 @@ function App() {
     setPendingFreeAiSetupBusy(false);
     setAssistantConversationBusy(false);
     assistantConversationRequestIdRef.current += 1;
-    assistantGreetingSeededRef.current = false;
     assistantStartingRunIdRef.current = null;
   }, [isSignedIn]);
 
@@ -2910,46 +2908,7 @@ function App() {
   const overlayPreviewMessages = messages.slice(-4);
   const overlayWorkspaceLabel = workspaceState.configured ? workspaceState.rootName || 'Configured' : 'Not configured';
 
-  useEffect(() => {
-    if (!isSignedIn || authState !== 'signed_in' || status !== 'connected') {
-      assistantGreetingSeededRef.current = false;
-      return;
-    }
 
-    if (assistantGreetingSeededRef.current || messages.length > 0) {
-      return;
-    }
-
-    assistantGreetingSeededRef.current = true;
-    const firstGreeting = createChatItem('agent', GORKH_ONBOARDING.firstGreeting);
-    const setupMessage = !providerStatusState.activeConfigured
-      ? createChatItem(
-          'agent',
-          llmSettings.provider === DEFAULT_LLM_PROVIDER
-            ? localAiInstallProgress?.message
-                || localAiRecommendation?.reason
-                || GORKH_ONBOARDING.freeAiNotReady
-            : GORKH_ONBOARDING.providerNotConfigured
-        )
-      : null;
-
-    setMessages((prev) => {
-      if (prev.length > 0) {
-        return prev;
-      }
-
-      return setupMessage ? [firstGreeting, setupMessage] : [firstGreeting];
-    });
-  }, [
-    authState,
-    isSignedIn,
-    llmSettings.provider,
-    localAiInstallProgress?.message,
-    localAiRecommendation?.reason,
-    messages.length,
-    providerStatusState.activeConfigured,
-    status,
-  ]);
 
   useEffect(() => {
     if (!client || !assistantReadiness.ready) {
@@ -4023,6 +3982,8 @@ function App() {
                   onCancelPendingTask={handleCancelPendingTask}
                   freeTierUsage={freeTierUsage}
                   provider={llmSettings.provider}
+                  providerConfigured={providerStatusState.activeConfigured}
+                  onOpenSettings={() => setSettingsOpen(true)}
                 />
               </div>
             </section>
