@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ConnectionStatus } from '../lib/wsClient.js';
+import { getEmptyStateMessage, FREE_AI_ENABLED, isLlmProvider } from '../lib/llmConfig.js';
 import { BrandWordmark } from './BrandWordmark.js';
 
 interface ChatItem {
@@ -215,7 +216,9 @@ export function ChatOverlay({
           >
             <p style={{ margin: 0, fontWeight: 600 }}>AI provider not configured</p>
             <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem' }}>
-              Add an API key in Settings to get started.
+              {isLlmProvider(provider)
+                ? getEmptyStateMessage(provider, FREE_AI_ENABLED)
+                : 'Add an API key in Settings to get started.'}
             </p>
             {onOpenSettings && (
               <button

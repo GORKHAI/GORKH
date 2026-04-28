@@ -241,3 +241,36 @@ export function getAllLlmProviders(): LlmProviderDefinition[] {
     : ALL_PROVIDER_ORDER.filter((p) => p !== 'native_qwen_ollama');
   return order.map((provider) => PROVIDER_DEFINITIONS[provider]);
 }
+
+export function getEmptyStateMessage(
+  activeProvider: LlmProvider,
+  freeAiEnabled: boolean,
+): string {
+  const providerLabel = getLlmProviderLabel(activeProvider);
+
+  if (activeProvider === 'gorkh_free') {
+    return 'Sign in to use GORKH AI (Free). No API key needed.';
+  }
+
+  if (activeProvider === 'native_qwen_ollama') {
+    return freeAiEnabled
+      ? 'Free AI is not ready yet. Set it up in Settings to get started.'
+      : 'Local AI is not available. Choose a cloud provider in Settings to get started.';
+  }
+
+  const otherProviders = ALL_PROVIDER_ORDER
+    .filter((p) => p !== activeProvider)
+    .filter((p) => {
+      if (p === 'gorkh_free') return true;
+      if (p === 'native_qwen_ollama' || p === 'openai_compat') return freeAiEnabled;
+      return true;
+    })
+    .map(getLlmProviderLabel);
+
+  const othersText =
+    otherProviders.length > 0
+      ? `, or switch to ${otherProviders.join(', ')}`
+      : '';
+
+  return `I'm not connected to ${providerLabel} yet. Add an API key in Settings to get started${othersText}.`;
+}

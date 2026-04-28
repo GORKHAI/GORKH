@@ -38,9 +38,11 @@ import {
   DEFAULT_NEW_USER_PROVIDER,
   FREE_AI_ENABLED,
   PLUS_TIER_ENABLED,
+  getEmptyStateMessage,
   getLlmDefaults,
   getLlmProviderLabel,
   mergeLlmSettings,
+  type LlmProvider,
   type LlmSettings,
 } from './lib/llmConfig.js';
 import { desktopRuntimeConfig } from './lib/desktopRuntimeConfig.js';
@@ -295,7 +297,7 @@ function getAssistantConversationGreeting(provider: string, providerConfigured: 
   if (!providerConfigured) {
     return provider === 'native_qwen_ollama'
       ? GORKH_ONBOARDING.freeAiNotReady
-      : GORKH_ONBOARDING.providerNotConfigured;
+      : getEmptyStateMessage(provider as LlmProvider, FREE_AI_ENABLED);
   }
 
   return GORKH_ONBOARDING.firstGreeting;
@@ -2338,7 +2340,7 @@ function App() {
 
         setMessages((prev) => [
           ...prev,
-          createChatItem('agent', GORKH_ONBOARDING.providerNotConfigured),
+          createChatItem('agent', getEmptyStateMessage(llmSettings.provider, FREE_AI_ENABLED)),
         ]);
         return;
       }
