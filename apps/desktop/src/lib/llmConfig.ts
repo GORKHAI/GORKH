@@ -36,8 +36,10 @@ export const DEFAULT_LLM_PROVIDER: LlmProvider = 'native_qwen_ollama';
 /** Default provider for brand-new users (no saved settings) */
 export const DEFAULT_NEW_USER_PROVIDER: LlmProvider = 'gorkh_free';
 
-export const FREE_AI_ENABLED = import.meta.env.VITE_FREE_AI_ENABLED === 'true';
-export const PLUS_TIER_ENABLED = import.meta.env.VITE_PLUS_TIER_ENABLED === 'true';
+export const FREE_AI_ENABLED =
+  typeof import.meta.env !== 'undefined' && import.meta.env.VITE_FREE_AI_ENABLED === 'true';
+export const PLUS_TIER_ENABLED =
+  typeof import.meta.env !== 'undefined' && import.meta.env.VITE_PLUS_TIER_ENABLED === 'true';
 
 const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
   gorkh_free: {
@@ -135,7 +137,7 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
   },
 };
 
-const ALL_PROVIDER_ORDER: LlmProvider[] = [
+export const ALL_PROVIDER_ORDER: LlmProvider[] = [
   'gorkh_free',
   'native_qwen_ollama',
   'openai',
