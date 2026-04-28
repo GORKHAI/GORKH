@@ -1,0 +1,5 @@
+# TypeScript build artifacts (noEmit is enabled; these should not appear)
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
