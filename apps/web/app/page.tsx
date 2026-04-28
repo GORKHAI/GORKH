@@ -277,7 +277,7 @@ export default function Home() {
             <p className="copy" style={{ marginTop: 12 }}>
               2025-2026 is the inflection point for AI agents that take action. Chat is saturated.
               The next frontier is systems that operate software on behalf of users. GORKH is
-              positioned at the intersection of local AI and desktop automation.
+              positioned at the intersection of hosted AI and desktop automation.
             </p>
           </Card>
           <Card>

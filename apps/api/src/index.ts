@@ -448,9 +448,9 @@ function getBillingSnapshot(user: {
     subscriptionStatus: active ? 'active' : 'inactive',
     subscriptionCurrentPeriodEnd: user.subscriptionCurrentPeriodEnd?.toISOString() ?? null,
     planPriceId: user.planPriceId ?? null,
-    localAiPlan: active ? 'plus' : 'free',
-    freeLocalTaskLimit: active ? null : 5,
-    visionBoostIncluded: active,
+    hostedFreeAiPlan: active ? 'plus' : 'free',
+    freeHostedTaskLimit: active ? null : 5,
+    visionIncluded: active,
   };
 }
 

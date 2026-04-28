@@ -312,8 +312,6 @@ export function SettingsPanel({
           success: false, 
           message: 'Request timed out. The server may be overloaded or not responding.'
         });
-      } else if (parsedError.code === 'LOCAL_AI_COMPATIBILITY_ERROR') {
-        setTestResult({ success: false, message: parsedError.message });
       } else {
         setTestResult({ success: false, message: `Test failed: ${parsedError.message}` });
       }

@@ -6,7 +6,7 @@ import {
   type LlmSettings,
 } from './llmConfig.js';
 // ---------------------------------------------------------------------------
-// Vision heuristic (moved from deleted localAi.ts)
+// Vision heuristic for screenshot-aware task detection
 // ---------------------------------------------------------------------------
 
 function taskLikelyNeedsVision(goal: string): boolean {

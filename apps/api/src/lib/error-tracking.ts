@@ -48,7 +48,7 @@ export interface ErrorContext {
   requestId?: string;
   /** User ID (hashed in some environments) */
   userId?: string;
-  /** LLM provider type (e.g., 'openai', 'claude', 'ollama') */
+  /** LLM provider type (e.g., 'openai', 'claude', 'deepseek') */
   provider?: string;
   /** Model name used */
   model?: string;

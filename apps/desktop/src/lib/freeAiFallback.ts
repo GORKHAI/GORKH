@@ -55,12 +55,7 @@ export async function testHostedFreeAiFallback(
 
 export function shouldRetryWithHostedFreeAiFallback(error: unknown): boolean {
   const parsed = parseDesktopError(error, 'The assistant could not respond right now.');
-  const normalizedCode = parsed.code?.trim().toUpperCase() || '';
   const normalizedMessage = parsed.message.trim().toLowerCase();
-
-  if (normalizedCode === 'LOCAL_AI_COMPATIBILITY_ERROR') {
-    return true;
-  }
 
   return (
     normalizedMessage.includes('free ai')

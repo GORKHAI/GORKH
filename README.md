@@ -18,7 +18,7 @@ GORKH is designed to feel like a consumer desktop assistant, not an ops console.
 Users should be able to:
 
 - sign in from the desktop app
-- use **Free AI** with managed local setup
+- use **GORKH Free** (5 hosted jobs/day, no setup required)
 - optionally connect **OpenAI**, **Claude**, or a **custom OpenAI-compatible** endpoint
 - approve sensitive actions locally
 - let GORKH help with desktop work, file operations, coding workflows, and guided automation
@@ -57,7 +57,7 @@ The desktop app is the main product surface.
 It is responsible for:
 
 - desktop sign-in handoff
-- local AI runtime setup and status
+- provider settings and keychain-backed credential storage
 - local approvals
 - task/chat UX
 - screen capture and input-control permissions
@@ -93,15 +93,12 @@ The API provides:
 
 ### Free AI
 
-GORKH supports a managed Free AI path for local usage.
+GORKH Free is a hosted fallback tier for users without a BYO API key.
 
-The desktop app can:
-
-- detect runtime state
-- guide setup
-- install/start the managed local AI runtime
-- validate required local model availability
-- surface clear user-facing status and troubleshooting
+- 5 free tasks per day, powered by DeepSeek
+- No local installation or model management required
+- Device-token auth; no API keys sent to the server
+- Upgrade anytime by adding your own OpenAI, Claude, DeepSeek, Kimi, MiniMax, or compatible key
 
 ### Paid providers
 
@@ -109,9 +106,12 @@ GORKH supports optional paid providers in the desktop app.
 
 Current launch-facing provider model:
 
-- Free AI
+- GORKH Free (hosted, 5 tasks/day)
 - OpenAI
 - Claude
+- DeepSeek
+- Kimi
+- MiniMax
 - Custom OpenAI-compatible (advanced use)
 
 API keys stay in the local OS keychain and are never sent to the server.

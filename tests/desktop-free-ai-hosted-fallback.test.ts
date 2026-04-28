@@ -51,11 +51,11 @@ test('desktop hosted Free AI helper resolves the authenticated OpenAI-compatible
 
   assert.equal(
     imported.shouldRetryWithHostedFreeAiFallback({
-      code: 'LOCAL_AI_COMPATIBILITY_ERROR',
-      message: 'Free AI reached a Mac graphics compatibility problem inside the local AI service.',
+      code: 'FREE_AI_FALLBACK_UNAVAILABLE',
+      message: 'Free AI is temporarily unavailable. Please try again.',
     }),
     true,
-    'known local compatibility failures should trigger hosted fallback'
+    'hosted free-tier unavailability should trigger retry through fallback'
   );
 
   assert.equal(

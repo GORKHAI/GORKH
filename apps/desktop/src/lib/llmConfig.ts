@@ -117,7 +117,7 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
     label: 'Custom OpenAI-compatible',
     shortLabel: 'Custom OpenAI-compatible',
     baseUrl: 'http://127.0.0.1:8000',
-    model: 'qwen2.5-7b-instruct',
+    model: 'custom-model',
     runtimeProvider: 'openai_compat',
     requiresApiKey: false,
     paid: false,

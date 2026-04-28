@@ -9,7 +9,7 @@ This project uses Kimi Code skills for domain-specific expertise. All skills are
 | Skill | Path | Use For |
 |-------|------|---------|
 | `desktop-tauri` | `.kimi/skills/desktop-tauri/SKILL.md` | Tauri 2, Rust commands, IPC, tray, permissions, updater, keychain |
-| `ai-agent-systems` | `.kimi/skills/ai-agent-systems/SKILL.md` | LLM orchestration, tool calling, providers, local AI runtime |
+| `ai-agent-systems` | `.kimi/skills/ai-agent-systems/SKILL.md` | LLM orchestration, tool calling, providers, hosted fallback, structured output |
 | `backend-platform` | `.kimi/skills/backend-platform/SKILL.md` | Fastify API, auth, database, WebSocket, SSE, billing |
 | `frontend-ui` | `.kimi/skills/frontend-ui/SKILL.md` | React components, chat UX, approval dialogs, state management |
 | `devops-release` | `.kimi/skills/devops-release/SKILL.md` | CI/CD, signing, notarization, deployment |
@@ -49,7 +49,7 @@ docs/            # Architecture and runbook documentation
 | Testing | Node.js test runner, cargo test |
 | CI/CD | GitHub Actions |
 | Hosting | Render (API), Vercel (web), GitHub Releases (desktop) |
-| Local AI | Ollama + Qwen |
+| Hosted Free Tier | DeepSeek via GORKH API |
 | Auth | JWT (access + refresh tokens), keychain storage |
 
 ### Package Names

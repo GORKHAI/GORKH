@@ -782,7 +782,7 @@ async fn execute_step(
     let observation = if needs_vision {
         if !provider.capabilities().supports_vision {
             return Err(AgentError::Vision(
-                "This task needs Vision Boost or a provider/model with screenshot understanding."
+                "This task needs a vision-capable provider (OpenAI, Claude, or GORKH Free)."
                     .to_string(),
             ));
         }
