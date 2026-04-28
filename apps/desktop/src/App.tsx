@@ -2781,6 +2781,22 @@ function App() {
       });
   }, []);
 
+  const handleOpenSettings = useCallback(() => {
+    // If an agent task is running, ask the user whether to cancel it
+    // before opening Settings. This keeps navigation always reachable.
+    if (aiState?.isRunning) {
+      const confirmed = window.confirm(
+        'Cancel current task and open Settings?'
+      );
+      if (!confirmed) {
+        return;
+      }
+      handleStopAi();
+    }
+    setOverlayDetailsOpen(false);
+    setSettingsOpen(true);
+  }, [aiState?.isRunning, handleStopAi]);
+
   const handleWorkspaceChange = useCallback((state: LocalWorkspaceState) => {
     setWorkspaceState(state);
   }, []);
@@ -4184,10 +4200,7 @@ function App() {
               readinessBlockers={overlayReadinessBlockers}
               pendingApprovals={pendingApprovals}
               onClose={() => setOverlayDetailsOpen(false)}
-              onOpenSettings={() => {
-                setOverlayDetailsOpen(false);
-                setSettingsOpen(true);
-              }}
+              onOpenSettings={handleOpenSettings}
             />
           )}
           <OverlayController
@@ -4200,6 +4213,7 @@ function App() {
             onStop={handleStopAi}
             onPauseToggle={handleToggleAiPause}
             onOpenDetails={() => setOverlayDetailsOpen((current) => !current)}
+            onOpenSettings={handleOpenSettings}
           />
         </>
       )}

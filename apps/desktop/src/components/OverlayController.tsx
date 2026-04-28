@@ -14,6 +14,7 @@ interface OverlayControllerProps {
   onStop: () => void;
   onPauseToggle: () => void;
   onOpenDetails: () => void;
+  onOpenSettings: () => void;
 }
 
 export function OverlayController({
@@ -26,6 +27,7 @@ export function OverlayController({
   onStop,
   onPauseToggle,
   onOpenDetails,
+  onOpenSettings,
 }: OverlayControllerProps) {
   const messagePreview = messages.slice(-2);
 
@@ -196,6 +198,21 @@ export function OverlayController({
           }}
         >
           {detailsOpen ? 'Hide' : 'Details'}
+        </button>
+        <button
+          onClick={onOpenSettings}
+          style={{
+            padding: '0.42rem 0.68rem',
+            borderRadius: '999px',
+            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'rgba(255,255,255,0.06)',
+            color: 'rgba(255,255,255,0.7)',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.74rem',
+          }}
+        >
+          Settings
         </button>
       </div>
     </div>
