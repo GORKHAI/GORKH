@@ -22,7 +22,7 @@ const baseInput = {
   },
   workspaceConfigured: true,
   providerConfigured: true,
-  isManagedLocalProvider: true,
+
 };
 
 test('launch readiness stays ready when only desktop control permissions are missing', () => {

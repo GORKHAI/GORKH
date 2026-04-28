@@ -14,7 +14,10 @@ const expectedCapabilityPermissions = [
   'core:event:allow-listen',
   'core:event:allow-unlisten',
   'desktop-ipc',
-  'updater:default',
+  'updater:allow-check',
+  'updater:allow-download',
+  'updater:allow-install',
+  'process:allow-restart',
 ];
 
 const expectedCommands = [
@@ -43,15 +46,6 @@ const expectedCommands = [
   'input_hotkey',
   'input_scroll',
   'input_type',
-  'local_ai_hardware_profile',
-  'local_ai_install_progress',
-  'local_ai_install_start',
-  'local_ai_enable_vision_boost',
-  'local_ai_recommended_tier',
-  'local_ai_reset_to_managed',
-  'local_ai_start',
-  'local_ai_status',
-  'local_ai_stop',
   'list_agent_providers',
   'list_displays',
   'llm_propose_next_action',

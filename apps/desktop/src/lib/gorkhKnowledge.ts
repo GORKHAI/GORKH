@@ -134,7 +134,7 @@ export const GORKH_PROVIDER_EXPLANATIONS: Record<string, string> = {
   kimi:
     'Kimi — uses your Kimi API key. Charges apply per use. The model runs in the cloud.',
   openai_compat:
-    'Custom local model — a self-hosted OpenAI-compatible endpoint. Advanced use.',
+    'Custom OpenAI-compatible endpoint — self-hosted. Advanced use.',
 };
 
 // ---------------------------------------------------------------------------

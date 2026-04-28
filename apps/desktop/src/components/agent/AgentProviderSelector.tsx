@@ -17,8 +17,8 @@ interface AgentProviderSelectorProps {
 
 const providerDetails: Record<ProviderType, { name: string; description: string }> = {
   local_openai_compat: {
-    name: 'Local OpenAI-compatible',
-    description: 'Your own local server (vLLM, llama.cpp, etc.)',
+    name: 'Custom OpenAI-compatible',
+    description: 'Your own self-hosted endpoint (vLLM, llama.cpp, etc.)',
   },
   openai: {
     name: 'OpenAI GPT-4o',

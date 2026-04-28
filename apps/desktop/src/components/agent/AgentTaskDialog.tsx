@@ -234,7 +234,7 @@ export function AgentTaskDialog({ trigger }: AgentTaskDialogProps) {
               <p><strong>Provider:</strong> {selectedProvider ? getLlmProviderLabel(selectedProvider as LlmProvider) : 'Unknown'}</p>
               <p><strong>Estimated cost:</strong> ~{formatCost(estimatedCost)} per task</p>
               <p style={{ marginTop: '8px', opacity: 0.8 }}>
-                Consider using the free local Qwen model for privacy and cost savings.
+                Consider using GORKH Free for 5 hosted tasks per day at no cost.
               </p>
             </div>
           </div>

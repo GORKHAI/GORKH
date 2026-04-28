@@ -4,56 +4,50 @@ import test from 'node:test';
 
 const downloadPagePath = 'apps/web/app/download/page.tsx';
 
-test('desktop download page distinguishes beta trust between macOS and Windows instead of making a generic signed-release claim', () => {
+test('desktop download page states macOS trust posture for stable release', () => {
   const source = readFileSync(downloadPagePath, 'utf8');
 
   assert.doesNotMatch(
     source,
-    /Signed release|Install the signed desktop app/i,
-    'download page should not make a generic signed-release claim for the current beta surface',
+    /macOS beta|Windows beta|beta build/i,
+    'download page should not describe the stable release as beta'
   );
 
   assert.match(
     source,
-    /macOS beta.*Developer ID signed.*notarized|Developer ID signed and notarized.*macOS beta/i,
-    'download page should clearly state the macOS beta trust posture',
+    /Developer ID signed/i,
+    'download page should state that macOS builds are Developer ID signed'
   );
 
   assert.match(
     source,
-    /Windows beta.*not yet Authenticode signed|Windows beta.*SmartScreen/i,
-    'download page should clearly state the Windows beta trust posture',
-  );
-
-  assert.doesNotMatch(
-    source,
-    /Stable releases add signed Windows\s+installers|signed Windows\s+installers[\s\S]*stable/i,
-    'download page must not promise stable Windows installers while the stable lane is macOS-only',
+    /Notarized/i,
+    'download page should state that macOS builds are notarized'
   );
 
   assert.match(
     source,
-    /Stable releases currently publish macOS artifacts only|macOS-only stable release/i,
-    'download page should describe the current stable lane truthfully',
+    /macOS only|Windows support is on the roadmap/i,
+    'download page should describe the current macOS-only stable lane truthfully'
   );
 });
 
 test('desktop download page scopes direct downloads separately from updater-feed truth', () => {
   const source = readFileSync(downloadPagePath, 'utf8');
 
-  assert.match(
+  assert.doesNotMatch(
     source,
-    /Automatic updates are configured\s+separately|updater feeds are configured\s+separately|stable auto-update/i,
-    'download page should avoid implying the current direct-download path is the full stable updater truth',
+    /updater feed|auto-update|automatic updates/i,
+    'download page should avoid implying the current direct-download path includes auto-updates'
   );
 });
 
-test('desktop download page only renders the Windows download action when a Windows URL exists', () => {
+test('desktop download page does not render a broken Windows download button', () => {
   const source = readFileSync(downloadPagePath, 'utf8');
 
-  assert.match(
+  assert.doesNotMatch(
     source,
-    /downloads\.windowsUrl\s*\?/,
-    'download page should handle mac-only stable releases without rendering a broken Windows download button'
+    /windowsUrl|Windows download|Download for Windows/i,
+    'download page should not render a Windows download button when Windows is not supported'
   );
 });

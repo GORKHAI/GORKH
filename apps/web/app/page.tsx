@@ -24,7 +24,7 @@ export default function Home() {
       <section className="hero hero--center">
         <div className="eyebrow">
           <Activity size={14} />
-          Now in private beta
+          Now available
         </div>
 
         <div style={{ display: 'grid', gap: 20, justifyItems: 'center' }}>
@@ -205,11 +205,12 @@ export default function Home() {
               Free Tier
             </div>
             <h3 className="section-heading" style={{ fontSize: 20, marginTop: 12 }}>
-              Local Agent
+              BYO Provider
             </h3>
             <p className="copy" style={{ marginTop: 10 }}>
-              Full desktop agent with local screen understanding, file tools, and terminal access.
-              Users supply their own API keys. No account required. Unlimited local usage.
+              Full desktop agent with screen understanding, file tools, and terminal access.
+              Use your own API keys for OpenAI, Claude, DeepSeek, Kimi, MiniMax, or compatible providers.
+              No account required. Unlimited usage with your own keys.
             </p>
           </Card>
           <Card>
@@ -283,7 +284,7 @@ export default function Home() {
           <Card>
             <h3 className="section-heading" style={{ fontSize: 20 }}>Current Status</h3>
             <p className="copy" style={{ marginTop: 12 }}>
-              Private beta with working macOS builds (Apple Silicon + Intel), signed and notarized.
+              Working macOS builds (Apple Silicon + Intel), signed and notarized.
               Multi-provider LLM routing, cost tracking, retry logic, and tool registry are
               production-ready. Cloud backend (Fastify/PostgreSQL) and web dashboard operational.
             </p>
@@ -316,7 +317,7 @@ export default function Home() {
           Experience the Future of Desktop AI
         </h2>
         <p className="hero__subtitle" style={{ maxWidth: 560 }}>
-          Download the macOS beta today. See how GORKH understands your workflow and accelerates
+          Download the macOS app today. See how GORKH understands your workflow and accelerates
           your work — without ever compromising your privacy.
         </p>
         <div className="hero__actions">

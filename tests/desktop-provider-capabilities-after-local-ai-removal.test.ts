@@ -104,6 +104,12 @@ test('web marketing copy does not mention local AI or Ollama', () => {
     /local AI/,
     'web marketing page should not use the phrase "local AI"'
   );
+
+  assert.doesNotMatch(
+    pageSource,
+    /Local Agent/,
+    'web marketing page should not use "Local Agent" as a product tier name'
+  );
 });
 
 test('README and AGENTS guidance do not present local AI as a current feature', () => {
@@ -114,6 +120,12 @@ test('README and AGENTS guidance do not present local AI as a current feature', 
     readmeSource,
     /managed local AI runtime/,
     'README should not describe a managed local AI runtime'
+  );
+
+  assert.doesNotMatch(
+    readmeSource,
+    /local Free AI runtime/,
+    'README should not describe a local Free AI runtime'
   );
 
   assert.doesNotMatch(
@@ -136,5 +148,100 @@ test('shared error codes do not expose Ollama-specific legacy errors without doc
     llmErrorSource,
     /LOCAL_AI_ERROR/,
     'shared llm-error.ts should not contain a LOCAL_AI_ERROR code now that local AI is removed'
+  );
+});
+
+test('desktop IPC permissions do not include removed local_ai commands', () => {
+  const tomlSource = readFileSync('apps/desktop/src-tauri/permissions/desktop-ipc.toml', 'utf8');
+
+  assert.doesNotMatch(
+    tomlSource,
+    /local_ai_/,
+    'desktop-ipc.toml must not contain local_ai_* permission entries'
+  );
+});
+
+test('desktop UI components do not mention removed local AI providers', () => {
+  const agentDialogSource = readFileSync(
+    'apps/desktop/src/components/agent/AgentTaskDialog.tsx',
+    'utf8'
+  );
+  const providerSelectorSource = readFileSync(
+    'apps/desktop/src/components/agent/AgentProviderSelector.tsx',
+    'utf8'
+  );
+  const gorkhKnowledgeSource = readFileSync('apps/desktop/src/lib/gorkhKnowledge.ts', 'utf8');
+
+  assert.doesNotMatch(
+    agentDialogSource,
+    /Qwen/,
+    'AgentTaskDialog.tsx must not mention the removed Qwen local model'
+  );
+
+  assert.doesNotMatch(
+    providerSelectorSource,
+    /Local OpenAI-compatible/,
+    'AgentProviderSelector.tsx must not use "Local OpenAI-compatible" as a user-facing name'
+  );
+
+  assert.doesNotMatch(
+    gorkhKnowledgeSource,
+    /local model/,
+    'gorkhKnowledge.ts must not describe openai_compat as a "local model"'
+  );
+});
+
+test('Rust source does not mention removed local AI providers in error messages', () => {
+  const openaiCompatSource = readFileSync(
+    'apps/desktop/src-tauri/src/llm/openai_compat.rs',
+    'utf8'
+  );
+
+  assert.doesNotMatch(
+    openaiCompatSource,
+    /Qwen/,
+    'openai_compat.rs must not mention Qwen in error messages'
+  );
+
+  assert.doesNotMatch(
+    openaiCompatSource,
+    /local LLM server/,
+    'openai_compat.rs must not refer to a "local LLM server"'
+  );
+});
+
+test('task readiness does not reference removed local engine concept', () => {
+  const taskReadinessSource = readFileSync('apps/desktop/src/lib/taskReadiness.ts', 'utf8');
+
+  assert.doesNotMatch(
+    taskReadinessSource,
+    /Install the local engine/,
+    'taskReadiness.ts must not tell users to install a local engine'
+  );
+
+  assert.doesNotMatch(
+    taskReadinessSource,
+    /local-engine/,
+    'taskReadiness.ts must not use the local-engine setup item id'
+  );
+});
+
+test('web dashboard does not describe usage as local desktop usage', () => {
+  const dashboardSource = readFileSync('apps/web/app/dashboard/page.tsx', 'utf8');
+
+  assert.doesNotMatch(
+    dashboardSource,
+    /Free local desktop usage/,
+    'dashboard page must not use the phrase "Free local desktop usage"'
+  );
+});
+
+test('openai-compat setup hint uses self-hosted terminology', () => {
+  const llmConfigSource = readFileSync('apps/desktop/src/lib/llmConfig.ts', 'utf8');
+
+  assert.doesNotMatch(
+    llmConfigSource,
+    /Run a local OpenAI-compatible server/,
+    'llmConfig.ts openai_compat setupHint must not say "Run a local OpenAI-compatible server"'
   );
 });

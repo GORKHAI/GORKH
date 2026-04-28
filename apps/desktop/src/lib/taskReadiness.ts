@@ -10,10 +10,7 @@ export type DesktopTaskBlockerId =
   | 'workspace'
   | 'provider';
 
-export type DesktopTaskSetupItemId =
-  | DesktopTaskBlockerId
-  | 'local-engine'
-  | 'vision-boost';
+export type DesktopTaskSetupItemId = DesktopTaskBlockerId;
 
 export interface DesktopTaskBlocker {
   id: DesktopTaskBlockerId;
@@ -48,7 +45,6 @@ interface EvaluateDesktopTaskReadinessInput {
   localSettings: LocalSettingsState;
   workspaceConfigured: boolean;
   providerConfigured: boolean;
-  isManagedLocalProvider?: boolean;
   requireControl?: boolean;
   requireScreen?: boolean;
   requireWorkspace?: boolean;
@@ -228,15 +224,7 @@ export function evaluateDesktopTaskReadiness(
       detail: 'Configure a usable model provider before starting AI Assist tasks.',
     } satisfies DesktopTaskBlocker;
     blockers.push(item);
-    requiredSetup.push(
-      input.isManagedLocalProvider === false
-        ? item
-        : {
-            id: 'local-engine',
-            label: 'Free AI not ready',
-            detail: 'Install the local engine and default AI model before starting assistant work.',
-          }
-    );
+    requiredSetup.push(item);
   }
 
   return {

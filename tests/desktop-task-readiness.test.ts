@@ -101,7 +101,7 @@ test('desktop retail readiness separates required setup from optional upgrades a
   assert.equal(Array.isArray(readiness.optionalUpgrades), true, 'retail onboarding should expose optional upgrade items separately');
   assert.deepEqual(
     readiness.requiredSetup?.map((item) => item.id),
-    ['screen-preview', 'screen-permission', 'control-toggle', 'accessibility-permission', 'workspace', 'local-engine']
+    ['screen-preview', 'screen-permission', 'control-toggle', 'accessibility-permission', 'workspace', 'provider']
   );
   assert.deepEqual(
     readiness.optionalUpgrades?.map((item) => item.id),
@@ -110,7 +110,7 @@ test('desktop retail readiness separates required setup from optional upgrades a
   );
 });
 
-test('desktop custom-provider readiness keeps paid-provider setup separate from Free AI local-engine setup', () => {
+test('desktop custom-provider readiness shows provider setup when no provider is configured', () => {
   const readiness = evaluateDesktopTaskReadiness({
     mode: 'ai_assist',
     subscriptionStatus: 'active',
@@ -127,7 +127,6 @@ test('desktop custom-provider readiness keeps paid-provider setup separate from 
     },
     workspaceConfigured: true,
     providerConfigured: false,
-    isManagedLocalProvider: false,
   }) as typeof evaluateDesktopTaskReadiness extends (...args: any[]) => infer TResult
     ? TResult & {
         requiredSetup?: Array<{ id: string; detail: string }>;
@@ -137,7 +136,7 @@ test('desktop custom-provider readiness keeps paid-provider setup separate from 
   assert.deepEqual(
     readiness.requiredSetup?.map((item) => item.id),
     ['provider'],
-    'custom provider setup should keep its own readiness item instead of forcing Free AI local-engine setup'
+    'custom provider setup should show provider configuration when no provider is configured'
   );
   assert.match(
     readiness.requiredSetup?.[0]?.detail ?? '',

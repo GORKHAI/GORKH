@@ -150,7 +150,7 @@ impl LlmProvider for OpenAiCompatProvider {
         let location = if is_hosted_free_ai_fallback_endpoint(&url) {
             "Hosted Free AI fallback"
         } else if is_localhost_url(&url) {
-            "local LLM server"
+            "self-hosted endpoint"
         } else {
             "remote provider"
         };
@@ -158,7 +158,7 @@ impl LlmProvider for OpenAiCompatProvider {
         let mut request_builder = client.post(&url).header("Content-Type", "application/json");
 
         // Only add Authorization header if API key is provided and non-empty
-        // For local servers, the key is typically not required
+        // For self-hosted endpoints, the key is typically not required
         if !params.api_key.is_empty() {
             request_builder =
                 request_builder.header("Authorization", format!("Bearer {}", params.api_key));
@@ -301,7 +301,7 @@ impl LlmProvider for OpenAiCompatProvider {
         } else if is_remote {
             "remote provider"
         } else {
-            "local LLM server"
+            "self-hosted endpoint"
         };
 
         // For remote hosts (e.g. hosted fallback on Render) retry on connection failure
@@ -424,10 +424,10 @@ impl LlmProvider for OpenAiCompatProvider {
     }
 }
 
-/// Create a fallback "ask_user" proposal when the local server is unreachable
+/// Create a fallback "ask_user" proposal when the self-hosted endpoint is unreachable
 #[allow(dead_code)]
 pub fn create_server_unreachable_proposal() -> AgentProposal {
     AgentProposal::AskUser {
-        question: "Unable to connect to the local LLM server. Please ensure your local model is running and try again. If you haven't set up a local model yet, check the documentation for instructions on running Qwen or another OpenAI-compatible model locally.".to_string(),
+        question: "Unable to connect to the OpenAI-compatible endpoint. Please ensure your endpoint is running and try again. Check the documentation for instructions on setting up a self-hosted OpenAI-compatible server.".to_string(),
     }
 }

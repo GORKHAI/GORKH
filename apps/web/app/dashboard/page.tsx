@@ -271,7 +271,7 @@ export default function DashboardPage() {
           <p className="copy" style={{ marginTop: 16 }}>
             {hasActiveSubscription
               ? 'Premium browser-controlled flows are unlocked for this account.'
-              : 'Free local desktop usage is available without a subscription.'}
+              : 'Free desktop usage with your own API keys is available without a subscription.'}
           </p>
           {billing?.subscriptionCurrentPeriodEnd ? (
             <p className="small-note mono" style={{ marginTop: 12 }}>

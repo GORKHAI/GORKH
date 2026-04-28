@@ -33,7 +33,6 @@ import {
   type AssistantEngineState,
 } from './lib/assistantEngine.js';
 import {
-  DEFAULT_LLM_PROVIDER,
   DEFAULT_NEW_USER_PROVIDER,
   FREE_AI_ENABLED,
   PLUS_TIER_ENABLED,
@@ -1436,7 +1435,7 @@ function App() {
         localSettings,
         workspaceConfigured: workspaceState.configured,
         providerConfigured: providerStatusState.activeConfigured,
-        isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
+
         requireControl: false,
         requireScreen: taskRequiresScreen,
         requireWorkspace: taskRequiresWorkspace,
@@ -2210,7 +2209,6 @@ function App() {
     localSettings,
     workspaceConfigured: workspaceState.configured,
     providerConfigured: providerStatusState.activeConfigured,
-    isManagedLocalProvider: false,
     requireControl: false,
     requireScreen: false,
     requireWorkspace: false,
@@ -2223,7 +2221,6 @@ function App() {
     localSettings,
     workspaceConfigured: workspaceState.configured,
     providerConfigured: providerStatusState.activeConfigured,
-    isManagedLocalProvider: false,
     requireControl: false,
     requireScreen: false,
     requireWorkspace: false,
@@ -2236,7 +2233,6 @@ function App() {
     localSettings,
     workspaceConfigured: workspaceState.configured,
     providerConfigured: providerStatusState.activeConfigured,
-    isManagedLocalProvider: false,
     requireControl: true,
     requireScreen: false,
     requireWorkspace: false,

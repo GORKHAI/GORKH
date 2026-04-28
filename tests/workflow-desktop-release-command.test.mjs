@@ -75,7 +75,7 @@ test('desktop release workflow generates concrete updater config for release bui
 
   assert.match(
     source,
-    /updates\/desktop\/\{\{platform\}\}\/\{\{arch\}\}\/\{\{current_version\}\}\.json/,
+    /updates\/desktop\/\{\{target\}\}\/\{\{arch\}\}\/\{\{current_version\}\}\.json/,
     'Desktop release workflow should generate the concrete updater endpoint path used by packaged clients'
   );
 });
@@ -141,10 +141,10 @@ test('desktop release workflow keeps beta macOS artifacts signed and notarized w
     'macOS beta builds should not skip Developer ID signing identity import'
   );
 
-  assert.doesNotMatch(
+  assert.match(
     source,
     /Notarize and staple macOS artifact\s*\n\s*if:\s*needs\.prepare\.outputs\.channel == 'stable'/,
-    'macOS beta builds should not skip notarization and stapling'
+    'macOS stable builds must run notarization and stapling'
   );
 
   assert.match(

@@ -121,7 +121,7 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
     runtimeProvider: 'openai_compat',
     requiresApiKey: false,
     paid: false,
-    setupHint: 'Run a local OpenAI-compatible server such as vLLM or llama.cpp server.',
+    setupHint: 'Run a self-hosted OpenAI-compatible server such as vLLM or llama.cpp server.',
   },
 };
 

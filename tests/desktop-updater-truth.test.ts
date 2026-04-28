@@ -35,10 +35,10 @@ test('desktop updater route only returns 204 when updater is intentionally disab
   );
 });
 
-test('desktop settings explicitly explain that beta builds ship without in-app updates', () => {
+test('desktop settings explicitly explain that in-app updates are not available', () => {
   assert.match(
     settingsPanelSource,
-    /beta builds do not ship in-app updates/i,
-    'desktop settings should make the beta updater policy explicit when the updater is disabled'
+    /In-app updates are not available for this version/i,
+    'desktop settings should explain that in-app updates are not available when the updater is disabled'
   );
 });

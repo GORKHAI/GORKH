@@ -336,7 +336,7 @@ The app includes permission status guidance and shortcuts to the relevant system
 
 ### Free AI setup
 
-GORKH can manage the local Free AI runtime for the user. The UI surfaces install progress, runtime status, model availability, and troubleshooting guidance.
+GORKH Free provides 5 hosted tasks per day at no cost. Users can also bring their own API keys for OpenAI, Claude, DeepSeek, Kimi, MiniMax, or compatible providers. API keys are stored in the local OS keychain.
 
 ## Testing and validation
 

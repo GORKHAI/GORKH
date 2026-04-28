@@ -37,10 +37,6 @@ function extractAllowedCommands() {
   return [...match[1].matchAll(/"([^"]+)"/g)].map((item) => item[1]).sort();
 }
 
-function withoutLocalAiCommands(commands) {
-  return commands.filter((cmd) => !cmd.startsWith('local_ai_'));
-}
-
 test('desktop IPC permission allowlist matches exported Rust commands exactly', () => {
   const rustCommands = extractCommandNames();
   const allowedCommands = extractAllowedCommands();
@@ -98,13 +94,13 @@ test('desktop IPC permission allowlist matches exported Rust commands exactly', 
   ].sort();
 
   assert.deepEqual(
-    withoutLocalAiCommands(allowedCommands),
+    allowedCommands,
     expectedCommands,
-    'allowed commands (excluding legacy local_ai entries) must match the expected allowlist'
+    'allowed commands must match the expected allowlist'
   );
 
   assert.deepEqual(
-    withoutLocalAiCommands(allowedCommands),
+    allowedCommands,
     rustCommands,
     'every exported tauri command must be explicitly allowlisted and no extra commands may be exposed'
   );
