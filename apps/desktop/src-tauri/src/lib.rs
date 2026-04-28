@@ -2269,10 +2269,44 @@ async fn list_agent_providers(_state: State<'_, AgentState>) -> Result<Vec<Provi
     Ok(providers)
 }
 
-/// Test a provider connection
+/// Test a provider connection with a lightweight API call.
 #[tauri::command]
-async fn test_provider(provider_type: String) -> Result<bool, String> {
-    is_agent_provider_available(&provider_type).await
+async fn test_provider(
+    provider_type: String,
+    base_url: String,
+    model: String,
+) -> Result<bool, String> {
+    // For key-requiring providers, verify the key exists first
+    if matches!(
+        provider_type.as_str(),
+        "openai" | "claude" | "deepseek" | "minimax" | "kimi"
+    ) {
+        if keyring_get_secret(&format!("llm_api_key:{}", provider_type)).is_none() {
+            return Ok(false);
+        }
+    }
+
+    let api_key = resolve_llm_api_key(&provider_type).unwrap_or_default();
+    let conversation_params = llm::ConversationTurnParams {
+        provider: provider_type,
+        base_url,
+        model,
+        api_key,
+        messages: vec![llm::ConversationTurnMessage {
+            role: "user".to_string(),
+            text: "Hello".to_string(),
+        }],
+        app_context: None,
+        correlation_id: None,
+    };
+
+    let provider = llm::create_provider(&conversation_params.provider)
+        .map_err(|e| format!("Failed to create provider: {}", e.message))?;
+
+    match provider.conversation_turn(&conversation_params).await {
+        Ok(_) => Ok(true),
+        Err(e) => Err(format!("Provider test failed: {}", e.message)),
+    }
 }
 
 /// Set provider API key (stored in keychain)
