@@ -253,25 +253,17 @@ export function SettingsPanel({
         }
       }
 
-      // Test the connection using the same conversation-turn path as live chat
-      const result = await invoke<{ kind: string; message?: string }>(
-        'assistant_conversation_turn',
-        {
-          params: {
-            provider: settings.provider,
-            baseUrl: settings.baseUrl,
-            model: settings.model,
-            messages: [{ role: 'user', text: 'Hello' }],
-            appContext: null,
-            apiKeyOverride: null,
-          },
-        }
-      );
+      // Test the connection with a lightweight provider call
+      const ok = await invoke<boolean>('test_provider', {
+        providerType: settings.provider,
+        baseUrl: settings.baseUrl,
+        model: settings.model,
+      });
 
-      if (result && typeof result === 'object' && 'kind' in result) {
+      if (ok) {
         setTestResult({ success: true, message: 'Connection successful! LLM is responding.' });
       } else {
-        setTestResult({ success: false, message: `Unexpected response: ${JSON.stringify(result)}` });
+        setTestResult({ success: false, message: 'Connection test returned false. Check your API key and network.' });
       }
     } catch (e) {
       if (isManagedFreeAiProvider && shouldRetryWithHostedFreeAiFallback(e)) {
