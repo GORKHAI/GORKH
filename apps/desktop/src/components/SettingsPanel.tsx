@@ -35,6 +35,7 @@ import {
   testHostedFreeAiFallback,
 } from '../lib/freeAiFallback.js';
 import { parseDesktopError } from '../lib/tauriError.js';
+import { notifyKeyChanged } from '../state/providerStatus.js';
 import { BrandWordmark } from './BrandWordmark.js';
 
 export type WorkspaceState = LocalWorkspaceState;
@@ -205,6 +206,7 @@ export function SettingsPanel({
         setHasKey(true);
         setApiKey('');
         setTestResult({ success: true, message: 'API key saved successfully!' });
+        void notifyKeyChanged(settings.provider);
       } else {
         setTestResult({ success: false, message: result.error || 'Failed to save key' });
       }
@@ -226,6 +228,7 @@ export function SettingsPanel({
       await invoke('clear_llm_api_key', { provider: settings.provider });
       setHasKey(false);
       setTestResult({ success: true, message: 'API key cleared' });
+      void notifyKeyChanged(settings.provider);
     } catch (e) {
       setTestResult({
         success: false,

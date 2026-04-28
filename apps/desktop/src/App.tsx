@@ -18,6 +18,14 @@ import {
 } from './lib/approvals.js';
 import { hasLlMProviderConfigured, type LocalToolEvent } from './lib/aiAssist.js';
 import {
+  getProviderStatus,
+  subscribe as subscribeProviderStatus,
+  setActiveProvider as setProviderStatusActiveProvider,
+  setSessionToken as setProviderStatusSessionToken,
+  setLocalAiStatus as setProviderStatusLocalAiStatus,
+  refresh as refreshProviderStatus,
+} from './state/providerStatus.js';
+import {
   createAssistantEngine,
   DEFAULT_ASSISTANT_ENGINE_ID,
   getAssistantEngineCatalog,
@@ -399,8 +407,7 @@ function App() {
   const [llmSettings, setLlmSettings] = useState<LlmSettings>(() =>
     getLlmDefaults(FREE_AI_ENABLED ? DEFAULT_NEW_USER_PROVIDER : 'openai')
   );
-  const [providerConfigured, setProviderConfigured] = useState(false);
-  const [providerCheckBusy, setProviderCheckBusy] = useState(false);
+  const [providerStatusState, setProviderStatusState] = useState(getProviderStatus);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [primaryDisplayId, setPrimaryDisplayId] = useState<string>('display-0');
   const [workspaceState, setWorkspaceState] = useState<LocalWorkspaceState>({ configured: false });
@@ -437,7 +444,7 @@ function App() {
   const gorkhAppContext = buildGorkhContextBlock({
     authState,
     provider: llmSettings.provider,
-    providerConfigured,
+    providerConfigured: providerStatusState.activeConfigured,
     freeAi: localAiStatus
       ? {
           installStage: localAiStatus.installStage as GorkhInstallStage,
@@ -506,8 +513,6 @@ function App() {
       setLocalAiInstallProgress(progressPayload);
       setLocalAiHardwareProfile(hardwarePayload);
       setLocalAiRecommendation(recommendationPayload);
-      const configured = await hasLlMProviderConfigured(llmSettings.provider);
-      setProviderConfigured(configured);
     } catch (err) {
       setLocalAiError(err instanceof Error ? err.message : 'Failed to load Free AI status');
     } finally {
@@ -515,17 +520,7 @@ function App() {
     }
   }, [llmSettings.provider]);
 
-  const refreshProviderConfigured = useCallback(async () => {
-    setProviderCheckBusy(true);
-    try {
-      const configured = await hasLlMProviderConfigured(llmSettings.provider);
-      setProviderConfigured(configured);
-    } catch {
-      setProviderConfigured(false);
-    } finally {
-      setProviderCheckBusy(false);
-    }
-  }, [llmSettings.provider]);
+
 
   const refreshFreeTierUsage = useCallback(async () => {
     if (!runtimeConfig || !sessionDeviceToken) return;
@@ -753,24 +748,38 @@ function App() {
     persistLlmSettings(llmSettings);
   }, [llmSettings]);
 
+  // Sync provider status store with React state
   useEffect(() => {
-    let cancelled = false;
-
-    void refreshProviderConfigured().catch(() => {
-      if (!cancelled) {
-        setProviderConfigured(false);
-        setProviderCheckBusy(false);
-      }
+    return subscribeProviderStatus((next) => {
+      setProviderStatusState(next);
     });
+  }, []);
 
+  // Refresh provider configuration once on mount
+  useEffect(() => {
+    void refreshProviderStatus();
+  }, []);
+
+  // Keep store active provider in sync with UI settings
+  useEffect(() => {
+    setProviderStatusActiveProvider(llmSettings.provider);
+  }, [llmSettings.provider]);
+
+  // Keep store auth state in sync
+  useEffect(() => {
+    setProviderStatusSessionToken(sessionDeviceToken ?? null);
+  }, [sessionDeviceToken]);
+
+  // Keep store local AI status in sync
+  useEffect(() => {
+    setProviderStatusLocalAiStatus(localAiStatus);
+  }, [localAiStatus]);
+
+  useEffect(() => {
     if (llmSettings.provider === 'gorkh_free') {
       void refreshFreeTierUsage();
     }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshProviderConfigured, localAiStatus?.runtimeRunning, llmSettings.provider, refreshFreeTierUsage]);
+  }, [llmSettings.provider, refreshFreeTierUsage]);
 
   useEffect(() => {
     setLocalSettingsState(getSettings());
@@ -1660,7 +1669,7 @@ function App() {
         permissionStatus,
         localSettings,
         workspaceConfigured: workspaceState.configured,
-        providerConfigured,
+        providerConfigured: providerStatusState.activeConfigured,
         isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
         requireControl: false,
         requireScreen: taskRequiresScreen,
@@ -1668,8 +1677,8 @@ function App() {
       });
 
       if (!executionReadiness.ready) {
-        const setupMessage = !providerConfigured
-          ? getAssistantConversationGreeting(llmSettings.provider, providerConfigured)
+        const setupMessage = !providerStatusState.activeConfigured
+          ? getAssistantConversationGreeting(llmSettings.provider, providerStatusState.activeConfigured)
           : executionReadiness.requiredSetup[0]?.detail || 'This desktop is not ready to start assistant work yet.';
         setMessages((prev) => [
           ...prev,
@@ -1792,7 +1801,7 @@ function App() {
     pendingTaskConfirmation,
     permissionStatus,
     platform,
-    providerConfigured,
+    providerStatusState.activeConfigured,
     runtimeConfig,
     sessionDeviceToken,
     workspaceState.configured,
@@ -2124,7 +2133,7 @@ function App() {
       return;
     }
 
-    if (providerConfigured) {
+    if (providerStatusState.activeConfigured) {
       void resumeDeferredTaskAfterFreeAiReady();
       return;
     }
@@ -2176,7 +2185,7 @@ function App() {
     localAiRecommendation,
     localAiStatus,
     pendingFreeAiSetup,
-    providerConfigured,
+    providerStatusState.activeConfigured,
     resumeDeferredTaskAfterFreeAiReady,
   ]);
 
@@ -2281,7 +2290,7 @@ function App() {
         return;
       }
 
-      if (!providerConfigured) {
+      if (!providerStatusState.activeConfigured) {
         if (llmSettings.provider === DEFAULT_LLM_PROVIDER) {
           // pendingFreeAiSetup keeps the Free AI setup approval state with Retry Free AI,
           // Cancel this task, Open Settings, and resumeDeferredTaskAfterFreeAiReady.
@@ -2362,7 +2371,7 @@ function App() {
       pendingFreeAiSetupBusy,
       pendingTaskConfirmation,
       pendingTaskConfirmationBusy,
-      providerConfigured,
+      providerStatusState.activeConfigured,
       runtimeConfig,
       sessionDeviceToken,
       localAiStatus,
@@ -2828,7 +2837,7 @@ function App() {
     permissionStatus,
     localSettings,
     workspaceConfigured: workspaceState.configured,
-    providerConfigured,
+    providerConfigured: providerStatusState.activeConfigured,
     isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
     requireControl: false,
     requireScreen: false,
@@ -2841,7 +2850,7 @@ function App() {
     permissionStatus,
     localSettings,
     workspaceConfigured: workspaceState.configured,
-    providerConfigured,
+    providerConfigured: providerStatusState.activeConfigured,
     isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
     requireControl: false,
     requireScreen: false,
@@ -2854,7 +2863,7 @@ function App() {
     permissionStatus,
     localSettings,
     workspaceConfigured: workspaceState.configured,
-    providerConfigured,
+    providerConfigured: providerStatusState.activeConfigured,
     isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
     requireControl: true,
     requireScreen: false,
@@ -2868,7 +2877,7 @@ function App() {
   const showFreeAiSetup =
     isSignedIn
     && llmSettings.provider === DEFAULT_LLM_PROVIDER
-    && !providerConfigured;
+    && !providerStatusState.activeConfigured;
   const showVisionBoostSetup =
     PLUS_TIER_ENABLED
     && isSignedIn
@@ -2913,7 +2922,7 @@ function App() {
 
     assistantGreetingSeededRef.current = true;
     const firstGreeting = createChatItem('agent', GORKH_ONBOARDING.firstGreeting);
-    const setupMessage = !providerConfigured
+    const setupMessage = !providerStatusState.activeConfigured
       ? createChatItem(
           'agent',
           llmSettings.provider === DEFAULT_LLM_PROVIDER
@@ -2938,7 +2947,7 @@ function App() {
     localAiInstallProgress?.message,
     localAiRecommendation?.reason,
     messages.length,
-    providerConfigured,
+    providerStatusState.activeConfigured,
     status,
   ]);
 
@@ -3141,13 +3150,13 @@ function App() {
                 <strong>Workspace:</strong> {workspaceState.configured ? workspaceState.rootName || 'Configured' : 'Not configured'}
               </div>
               <div style={{ fontSize: '0.875rem' }}>
-                <strong>Assistant engine:</strong> {providerCheckBusy
+                <strong>Assistant engine:</strong> {providerStatusState.busy
                   ? 'Checking...'
                   : llmSettings.provider === DEFAULT_LLM_PROVIDER
-                    ? providerConfigured
+                    ? providerStatusState.activeConfigured
                       ? 'Free AI ready'
                       : 'Free AI not ready'
-                    : providerConfigured
+                    : providerStatusState.activeConfigured
                       ? 'Custom model ready'
                       : 'Custom model not ready'}
               </div>
