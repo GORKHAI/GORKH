@@ -16,22 +16,6 @@ interface PendingTaskConfirmation {
   prompt: string;
 }
 
-interface PendingFreeAiSetup {
-  title: string;
-  report: {
-    summary: string;
-    details: string;
-    prompt: string;
-  };
-  retryLabel: string;
-  cancelLabel: string;
-  settingsLabel: string;
-  stage: 'approval' | 'installing' | 'error';
-  progressLabel: string | null;
-  statusMessage: string | null;
-  error: string | null;
-}
-
 interface FreeTierUsage {
   remaining_today: number;
   used_today: number;
@@ -45,14 +29,8 @@ interface ChatOverlayProps {
   onSendMessage: (content: string) => void;
   busy?: boolean;
   assistantStatusLabel?: string | null;
-  pendingFreeAiSetup?: PendingFreeAiSetup | null;
-  pendingFreeAiSetupBusy?: boolean;
   pendingTaskConfirmation?: PendingTaskConfirmation | null;
   pendingTaskConfirmationBusy?: boolean;
-  onApprovePendingFreeAiSetup?: () => void;
-  onRetryPendingFreeAiSetup?: () => void;
-  onCancelPendingFreeAiSetup?: () => void;
-  onOpenPendingFreeAiSetupSettings?: () => void;
   onConfirmPendingTask?: () => void;
   onCancelPendingTask?: () => void;
   freeTierUsage?: FreeTierUsage | null;
@@ -67,14 +45,8 @@ export function ChatOverlay({
   onSendMessage,
   busy = false,
   assistantStatusLabel = null,
-  pendingFreeAiSetup = null,
-  pendingFreeAiSetupBusy = false,
   pendingTaskConfirmation = null,
   pendingTaskConfirmationBusy = false,
-  onApprovePendingFreeAiSetup,
-  onRetryPendingFreeAiSetup,
-  onCancelPendingFreeAiSetup,
-  onOpenPendingFreeAiSetupSettings,
   onConfirmPendingTask,
   onCancelPendingTask,
   freeTierUsage = null,
@@ -91,7 +63,7 @@ export function ChatOverlay({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, pendingFreeAiSetup, pendingTaskConfirmation]);
+  }, [messages, pendingTaskConfirmation]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,422 +72,315 @@ export function ChatOverlay({
     setInput('');
   };
 
-  const statusLabels: Record<ConnectionStatus, string> = {
-    connecting: 'Connecting...',
-    connected: 'Connected',
-    disconnected: 'Disconnected',
-    error: 'Error',
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
   };
 
-  const statusColors: Record<ConnectionStatus, string> = {
-    connecting: '#f59e0b',
-    connected: '#10b981',
-    disconnected: '#6b7280',
-    error: '#ef4444',
-  };
-
-  const canSend = status === 'connected' && !busy && input.trim();
+  const isOnline = status === 'connected';
+  const emptyMessage = providerConfigured
+    ? undefined
+    : getEmptyStateMessage(isLlmProvider(provider) ? provider : 'gorkh_free', FREE_AI_ENABLED);
 
   return (
     <div
       style={{
-        width: '100%',
-        minHeight: '520px',
-        backgroundColor: 'white',
-        borderRadius: '16px',
-        boxShadow: '0 20px 45px rgba(15,23,42,0.08)',
         display: 'flex',
         flexDirection: 'column',
+        height: '100%',
+        background: 'rgba(255,255,255,0.72)',
+        borderRadius: '22px',
+        border: '1px solid rgba(148,163,184,0.22)',
         overflow: 'hidden',
-        border: '1px solid #dbe4f0',
       }}
     >
-      <div
-        style={{
-          padding: '18px 20px',
-          borderBottom: '1px solid #e5e7eb',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)',
-        }}
-      >
-        <div>
-          <BrandWordmark width={132} />
-          <div style={{ marginTop: '0.2rem', fontSize: '0.8125rem', color: '#475569' }}>
-            Describe what you want done. GORKH will explain the plan, then wait for your confirmation before starting.
-          </div>
-          {assistantStatusLabel ? (
-            <div style={{ marginTop: '0.35rem', fontSize: '0.8125rem', color: '#0369a1', fontWeight: 500 }}>
-              {assistantStatusLabel}
-            </div>
-          ) : null}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {provider === 'gorkh_free' && freeTierUsage && (
-            <span
-              style={{
-                padding: '4px 10px',
-                borderRadius: '999px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: freeTierUsage.remaining_today === 0 ? '#fee2e2' : '#dcfce7',
-                color: freeTierUsage.remaining_today === 0 ? '#991b1b' : '#166534',
-                border: `1px solid ${freeTierUsage.remaining_today === 0 ? '#fca5a5' : '#86efac'}`,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {freeTierUsage.remaining_today === 0
-                ? 'Daily limit reached'
-                : `${freeTierUsage.remaining_today} task${freeTierUsage.remaining_today === 1 ? '' : 's'} remaining`}
-            </span>
-          )}
-          <span
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '12px',
-              color: statusColors[status],
-            }}
-          >
-            <span
-              style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor: statusColors[status],
-              }}
-            />
-            {statusLabels[status]}
-          </span>
-        </div>
-      </div>
-
+      {/* Messages Area */}
       <div
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '20px',
+          padding: '1.25rem',
           display: 'flex',
           flexDirection: 'column',
-          gap: '14px',
-          background: '#fcfdff',
+          gap: '0.75rem',
         }}
       >
-        {messages.length === 0 && !providerConfigured ? (
+        {messages.length === 0 && (
           <div
             style={{
-              marginTop: '24px',
-              padding: '1.25rem',
-              borderRadius: '14px',
-              background: '#fef2f2',
-              border: '1px solid #fecaca',
-              color: '#7f1d1d',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              color: '#94a3b8',
+              textAlign: 'center',
+              padding: '2rem',
             }}
           >
-            <p style={{ margin: 0, fontWeight: 600 }}>AI provider not configured</p>
-            <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem' }}>
-              {isLlmProvider(provider)
-                ? getEmptyStateMessage(provider, FREE_AI_ENABLED)
-                : 'Add an API key in Settings to get started.'}
+            <BrandWordmark width={160} />
+            <p style={{ marginTop: '1rem', fontSize: '0.875rem', maxWidth: '320px', lineHeight: 1.5 }}>
+              {emptyMessage || 'Ask me to automate tasks, control apps, or help with files.'}
             </p>
-            {onOpenSettings && (
+            {!providerConfigured && onOpenSettings && (
               <button
                 onClick={onOpenSettings}
                 style={{
                   marginTop: '0.75rem',
                   padding: '0.5rem 1rem',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: '#dc2626',
-                  color: '#fff',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: 'white',
+                  color: '#334155',
                   cursor: 'pointer',
+                  fontSize: '0.875rem',
                 }}
               >
                 Open Settings
               </button>
             )}
           </div>
-        ) : messages.length === 0 ? (
+        )}
+
+        {messages.map((msg) => (
           <div
+            key={msg.id}
             style={{
-              marginTop: '24px',
-              padding: '1.25rem',
-              borderRadius: '14px',
-              background: '#eff6ff',
-              border: '1px solid #bfdbfe',
-              color: '#1e3a8a',
+              display: 'flex',
+              justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
             }}
           >
-            <p style={{ margin: 0, fontWeight: 600 }}>Try asking something natural</p>
-            <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem' }}>
-              {status !== 'connected'
-                ? 'The desktop needs to reconnect before the assistant can start working.'
-                : provider === 'gorkh_free'
-                  ? `Examples: "Organize my Downloads", "Fix tests in this repo", or "Open Photoshop and remove the background". You have ${freeTierUsage?.remaining_today ?? 5} free task${(freeTierUsage?.remaining_today ?? 5) === 1 ? '' : 's'} remaining today. GORKH will tell you what it plans to do before it starts.`
-                  : 'Examples: "Organize my Downloads", "Fix tests in this repo", or "Open Photoshop and remove the background". GORKH will tell you what it plans to do before it starts.'}
-            </p>
+            <div
+              style={{
+                maxWidth: '80%',
+                padding: '0.75rem 1rem',
+                borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                background: msg.role === 'user' ? '#0f172a' : '#f1f5f9',
+                color: msg.role === 'user' ? 'white' : '#0f172a',
+                fontSize: '0.875rem',
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {msg.text}
+            </div>
           </div>
-        ) : (
-          messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
-          ))
+        ))}
+
+        {busy && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div
+              style={{
+                padding: '0.75rem 1rem',
+                borderRadius: '18px 18px 18px 4px',
+                background: '#f1f5f9',
+                fontSize: '0.875rem',
+                color: '#64748b',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#94a3b8',
+                    animation: 'pulse 1.4s infinite',
+                  }}
+                />
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#94a3b8',
+                    animation: 'pulse 1.4s infinite 0.2s',
+                  }}
+                />
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#94a3b8',
+                    animation: 'pulse 1.4s infinite 0.4s',
+                  }}
+                />
+              </span>
+              <style>{`
+                @keyframes pulse {
+                  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+                  50% { opacity: 1; transform: scale(1); }
+                }
+              `}</style>
+            </div>
+          </div>
         )}
+
         <div ref={messagesEndRef} />
       </div>
 
-      <form
-        onSubmit={handleSubmit}
+      {/* Status Bar */}
+      <div
         style={{
-          padding: '16px 20px 20px',
-          borderTop: '1px solid #e5e7eb',
+          padding: '0.5rem 1.25rem',
+          borderTop: '1px solid rgba(148,163,184,0.15)',
           display: 'flex',
-          flexWrap: 'wrap',
-          gap: '8px',
-          background: 'white',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '0.75rem',
+          color: '#64748b',
         }}
       >
-        {provider === 'gorkh_free' && freeTierUsage && freeTierUsage.remaining_today === 0 && (
-          <div
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span
             style={{
-              width: '100%',
-              marginBottom: '0.9rem',
-              padding: '0.95rem 1rem',
-              borderRadius: '14px',
-              background: '#fff1f2',
-              border: '1px solid #fda4af',
-              color: '#9f1239',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: isOnline ? '#22c55e' : '#ef4444',
             }}
-          >
-            <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>Daily limit reached</div>
-            <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
-              You have used all {freeTierUsage.daily_limit} free tasks for today. Your limit resets at{' '}
-              {new Date(freeTierUsage.reset_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
-            </div>
-            <div style={{ marginTop: '0.35rem', fontSize: '0.78rem', color: '#be123c' }}>
-              Want more? Open Settings and add your own API key for unlimited tasks.
-            </div>
-          </div>
+          />
+          {isOnline ? 'Connected' : 'Disconnected'}
+        </div>
+        {assistantStatusLabel && (
+          <div style={{ fontStyle: 'italic', color: '#94a3b8' }}>{assistantStatusLabel}</div>
         )}
-        {pendingFreeAiSetup && (
-          <div
-            style={{
-              width: '100%',
-              marginBottom: '0.9rem',
-              padding: '0.95rem 1rem',
-              borderRadius: '14px',
-              background: pendingFreeAiSetup.stage === 'error' ? '#fff1f2' : '#eff6ff',
-              border: `1px solid ${pendingFreeAiSetup.stage === 'error' ? '#fda4af' : '#93c5fd'}`,
-              color: pendingFreeAiSetup.stage === 'error' ? '#9f1239' : '#1d4ed8',
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>{pendingFreeAiSetup.title}</div>
-            <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
-              {pendingFreeAiSetup.report.summary}
-            </div>
-            <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
-              {pendingFreeAiSetup.report.details}
-            </div>
-            <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
-              {pendingFreeAiSetup.report.prompt}
-            </div>
-            {(pendingFreeAiSetup.progressLabel || pendingFreeAiSetup.statusMessage) && (
-              <div style={{ marginTop: '0.55rem', fontSize: '0.82rem', color: pendingFreeAiSetup.stage === 'error' ? '#be123c' : '#1e40af' }}>
-                {pendingFreeAiSetup.progressLabel ? `${pendingFreeAiSetup.progressLabel}: ` : ''}
-                {pendingFreeAiSetup.statusMessage}
+      </div>
+
+      {/* Input Area */}
+      <div
+        style={{
+          padding: '0.75rem 1.25rem 1.25rem',
+          borderTop: '1px solid rgba(148,163,184,0.15)',
+        }}
+      >
+        {/* Inline banners */}
+        <div style={{ marginBottom: '0.75rem' }}>
+          {provider === 'gorkh_free' && freeTierUsage && freeTierUsage.remaining_today === 0 && (
+            <div
+              style={{
+                width: '100%',
+                marginBottom: '0.9rem',
+                padding: '0.95rem 1rem',
+                borderRadius: '14px',
+                background: '#fff1f2',
+                border: '1px solid #fda4af',
+                color: '#9f1239',
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>Daily limit reached</div>
+              <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                You have used all {freeTierUsage.daily_limit} free tasks for today. Your limit resets at{' '}
+                {new Date(freeTierUsage.reset_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
               </div>
-            )}
-            {pendingFreeAiSetup.error && (
-              <div style={{ marginTop: '0.45rem', fontSize: '0.82rem', color: '#be123c' }}>
-                {pendingFreeAiSetup.error}
+              <div style={{ marginTop: '0.35rem', fontSize: '0.78rem', color: '#be123c' }}>
+                Want more? Open Settings and add your own API key for unlimited tasks.
               </div>
-            )}
-            <div style={{ marginTop: '0.35rem', fontSize: '0.78rem', color: pendingFreeAiSetup.stage === 'error' ? '#be123c' : '#1d4ed8' }}>
-              {pendingFreeAiSetup.stage === 'approval'
-                ? 'GORKH will wait for your approval before installing anything on this desktop.'
-                : pendingFreeAiSetup.stage === 'installing'
-                  ? 'The original request is saved and will resume automatically as soon as Free AI is ready.'
-                  : 'You can retry setup, cancel this saved task, or open Settings to choose another provider.'}
             </div>
-            <div style={{ marginTop: '0.8rem', display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
-              {pendingFreeAiSetup.stage !== 'installing' && (
+          )}
+          {pendingTaskConfirmation && (
+            <div
+              style={{
+                width: '100%',
+                marginBottom: '0.9rem',
+                padding: '0.95rem 1rem',
+                borderRadius: '14px',
+                background: '#fff7ed',
+                border: '1px solid #fdba74',
+                color: '#9a3412',
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>Confirm task</div>
+              <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                {pendingTaskConfirmation.summary}
+              </div>
+              <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                {pendingTaskConfirmation.prompt}
+              </div>
+              <div style={{ marginTop: '0.35rem', fontSize: '0.78rem', color: '#b45309' }}>
+                GORKH will wait for your explicit confirmation before starting. You can also send a new message if I misunderstood.
+              </div>
+              <div style={{ marginTop: '0.8rem', display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={pendingFreeAiSetup.stage === 'error' ? onRetryPendingFreeAiSetup : onApprovePendingFreeAiSetup}
-                  disabled={pendingFreeAiSetupBusy}
+                  onClick={onCancelPendingTask}
+                  disabled={pendingTaskConfirmationBusy}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #bfdbfe',
+                    background: 'white',
+                    color: '#1d4ed8',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={onConfirmPendingTask}
+                  disabled={pendingTaskConfirmationBusy}
                   style={{
                     padding: '10px 14px',
                     borderRadius: '10px',
                     border: '1px solid #0f172a',
                     background: '#0f172a',
                     color: 'white',
-                    cursor: pendingFreeAiSetupBusy ? 'not-allowed' : 'pointer',
-                    opacity: pendingFreeAiSetupBusy ? 0.7 : 1,
+                    cursor: 'pointer',
                     fontWeight: 700,
                   }}
                 >
-                  {pendingFreeAiSetupBusy
-                    ? 'Working...'
-                    : pendingFreeAiSetup.stage === 'error'
-                      ? pendingFreeAiSetup.retryLabel
-                      : 'Proceed'}
+                  {pendingTaskConfirmationBusy ? 'Starting…' : 'Confirm'}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={onCancelPendingFreeAiSetup}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #bfdbfe',
-                  background: 'white',
-                  color: '#1d4ed8',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                }}
-              >
-                {pendingFreeAiSetup.cancelLabel}
-              </button>
-              <button
-                type="button"
-                onClick={onOpenPendingFreeAiSetupSettings}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #bfdbfe',
-                  background: 'white',
-                  color: '#1d4ed8',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                }}
-              >
-                {pendingFreeAiSetup.settingsLabel}
-              </button>
+              </div>
             </div>
-          </div>
-        )}
-        {pendingTaskConfirmation && (
-          <div
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '0.5rem' }}>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={isOnline ? 'Type a message…' : 'Waiting for connection…'}
+            disabled={!isOnline || busy}
+            rows={1}
             style={{
-              width: '100%',
-              marginBottom: '0.9rem',
-              padding: '0.95rem 1rem',
+              flex: 1,
+              padding: '0.75rem 1rem',
               borderRadius: '14px',
-              background: '#fff7ed',
-              border: '1px solid #fdba74',
-              color: '#9a3412',
+              border: '1px solid rgba(148,163,184,0.3)',
+              background: 'rgba(255,255,255,0.85)',
+              fontSize: '0.875rem',
+              resize: 'none',
+              outline: 'none',
+              minHeight: '44px',
+              maxHeight: '120px',
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!isOnline || busy || !input.trim()}
+            style={{
+              padding: '0.75rem 1.25rem',
+              borderRadius: '14px',
+              border: 'none',
+              background: !isOnline || busy || !input.trim() ? '#cbd5e1' : '#0f172a',
+              color: 'white',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              cursor: !isOnline || busy || !input.trim() ? 'not-allowed' : 'pointer',
             }}
           >
-            <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>Confirm task</div>
-            <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
-              {pendingTaskConfirmation.summary}
-            </div>
-            <div style={{ marginTop: '0.45rem', fontSize: '0.875rem', lineHeight: 1.5 }}>
-              {pendingTaskConfirmation.prompt}
-            </div>
-            <div style={{ marginTop: '0.35rem', fontSize: '0.78rem', color: '#b45309' }}>
-              GORKH will wait for your explicit confirmation before starting. You can also send a new message if I misunderstood.
-            </div>
-            <div style={{ marginTop: '0.8rem', display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={onCancelPendingTask}
-                disabled={pendingTaskConfirmationBusy}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #fdba74',
-                  background: 'white',
-                  color: '#9a3412',
-                  cursor: pendingTaskConfirmationBusy ? 'not-allowed' : 'pointer',
-                  opacity: pendingTaskConfirmationBusy ? 0.7 : 1,
-                  fontWeight: 600,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={onConfirmPendingTask}
-                disabled={pendingTaskConfirmationBusy}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #0f172a',
-                  background: '#0f172a',
-                  color: 'white',
-                  cursor: pendingTaskConfirmationBusy ? 'not-allowed' : 'pointer',
-                  opacity: pendingTaskConfirmationBusy ? 0.7 : 1,
-                  fontWeight: 700,
-                }}
-              >
-                {pendingTaskConfirmationBusy ? 'Starting...' : 'Proceed'}
-              </button>
-            </div>
-          </div>
-        )}
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={
-            status !== 'connected'
-              ? 'Reconnect to send...'
-              : busy
-                ? 'GORKH is processing your last message...'
-                : 'Ask the assistant to do something...'
-          }
-          disabled={status !== 'connected' || busy}
-          style={{
-            flex: 1,
-            padding: '12px 14px',
-            borderRadius: '10px',
-            border: '1px solid #cbd5e1',
-            fontSize: '14px',
-            outline: 'none',
-            backgroundColor: status === 'connected' ? 'white' : '#f5f5f5',
-          }}
-        />
-        <button
-          type="submit"
-          disabled={!canSend}
-          style={{
-            padding: '12px 18px',
-            backgroundColor: canSend ? '#0f172a' : '#cbd5e1',
-            color: 'white',
-            border: 'none',
-            borderRadius: '10px',
-            cursor: canSend ? 'pointer' : 'not-allowed',
-            fontSize: '14px',
-            fontWeight: 600,
-          }}
-        >
-          Ask
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function MessageBubble({ message }: { message: ChatItem }) {
-  const isUser = message.role === 'user';
-  return (
-    <div
-      style={{
-        alignSelf: isUser ? 'flex-end' : 'flex-start',
-        maxWidth: '85%',
-        padding: '10px 14px',
-        borderRadius: '12px',
-        backgroundColor: isUser ? '#0070f3' : '#f0f0f0',
-        color: isUser ? 'white' : '#333',
-        fontSize: '14px',
-        wordBreak: 'break-word',
-      }}
-    >
-      {message.text}
+            Send
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

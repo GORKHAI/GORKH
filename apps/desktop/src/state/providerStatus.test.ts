@@ -12,8 +12,7 @@ import {
 } from './providerStatus.js';
 
 function createMockInvoke(
-  keychain: Record<string, string | undefined> = {},
-  localAiRunning = false
+  keychain: Record<string, string | undefined> = {}
 ) {
   return async <T>(cmd: string, args?: unknown): Promise<T> => {
     switch (cmd) {
@@ -21,14 +20,6 @@ function createMockInvoke(
         const provider = (args as Record<string, unknown> | undefined)?.provider as string ?? '';
         const has = Boolean(keychain[`llm_api_key:${provider}`]);
         return has as T;
-      }
-      case 'local_ai_status': {
-        return {
-          runtimeRunning: localAiRunning,
-          targetModelAvailable: localAiRunning,
-          selectedModel: localAiRunning ? 'qwen2.5:1.5b' : null,
-          externalServiceDetected: false,
-        } as T;
       }
       default:
         throw new Error(`Unexpected invoke: ${cmd}`);
@@ -117,24 +108,6 @@ test('subscribe receives immediate snapshot and updates', async () => {
   assert.equal(snapshots[snapshots.length - 1].configured.openai, true);
 
   unsubscribe();
-});
-
-test('local AI provider is configured when runtime is running', async () => {
-  __resetForTesting();
-  __setInvokeForTesting(createMockInvoke({}, true));
-
-  await refresh();
-
-  assert.equal(getProviderStatus().configured.native_qwen_ollama, true);
-});
-
-test('local AI provider is not configured when runtime is down', async () => {
-  __resetForTesting();
-  __setInvokeForTesting(createMockInvoke({}, false));
-
-  await refresh();
-
-  assert.equal(getProviderStatus().configured.native_qwen_ollama, false);
 });
 
 // Regression test for the stale providerConfigured bug:

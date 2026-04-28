@@ -30,7 +30,6 @@ test('desktop action executor and Tauri bridge expose open_app end to end', () =
 
 test('main LLM prompts and retail runtime types mention open_app explicitly', () => {
   const llmTypesSource = readFileSync('apps/desktop/src-tauri/src/llm/mod.rs', 'utf8');
-  const nativeOllamaSource = readFileSync('apps/desktop/src-tauri/src/llm/native_ollama.rs', 'utf8');
   const openAiSource = readFileSync('apps/desktop/src-tauri/src/llm/openai.rs', 'utf8');
   const openAiCompatSource = readFileSync('apps/desktop/src-tauri/src/llm/openai_compat.rs', 'utf8');
   const claudeSource = readFileSync('apps/desktop/src-tauri/src/llm/claude.rs', 'utf8');
@@ -39,11 +38,6 @@ test('main LLM prompts and retail runtime types mention open_app explicitly', ()
     llmTypesSource,
     /enum InputAction[\s\S]*OpenApp\s*\{[\s\S]*app_name:\s*String,?\s*\}/,
     'retail Rust LLM types should include OpenApp for main-model proposals'
-  );
-  assert.match(
-    nativeOllamaSource,
-    /open_app/,
-    'native Ollama main prompt should tell the model that open_app is available'
   );
   assert.match(
     openAiSource,

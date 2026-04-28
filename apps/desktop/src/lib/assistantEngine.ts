@@ -170,8 +170,6 @@ function mapAdvancedProvider(settings: LlmSettings): {
   providerSupportsVision?: boolean;
 } {
   switch (settings.provider) {
-    case 'native_qwen_ollama':
-      return { provider: 'native_qwen_ollama', credentialProvider: 'native_qwen_ollama' };
     case 'openai_compat':
       return {
         provider: 'local_openai_compat',

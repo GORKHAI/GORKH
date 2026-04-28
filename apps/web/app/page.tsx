@@ -144,7 +144,7 @@ export default function Home() {
               Local-First
             </h3>
             <p className="copy" style={{ marginTop: 10 }}>
-              Optional local model support via Ollama/Qwen for fully offline operation. Screen data
+              GORKH Free hosted tier with 5 jobs/day. Screen data
               is never persisted or transmitted. Ephemeral 60-second memory with zero cloud
               dependency for core workflows.
             </p>

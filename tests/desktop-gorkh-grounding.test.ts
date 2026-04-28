@@ -27,8 +27,8 @@ test('gorkhKnowledge exports static feature, setting, and state documentation', 
   assert.ok(knowledge.GORKH_FEATURES.approvals, 'should have approvals feature doc');
 
   // Feature docs are substantive
-  assert.match(knowledge.GORKH_FEATURES.freeAi.name, /free ai/i);
-  assert.match(knowledge.GORKH_FEATURES.freeAi.description, /mac|local|private/i);
+  assert.match(knowledge.GORKH_FEATURES.freeAi.name, /free/i);
+  assert.match(knowledge.GORKH_FEATURES.freeAi.description, /hosted|cloud|gorkh/i);
   assert.match(knowledge.GORKH_FEATURES.approvals.description, /approval|confirm/i);
 
   // Setting docs exist
@@ -36,39 +36,15 @@ test('gorkhKnowledge exports static feature, setting, and state documentation', 
   assert.ok(knowledge.GORKH_SETTINGS.screenPreview, 'should have screenPreview setting doc');
   assert.ok(knowledge.GORKH_SETTINGS.aiProvider, 'should have aiProvider setting doc');
 
-  // Install stage explanations exist for all values
-  const stages = ['not_started', 'planned', 'installing', 'installed', 'starting', 'ready', 'error'];
-  for (const stage of stages) {
-    assert.ok(
-      knowledge.GORKH_INSTALL_STAGE_EXPLANATIONS[stage],
-      `should have explanation for installStage "${stage}"`
-    );
-  }
-
-  // Tier explanations exist
-  assert.ok(knowledge.GORKH_TIER_EXPLANATIONS.light);
-  assert.ok(knowledge.GORKH_TIER_EXPLANATIONS.standard);
-  assert.ok(knowledge.GORKH_TIER_EXPLANATIONS.vision);
-
   // Provider explanations exist
-  assert.ok(knowledge.GORKH_PROVIDER_EXPLANATIONS.native_qwen_ollama);
+  assert.ok(knowledge.GORKH_PROVIDER_EXPLANATIONS.gorkh_free);
   assert.ok(knowledge.GORKH_PROVIDER_EXPLANATIONS.openai);
   assert.ok(knowledge.GORKH_PROVIDER_EXPLANATIONS.claude);
-  assert.match(knowledge.GORKH_PROVIDER_EXPLANATIONS.native_qwen_ollama, /free|local|private/i);
-
-  // GPU class explanations
-  assert.ok(knowledge.GORKH_GPU_CLASS_EXPLANATIONS.discrete);
-  assert.ok(knowledge.GORKH_GPU_CLASS_EXPLANATIONS.integrated);
-  assert.ok(knowledge.GORKH_GPU_CLASS_EXPLANATIONS.unknown);
-
-  // GPU explanations are honest (discrete = GPU, unknown/integrated = CPU)
-  assert.match(knowledge.GORKH_GPU_CLASS_EXPLANATIONS.discrete, /gpu/i);
-  assert.match(knowledge.GORKH_GPU_CLASS_EXPLANATIONS.unknown, /cpu/i);
-  assert.match(knowledge.GORKH_GPU_CLASS_EXPLANATIONS.integrated, /cpu/i);
+  assert.match(knowledge.GORKH_PROVIDER_EXPLANATIONS.gorkh_free, /free|hosted|cloud/i);
 
   // Onboarding strings exist
   assert.match(knowledge.GORKH_ONBOARDING.firstGreeting, /gorkh/i);
-  assert.match(knowledge.GORKH_ONBOARDING.freeAiNotReady, /free ai|local/i);
+  assert.match(knowledge.GORKH_ONBOARDING.providerNotConfigured, /provider|set up|choose/i);
 
   // FAQ is populated
   assert.ok(Array.isArray(knowledge.GORKH_FAQ));
@@ -136,7 +112,7 @@ test('buildGorkhContextBlock includes auth state when signed in', async () => {
 
   const result = buildGorkhContextBlock({
     authState: 'signed_in',
-    provider: 'native_qwen_ollama',
+    provider: 'gorkh_free',
     providerConfigured: true,
     freeAi: null,
     permissions: null,
@@ -151,65 +127,12 @@ test('buildGorkhContextBlock includes auth state when signed in', async () => {
   assert.match(result, /\[\/GORKH APP STATE\]/);
 });
 
-test('buildGorkhContextBlock includes Free AI running status', async () => {
-  const { buildGorkhContextBlock } = await import('../apps/desktop/src/lib/gorkhContext.ts');
-
-  const result = buildGorkhContextBlock({
-    authState: 'signed_in',
-    provider: 'native_qwen_ollama',
-    providerConfigured: true,
-    freeAi: {
-      installStage: 'ready',
-      runtimeRunning: true,
-      selectedTier: 'standard',
-      selectedModel: 'qwen2.5:3b',
-      externalServiceDetected: false,
-      lastError: null,
-    },
-    permissions: null,
-    workspaceConfigured: false,
-    workspaceRootName: null,
-    hardware: null,
-  });
-
-  assert.ok(result);
-  assert.match(result, /running/i);
-  assert.match(result, /qwen2\.5:3b/);
-});
-
-test('buildGorkhContextBlock includes Free AI not-running status with stage', async () => {
-  const { buildGorkhContextBlock } = await import('../apps/desktop/src/lib/gorkhContext.ts');
-
-  const result = buildGorkhContextBlock({
-    authState: 'signed_in',
-    provider: 'native_qwen_ollama',
-    providerConfigured: false,
-    freeAi: {
-      installStage: 'not_started',
-      runtimeRunning: false,
-      selectedTier: null,
-      selectedModel: null,
-      externalServiceDetected: false,
-      lastError: null,
-    },
-    permissions: null,
-    workspaceConfigured: false,
-    workspaceRootName: null,
-    hardware: null,
-  });
-
-  assert.ok(result);
-  assert.match(result, /not running/i);
-  // Should include the plain-English stage explanation, not raw "not_started"
-  assert.doesNotMatch(result, /not_started/);
-});
-
 test('buildGorkhContextBlock includes permission status', async () => {
   const { buildGorkhContextBlock } = await import('../apps/desktop/src/lib/gorkhContext.ts');
 
   const result = buildGorkhContextBlock({
     authState: 'signed_in',
-    provider: 'native_qwen_ollama',
+    provider: 'gorkh_free',
     providerConfigured: true,
     freeAi: null,
     permissions: {
@@ -234,7 +157,7 @@ test('buildGorkhContextBlock includes workspace info', async () => {
 
   const result = buildGorkhContextBlock({
     authState: 'signed_in',
-    provider: 'native_qwen_ollama',
+    provider: 'gorkh_free',
     providerConfigured: true,
     freeAi: null,
     permissions: null,
@@ -253,16 +176,9 @@ test('buildGorkhContextBlock does not include sensitive data', async () => {
 
   const result = buildGorkhContextBlock({
     authState: 'signed_in',
-    provider: 'native_qwen_ollama',
+    provider: 'gorkh_free',
     providerConfigured: true,
-    freeAi: {
-      installStage: 'error',
-      runtimeRunning: false,
-      selectedTier: 'light',
-      selectedModel: 'qwen2.5:1.5b',
-      externalServiceDetected: false,
-      lastError: 'Checksum verification failed for download',
-    },
+    freeAi: null,
     permissions: {
       screenRecordingStatus: 'granted',
       accessibilityStatus: 'granted',
@@ -285,38 +201,7 @@ test('buildGorkhContextBlock does not include sensitive data', async () => {
   assert.doesNotMatch(result ?? '', /sk-[a-zA-Z0-9]{10,}/);
 });
 
-test('buildGorkhContextBlock is honest about GPU: unknown means CPU', async () => {
-  const { buildGorkhContextBlock } = await import('../apps/desktop/src/lib/gorkhContext.ts');
 
-  const resultUnknown = buildGorkhContextBlock({
-    authState: 'signed_in',
-    provider: null,
-    providerConfigured: false,
-    freeAi: null,
-    permissions: null,
-    workspaceConfigured: false,
-    workspaceRootName: null,
-    hardware: { gpuClass: 'unknown', ramGb: 8 },
-  });
-
-  const resultDiscrete = buildGorkhContextBlock({
-    authState: 'signed_in',
-    provider: null,
-    providerConfigured: false,
-    freeAi: null,
-    permissions: null,
-    workspaceConfigured: false,
-    workspaceRootName: null,
-    hardware: { gpuClass: 'discrete', ramGb: 32 },
-  });
-
-  // unknown GPU → CPU label (no overclaiming)
-  assert.match(resultUnknown ?? '', /cpu/i);
-  assert.doesNotMatch(resultUnknown ?? '', /gpu acceleration|using gpu/i);
-
-  // discrete GPU → GPU label
-  assert.match(resultDiscrete ?? '', /gpu/i);
-});
 
 // ---------------------------------------------------------------------------
 // buildGorkhIdentity tests
@@ -341,10 +226,10 @@ test('GORKH onboarding greeting is conversation-first and asks how it can help',
   assert.doesNotMatch(GORKH_ONBOARDING.firstGreeting, /taking any action|starting now/i);
 });
 
-test('GORKH onboarding setup guidance is honest when Free AI is not ready', async () => {
+test('GORKH onboarding setup guidance is honest when provider is not configured', async () => {
   const { GORKH_ONBOARDING } = await import('../apps/desktop/src/lib/gorkhKnowledge.ts');
 
-  assert.match(GORKH_ONBOARDING.freeAiNotReady, /free ai/i);
-  assert.match(GORKH_ONBOARDING.freeAiNotReady, /set.*up|get started/i);
-  assert.doesNotMatch(GORKH_ONBOARDING.freeAiNotReady, /already starting|I have begun/i);
+  assert.ok(GORKH_ONBOARDING.providerNotConfigured, 'should have providerNotConfigured onboarding copy');
+  assert.match(GORKH_ONBOARDING.providerNotConfigured, /provider|set up|choose/i);
+  assert.doesNotMatch(GORKH_ONBOARDING.providerNotConfigured, /already starting|I have begun/i);
 });

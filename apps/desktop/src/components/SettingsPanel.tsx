@@ -15,7 +15,6 @@ import {
   type PermissionTarget,
 } from '../lib/permissions.js';
 import {
-  FREE_AI_ENABLED,
   getAdvancedLlmProviders,
   getLlmDefaults,
   getLlmProviderDefinition,
@@ -68,7 +67,6 @@ interface SettingsPanelProps {
   onExportDiagnostics: () => void | Promise<void>;
   diagnosticsStatus?: string | null;
   overviewPanels?: ReactNode;
-  hostedFreeAiEnabled?: boolean;
   runtimeConfig?: import('../lib/desktopRuntimeConfig.js').DesktopApiRuntimeConfig | null;
   sessionDeviceToken?: string | null;
 }
@@ -99,7 +97,6 @@ export function SettingsPanel({
   onExportDiagnostics,
   diagnosticsStatus,
   overviewPanels,
-  hostedFreeAiEnabled = false,
   runtimeConfig,
   sessionDeviceToken,
 }: SettingsPanelProps) {
@@ -111,7 +108,7 @@ export function SettingsPanel({
   const providerOptions = selectedProviderVisible
     ? supportedProviders
     : [providerDefinition, ...supportedProviders.filter((provider) => provider.provider !== settings.provider)];
-  const isManagedFreeAiProvider = settings.provider === 'native_qwen_ollama';
+
   const [apiKey, setApiKey] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -266,13 +263,13 @@ export function SettingsPanel({
         setTestResult({ success: false, message: 'Connection test returned false. Check your API key and network.' });
       }
     } catch (e) {
-      if (isManagedFreeAiProvider && shouldRetryWithHostedFreeAiFallback(e)) {
+      if (settings.provider === 'gorkh_free' && shouldRetryWithHostedFreeAiFallback(e)) {
         if (runtimeConfig && sessionDeviceToken) {
           try {
             await testHostedFreeAiFallback(runtimeConfig, sessionDeviceToken);
             setTestResult({
               success: true,
-              message: 'Free AI local engine is unavailable right now, but the hosted fallback is ready.',
+              message: 'GORKH AI (Free) hosted fallback is ready.',
             });
             return;
           } catch (hostedError) {
@@ -282,7 +279,7 @@ export function SettingsPanel({
             );
             setTestResult({
               success: false,
-              message: `Free AI local engine is unavailable, and the hosted fallback is not ready: ${parsedHostedError.message}`,
+              message: `GORKH AI (Free) hosted fallback is not ready: ${parsedHostedError.message}`,
             });
             return;
           }
@@ -290,7 +287,7 @@ export function SettingsPanel({
 
         setTestResult({
           success: false,
-          message: 'Free AI local engine is unavailable. Sign in to let GORKH verify the hosted fallback.',
+          message: 'GORKH AI (Free) is unavailable. Sign in to let GORKH verify the hosted fallback.',
         });
         return;
       }
@@ -306,11 +303,9 @@ export function SettingsPanel({
       ) {
         setTestResult({ 
           success: false, 
-          message: settings.provider === 'native_qwen_ollama'
-            ? 'Free AI is not ready. Use "Set Up Free AI" in the main assistant view to start the local engine.'
-            : settings.provider === 'openai_compat'
-              ? `Server not reachable at ${settings.baseUrl}. Ensure the server is running and try again.`
-              : `Connection failed: ${parsedError.message}`
+          message: settings.provider === 'openai_compat'
+            ? `Server not reachable at ${settings.baseUrl}. Ensure the server is running and try again.`
+            : `Connection failed: ${parsedError.message}`
         });
       } else if (parsedError.code === 'TIMEOUT' || diagnosticText.includes('TIMEOUT')) {
         setTestResult({ 
@@ -429,7 +424,7 @@ export function SettingsPanel({
             🤖 AI Assist Configuration
           </h3>
           <p style={{ margin: '0 0 1rem', fontSize: '0.875rem', color: '#666' }}>
-            Configure the assistant model.{FREE_AI_ENABLED && ' Free AI runs locally on your Mac when possible and can fall back to a hosted service when you\'re signed in.'} OpenAI, Claude, DeepSeek, and Kimi use your own API keys. API keys stay in the OS keychain and are never sent to the server.
+            Configure the assistant model. GORKH AI (Free) is a hosted free tier. OpenAI, Claude, DeepSeek, and Kimi use your own API keys. API keys stay in the OS keychain and are never sent to the server.
           </p>
 
           {/* Provider */}
@@ -456,7 +451,7 @@ export function SettingsPanel({
                 <option key={provider.provider} value={provider.provider}>
                   {provider.provider === settings.provider && !selectedProviderVisible
                     ? `${provider.label} (advanced)`
-                    : `${provider.label}${provider.paid ? ' (paid)' : provider.provider === 'native_qwen_ollama' ? ' (free default)' : ''}`}
+                    : `${provider.label}${provider.paid ? ' (paid)' : ''}`}
                 </option>
               ))}
               <optgroup label="Advanced">
@@ -490,9 +485,7 @@ export function SettingsPanel({
             </div>
           )}
 
-          {settings.provider !== 'native_qwen_ollama' && (
-            <>
-              {/* Base URL */}
+          {/* Base URL */}
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', color: '#333' }}>
                   Base URL
@@ -533,9 +526,7 @@ export function SettingsPanel({
                 <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#666' }}>
                   Default: {providerDefinition.model}
                 </p>
-              </div>
-            </>
-          )}
+          </div>
 
           {/* API Key - only show for cloud providers */}
           {providerRequiresApiKey(settings.provider) && (
@@ -615,25 +606,7 @@ export function SettingsPanel({
             </div>
           )}
           
-          {/* Free AI note — hidden from retail launch per v1 product decision.
-              Re-enable by setting VITE_FREE_AI_ENABLED=true at build time. */}
-          {FREE_AI_ENABLED && settings.provider === 'native_qwen_ollama' && (
-            <div style={{ 
-              marginBottom: '1rem', 
-              padding: '0.75rem', 
-              backgroundColor: '#ecfeff', 
-              border: '1px solid #a5f3fc',
-              borderRadius: '4px',
-              fontSize: '0.875rem',
-              color: '#155e75',
-            }}>
-              <strong>Free AI</strong>
-              <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>
-                GORKH manages the local AI engine for you. Use "Set Up Free AI" in the main assistant view to install and start it automatically.
-                {hostedFreeAiEnabled && ' If the local engine isn\'t ready and you\'re signed in, GORKH can use a hosted fallback automatically.'}
-              </p>
-            </div>
-          )}
+
 
           {settings.provider === 'openai_compat' && (
             <div style={{ 

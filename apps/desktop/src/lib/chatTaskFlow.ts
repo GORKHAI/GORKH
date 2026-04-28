@@ -1,7 +1,6 @@
 import type { RunWithSteps } from '@ai-operator/shared';
 import type { DesktopApiRuntimeConfig } from './desktopRuntimeConfig.js';
 import { createDesktopRun } from './desktopTasks.js';
-import { GORKH_FREE_AI_SETUP_COPY } from './gorkhKnowledge.js';
 
 const ACTIVE_RUN_STATUSES = new Set<RunWithSteps['status']>([
   'queued',
@@ -16,110 +15,82 @@ export interface AssistantTaskConfirmation {
   providerMode?: 'local' | 'hosted_free_ai';
 }
 
-export interface FreeAiSetupPreflightReport {
-  title: string;
-  summary: string;
-  details: string;
-  prompt: string;
-}
-
 export function shouldConfirmAssistantTaskStart(run: RunWithSteps | null | undefined): boolean {
   return !isAssistantRunActive(run);
 }
 
 export function interpretAssistantTaskConfirmationResponse(text: string): 'confirm' | 'cancel' | null {
-  const normalized = text.trim().toLowerCase().replace(/[.!?]+$/g, '');
+  const lower = text.trim().toLowerCase();
 
-  if ([
-    'yes',
-    'y',
-    'ok',
-    'okay',
-    'sure',
-    'confirm',
-    'proceed',
-    'go ahead',
-  ].includes(normalized)) {
-    return 'confirm';
+  // Positive confirmations
+  const confirmPatterns = [
+    /^yes$/,
+    /^yeah$/,
+    /^yep$/,
+    /^sure$/,
+    /^ok$/,
+    /^okay$/,
+    /^go ahead$/,
+    /^do it$/,
+    /^proceed$/,
+    /^start$/,
+    /^confirm$/,
+    /^let['']?s do it$/,
+    /^sounds good$/,
+  ];
+
+  for (const pattern of confirmPatterns) {
+    if (pattern.test(lower)) {
+      return 'confirm';
+    }
   }
 
-  if ([
-    'no',
-    'n',
-    'cancel',
-    'stop',
-    'dont',
-    "don't",
-    'do not',
-  ].includes(normalized)) {
-    return 'cancel';
-  }
+  // Cancellations
+  const cancelPatterns = [
+    /^no$/,
+    /^nope$/,
+    /^cancel$/,
+    /^stop$/,
+    /^don['']?t$/,
+    /^nevermind$/,
+    /^never mind$/,
+    /^pass$/,
+  ];
 
-  return null;
-}
-
-export function interpretFreeAiSetupResponse(text: string): 'confirm' | 'cancel' | null {
-  const normalized = text.trim().toLowerCase().replace(/[.!?]+$/g, '');
-
-  if ([
-    'yes',
-    'y',
-    'ok',
-    'okay',
-    'sure',
-    'confirm',
-    'proceed',
-    'go ahead',
-  ].includes(normalized)) {
-    return 'confirm';
-  }
-
-  if ([
-    'no',
-    'n',
-    'cancel',
-    'stop',
-    'dont',
-    "don't",
-    'do not',
-  ].includes(normalized)) {
-    return 'cancel';
+  for (const pattern of cancelPatterns) {
+    if (pattern.test(lower)) {
+      return 'cancel';
+    }
   }
 
   return null;
 }
 
-export function buildFreeAiSetupPreflightReport(): FreeAiSetupPreflightReport {
-  return {
-    title: GORKH_FREE_AI_SETUP_COPY.title,
-    summary: GORKH_FREE_AI_SETUP_COPY.summary,
-    details: GORKH_FREE_AI_SETUP_COPY.details,
-    prompt: GORKH_FREE_AI_SETUP_COPY.prompt,
-  };
+export function isAssistantRunActive(run: RunWithSteps | null | undefined): boolean {
+  if (!run) {
+    return false;
+  }
+
+  return ACTIVE_RUN_STATUSES.has(run.status);
 }
 
-interface EnsureAssistantRunForMessageInput {
+export async function ensureAssistantRunForMessage({
+  message,
+  activeRun,
+  runtimeConfig,
+  deviceToken,
+}: {
   message: string;
   activeRun: RunWithSteps | null;
   runtimeConfig: DesktopApiRuntimeConfig;
   deviceToken: string;
-  createRun?: typeof createDesktopRun;
-}
-
-export function isAssistantRunActive(run: RunWithSteps | null | undefined): run is RunWithSteps {
-  return Boolean(run && ACTIVE_RUN_STATUSES.has(run.status));
-}
-
-export async function ensureAssistantRunForMessage(
-  input: EnsureAssistantRunForMessageInput
-): Promise<RunWithSteps> {
-  if (isAssistantRunActive(input.activeRun)) {
-    return input.activeRun;
+}): Promise<RunWithSteps> {
+  if (activeRun && isAssistantRunActive(activeRun)) {
+    return activeRun;
   }
 
-  const createRun = input.createRun ?? createDesktopRun;
-  return createRun(input.runtimeConfig, input.deviceToken, {
-    goal: input.message.trim(),
+  return createDesktopRun(runtimeConfig, deviceToken, {
+    goal: message,
     mode: 'ai_assist',
   });
 }

@@ -31,7 +31,6 @@ mod agent;
 // ACTIVE PRODUCTION PATH for all chat/assistant LLM functionality
 // See module docs for architecture details and provider usage
 mod llm;
-mod local_ai;
 mod workspace;
 
 // Build-time environment flag check (evaluated at compile time)
@@ -74,6 +73,15 @@ struct InputError {
     needs_permission: bool,
 }
 
+impl std::fmt::Debug for InputError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InputError")
+            .field("message", &self.message)
+            .field("needs_permission", &self.needs_permission)
+            .finish()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct DisplayBounds {
     x: i32,
@@ -86,6 +94,19 @@ fn resolve_display_point(x_norm: f64, y_norm: f64, bounds: DisplayBounds) -> (i3
     let x = bounds.x + (x_norm * bounds.width as f64) as i32;
     let y = bounds.y + (y_norm * bounds.height as f64) as i32;
     (x, y)
+}
+
+/// Pure validation for normalized click coordinates.
+/// Rejects NaN/Infinity and clamps to [0.0, 1.0].
+/// Safe to unit-test without OS dependencies.
+fn validate_normalized_coordinates(x_norm: f64, y_norm: f64) -> Result<(f64, f64), InputError> {
+    if x_norm.is_nan() || x_norm.is_infinite() || y_norm.is_nan() || y_norm.is_infinite() {
+        return Err(InputError {
+            message: "Invalid coordinates: NaN or Infinity".to_string(),
+            needs_permission: false,
+        });
+    }
+    Ok((x_norm.clamp(0.0, 1.0), y_norm.clamp(0.0, 1.0)))
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -178,7 +199,7 @@ fn detect_accessibility_status() -> PermissionState {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_display_point, ConversationTurnRequest, DisplayBounds, ProposalRequest};
+    use super::{resolve_display_point, validate_normalized_coordinates, ConversationTurnRequest, DisplayBounds, ProposalRequest};
 
     #[test]
     fn resolve_display_point_keeps_primary_display_coordinates_stable() {
@@ -207,9 +228,9 @@ mod tests {
     #[test]
     fn proposal_request_deserializes_camel_case_fields() {
         let parsed: ProposalRequest = serde_json::from_value(serde_json::json!({
-            "provider": "native_qwen_ollama",
-            "baseUrl": "http://127.0.0.1:11434",
-            "model": "qwen2.5:3b",
+            "provider": "gorkh_free",
+            "baseUrl": "http://localhost:3001",
+            "model": "gorkh-free",
             "goal": "Do the thing",
             "constraints": {
                 "maxActions": 5,
@@ -220,7 +241,7 @@ mod tests {
         }))
         .expect("proposal request should deserialize camelCase fields");
 
-        assert_eq!(parsed.base_url, "http://127.0.0.1:11434");
+        assert_eq!(parsed.base_url, "http://localhost:3001");
         assert_eq!(parsed.app_context.as_deref(), Some("ready"));
         assert_eq!(parsed.workspace_configured, Some(true));
         assert_eq!(parsed.constraints.max_actions, 5);
@@ -230,9 +251,9 @@ mod tests {
     #[test]
     fn conversation_turn_request_deserializes_camel_case_fields() {
         let parsed: ConversationTurnRequest = serde_json::from_value(serde_json::json!({
-            "provider": "native_qwen_ollama",
-            "baseUrl": "http://127.0.0.1:11434",
-            "model": "qwen2.5:3b",
+            "provider": "gorkh_free",
+            "baseUrl": "http://localhost:3001",
+            "model": "gorkh-free",
             "messages": [
                 {
                     "role": "user",
@@ -243,11 +264,65 @@ mod tests {
         }))
         .expect("conversation turn request should deserialize camelCase fields");
 
-        assert_eq!(parsed.base_url, "http://127.0.0.1:11434");
+        assert_eq!(parsed.base_url, "http://localhost:3001");
         assert_eq!(parsed.app_context.as_deref(), Some("desktop-ready"));
         assert_eq!(parsed.messages.len(), 1);
         assert_eq!(parsed.messages[0].role, "user");
         assert_eq!(parsed.messages[0].text, "Hi");
+    }
+
+    #[test]
+    fn validate_normalized_coordinates_rejects_nan() {
+        let result = validate_normalized_coordinates(f64::NAN, 0.5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("NaN"));
+    }
+
+    #[test]
+    fn validate_normalized_coordinates_rejects_infinity() {
+        let result = validate_normalized_coordinates(f64::INFINITY, 0.5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("Infinity"));
+
+        let result = validate_normalized_coordinates(f64::NEG_INFINITY, 0.5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("Infinity"));
+    }
+
+    #[test]
+    fn validate_normalized_coordinates_clamps_below_zero() {
+        let (x, y) = validate_normalized_coordinates(-0.5, -0.1).unwrap();
+        assert_eq!(x, 0.0);
+        assert_eq!(y, 0.0);
+    }
+
+    #[test]
+    fn validate_normalized_coordinates_clamps_above_one() {
+        let (x, y) = validate_normalized_coordinates(1.4, 2.0).unwrap();
+        assert_eq!(x, 1.0);
+        assert_eq!(y, 1.0);
+    }
+
+    #[test]
+    fn validate_normalized_coordinates_passes_valid_values() {
+        let (x, y) = validate_normalized_coordinates(0.5, 0.75).unwrap();
+        assert_eq!(x, 0.5);
+        assert_eq!(y, 0.75);
+    }
+
+    #[test]
+    fn resolve_display_point_never_exceeds_bounds_after_clamping() {
+        let bounds = DisplayBounds {
+            x: 100,
+            y: 200,
+            width: 1920,
+            height: 1080,
+        };
+        // Even with extreme inputs, clamping keeps coordinates inside [0,1]
+        let (x_norm, y_norm) = validate_normalized_coordinates(-10.0, 99.0).unwrap();
+        let (x, y) = resolve_display_point(x_norm, y_norm, bounds);
+        assert_eq!(x, bounds.x);
+        assert_eq!(y, bounds.y + bounds.height as i32);
     }
 }
 
@@ -424,6 +499,7 @@ fn input_click(
     button: String,
     display_id: String,
 ) -> Result<(), InputError> {
+    let (x_norm, y_norm) = validate_normalized_coordinates(x_norm, y_norm)?;
     let mut enigo = Enigo::new();
 
     let screen = get_input_target_screen(&display_id)?;
@@ -457,6 +533,7 @@ fn input_double_click(
     button: String,
     display_id: String,
 ) -> Result<(), InputError> {
+    let (x_norm, y_norm) = validate_normalized_coordinates(x_norm, y_norm)?;
     let mut enigo = Enigo::new();
 
     let screen = get_input_target_screen(&display_id)?;
@@ -1741,6 +1818,12 @@ struct ProposalRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     screenshot_png_base64: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    screenshot_width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    screenshot_height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     history: Option<llm::ActionHistory>,
     constraints: llm::RunConstraints,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1772,16 +1855,9 @@ fn proposal_error_from_llm(error: llm::LlmError) -> ProposalError {
     }
 }
 
-fn compatibility_proposal_error(message: String) -> ProposalError {
-    ProposalError {
-        code: "LOCAL_AI_COMPATIBILITY_ERROR".to_string(),
-        message,
-    }
-}
-
 fn resolve_llm_api_key(provider: &str) -> Result<String, ProposalError> {
     match provider {
-        "native_qwen_ollama" | "openai_compat" => {
+        "openai_compat" => {
             Ok(keyring_get_secret(&format!("llm_api_key:{}", provider)).unwrap_or_default())
         }
         "openai" | "claude" | "deepseek" | "minimax" | "kimi" => {
@@ -1797,7 +1873,6 @@ fn resolve_llm_api_key(provider: &str) -> Result<String, ProposalError> {
 #[tauri::command]
 async fn llm_propose_next_action(
     params: ProposalRequest,
-    local_ai_state: State<'_, local_ai::LocalAiRuntimeState>,
 ) -> Result<ProposalResult, ProposalError> {
     let api_key = params
         .api_key_override
@@ -1816,6 +1891,9 @@ async fn llm_propose_next_action(
         api_key,
         goal: params.goal,
         screenshot_png_base64: params.screenshot_png_base64,
+        screenshot_width: params.screenshot_width,
+        screenshot_height: params.screenshot_height,
+        display_id: params.display_id,
         history: params.history,
         constraints: params.constraints,
         workspace_configured,
@@ -1825,73 +1903,10 @@ async fn llm_propose_next_action(
 
     let provider = llm::create_provider(&proposal_params.provider).map_err(proposal_error_from_llm)?;
 
-    let proposal = match provider.propose_next_action(&proposal_params).await {
-        Ok(proposal) => {
-            if proposal_params.provider == "native_qwen_ollama" {
-                local_ai::clear_runtime_error(&local_ai_state);
-            }
-            proposal
-        }
-        Err(error) if proposal_params.provider == "native_qwen_ollama" => {
-            match local_ai::compatibility_disposition(
-                &local_ai_state,
-                &proposal_params.base_url,
-                &error.message,
-            )
-            .await
-            .map_err(|state_error| {
-                compatibility_proposal_error(format!(
-                    "Free AI hit a Mac graphics compatibility problem, but GORKH could not inspect the local runtime state: {}",
-                    state_error
-                ))
-            })? {
-                local_ai::LocalAiCompatibilityDisposition::NotApplicable => {
-                    return Err(proposal_error_from_llm(error));
-                }
-                local_ai::LocalAiCompatibilityDisposition::ExternalService => {
-                    let message = local_ai::external_service_compatibility_message(
-                        &proposal_params.base_url,
-                    );
-                    local_ai::remember_runtime_error(&local_ai_state, message.clone());
-                    return Err(compatibility_proposal_error(message));
-                }
-                local_ai::LocalAiCompatibilityDisposition::ManagedRuntimeAlreadyCompatible => {
-                    let message = local_ai::managed_runtime_still_incompatible_message();
-                    local_ai::remember_runtime_error(&local_ai_state, message.clone());
-                    return Err(compatibility_proposal_error(message));
-                }
-                local_ai::LocalAiCompatibilityDisposition::RetryManagedRuntime => {
-                    local_ai::enable_managed_runtime_compatibility_mode(&local_ai_state)
-                        .await
-                        .map_err(|restart_error| {
-                            let message = format!(
-                                "Free AI hit a Mac graphics compatibility problem. GORKH could not restart the managed local runtime in compatibility mode: {}",
-                                restart_error
-                            );
-                            local_ai::remember_runtime_error(&local_ai_state, message.clone());
-                            compatibility_proposal_error(message)
-                        })?;
-
-                    match provider.propose_next_action(&proposal_params).await {
-                        Ok(proposal) => {
-                            local_ai::clear_runtime_error(&local_ai_state);
-                            proposal
-                        }
-                        Err(retry_error) => {
-                            if local_ai::is_macos_metal_compatibility_error(&retry_error.message) {
-                                let message =
-                                    local_ai::managed_runtime_compatibility_failure_message();
-                                local_ai::remember_runtime_error(&local_ai_state, message.clone());
-                                return Err(compatibility_proposal_error(message));
-                            }
-                            return Err(proposal_error_from_llm(retry_error));
-                        }
-                    }
-                }
-            }
-        }
-        Err(error) => return Err(proposal_error_from_llm(error)),
-    };
+    let proposal = provider
+        .propose_next_action(&proposal_params)
+        .await
+        .map_err(proposal_error_from_llm)?;
 
     Ok(ProposalResult { proposal })
 }
@@ -1921,7 +1936,6 @@ struct ConversationTurnResponse {
 #[tauri::command]
 async fn assistant_conversation_turn(
     params: ConversationTurnRequest,
-    local_ai_state: State<'_, local_ai::LocalAiRuntimeState>,
 ) -> Result<ConversationTurnResponse, ProposalError> {
     let api_key = params
         .api_key_override
@@ -1939,139 +1953,12 @@ async fn assistant_conversation_turn(
 
     let provider = llm::create_provider(&conversation_params.provider).map_err(proposal_error_from_llm)?;
 
-    let result = match provider.conversation_turn(&conversation_params).await {
-        Ok(result) => {
-            if conversation_params.provider == "native_qwen_ollama" {
-                local_ai::clear_runtime_error(&local_ai_state);
-            }
-            result
-        }
-        Err(error) if conversation_params.provider == "native_qwen_ollama" => {
-            match local_ai::compatibility_disposition(
-                &local_ai_state,
-                &conversation_params.base_url,
-                &error.message,
-            )
-            .await
-            .map_err(|state_error| {
-                compatibility_proposal_error(format!(
-                    "Free AI hit a Mac graphics compatibility problem, but GORKH could not inspect the local runtime state: {}",
-                    state_error
-                ))
-            })? {
-                local_ai::LocalAiCompatibilityDisposition::NotApplicable => {
-                    return Err(proposal_error_from_llm(error));
-                }
-                local_ai::LocalAiCompatibilityDisposition::ExternalService => {
-                    let message = local_ai::external_service_compatibility_message(
-                        &conversation_params.base_url,
-                    );
-                    local_ai::remember_runtime_error(&local_ai_state, message.clone());
-                    return Err(compatibility_proposal_error(message));
-                }
-                local_ai::LocalAiCompatibilityDisposition::ManagedRuntimeAlreadyCompatible => {
-                    let message = local_ai::managed_runtime_still_incompatible_message();
-                    local_ai::remember_runtime_error(&local_ai_state, message.clone());
-                    return Err(compatibility_proposal_error(message));
-                }
-                local_ai::LocalAiCompatibilityDisposition::RetryManagedRuntime => {
-                    local_ai::enable_managed_runtime_compatibility_mode(&local_ai_state)
-                        .await
-                        .map_err(|restart_error| {
-                            let message = format!(
-                                "Free AI hit a Mac graphics compatibility problem. GORKH could not restart the managed local runtime in compatibility mode: {}",
-                                restart_error
-                            );
-                            local_ai::remember_runtime_error(&local_ai_state, message.clone());
-                            compatibility_proposal_error(message)
-                        })?;
-
-                    match provider.conversation_turn(&conversation_params).await {
-                        Ok(result) => {
-                            local_ai::clear_runtime_error(&local_ai_state);
-                            result
-                        }
-                        Err(retry_error) => {
-                            if local_ai::is_macos_metal_compatibility_error(&retry_error.message) {
-                                let message =
-                                    local_ai::managed_runtime_compatibility_failure_message();
-                                local_ai::remember_runtime_error(&local_ai_state, message.clone());
-                                return Err(compatibility_proposal_error(message));
-                            }
-                            return Err(proposal_error_from_llm(retry_error));
-                        }
-                    }
-                }
-            }
-        }
-        Err(error) => return Err(proposal_error_from_llm(error)),
-    };
+    let result = provider
+        .conversation_turn(&conversation_params)
+        .await
+        .map_err(proposal_error_from_llm)?;
 
     Ok(ConversationTurnResponse { result })
-}
-
-#[tauri::command]
-async fn local_ai_status(
-    state: State<'_, local_ai::LocalAiRuntimeState>,
-) -> Result<local_ai::LocalAiRuntimeStatus, String> {
-    local_ai::runtime_status(&state).await
-}
-
-#[tauri::command]
-async fn local_ai_install_start(
-    state: State<'_, local_ai::LocalAiRuntimeState>,
-    preferred_tier: Option<String>,
-) -> Result<local_ai::LocalAiInstallProgress, String> {
-    local_ai::install_start(
-        &state,
-        Some(local_ai::LocalAiInstallRequest { preferred_tier }),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn local_ai_enable_vision_boost(
-    state: State<'_, local_ai::LocalAiRuntimeState>,
-) -> Result<local_ai::LocalAiInstallProgress, String> {
-    local_ai::enable_vision_boost(&state).await
-}
-
-#[tauri::command]
-fn local_ai_install_progress(
-    state: State<'_, local_ai::LocalAiRuntimeState>,
-) -> Result<local_ai::LocalAiInstallProgress, String> {
-    Ok(local_ai::install_progress(&state))
-}
-
-#[tauri::command]
-async fn local_ai_start(
-    state: State<'_, local_ai::LocalAiRuntimeState>,
-) -> Result<local_ai::LocalAiRuntimeStatus, String> {
-    local_ai::start_runtime(&state).await
-}
-
-#[tauri::command]
-async fn local_ai_stop(
-    state: State<'_, local_ai::LocalAiRuntimeState>,
-) -> Result<local_ai::LocalAiRuntimeStatus, String> {
-    local_ai::stop_runtime(&state).await
-}
-
-#[tauri::command]
-fn local_ai_hardware_profile() -> Result<local_ai::LocalAiHardwareProfile, String> {
-    local_ai::hardware_profile()
-}
-
-#[tauri::command]
-fn local_ai_recommended_tier() -> Result<local_ai::LocalAiTierRecommendation, String> {
-    local_ai::recommended_tier()
-}
-
-#[tauri::command]
-async fn local_ai_reset_to_managed(
-    state: State<'_, local_ai::LocalAiRuntimeState>,
-) -> Result<local_ai::LocalAiRuntimeStatus, String> {
-    local_ai::reset_to_managed(&state).await
 }
 
 // Resize RGBA image
@@ -2165,7 +2052,7 @@ mod base64 {
 //     For advanced agent features: use `agent::providers` (incomplete)
 // ============================================================================
 
-use agent::providers::{LlmProvider as _, ProviderRouter, ProviderType};
+use agent::providers::{ProviderRouter, ProviderType};
 use agent::{AdvancedAgent, AgentConfig, AgentEvent};
 
 /// State for the advanced agent
@@ -2207,8 +2094,6 @@ pub struct ProviderInfo {
 
 fn agent_provider_kind(provider_type: &str) -> Result<ProviderType, String> {
     match provider_type {
-        "native_qwen_ollama" => Ok(ProviderType::NativeQwenOllama),
-        "local_openai_compat" => Ok(ProviderType::LocalOpenAiCompat),
         "openai" => Ok(ProviderType::OpenAi),
         "claude" => Ok(ProviderType::Claude),
         "deepseek" => Ok(ProviderType::DeepSeek),
@@ -2220,14 +2105,6 @@ fn agent_provider_kind(provider_type: &str) -> Result<ProviderType, String> {
 
 async fn is_agent_provider_available(provider_type: &str) -> Result<bool, String> {
     match agent_provider_kind(provider_type)? {
-        ProviderType::NativeQwenOllama => {
-            let provider = agent::providers::NativeOllamaProvider::new(None, None);
-            Ok(provider.is_available().await)
-        }
-        ProviderType::LocalOpenAiCompat => {
-            let provider = agent::providers::LocalCompatProvider::new(None, None, None, None);
-            Ok(provider.is_available().await)
-        }
         ProviderType::OpenAi | ProviderType::Claude | ProviderType::DeepSeek | ProviderType::Moonshot => {
             Ok(keyring_get_secret(&format!("llm_api_key:{}", provider_type)).is_some())
         }
@@ -2244,13 +2121,6 @@ async fn list_agent_providers(_state: State<'_, AgentState>) -> Result<Vec<Provi
     let mut providers = Vec::new();
 
     for (provider_type, name, is_free, supports_vision) in [
-        ("native_qwen_ollama", "Local Qwen (Ollama)", true, true),
-        (
-            "local_openai_compat",
-            "Local OpenAI-compatible",
-            true,
-            false,
-        ),
         ("openai", "OpenAI-compatible cloud", false, true),
         ("claude", "Claude", false, true),
         ("deepseek", "DeepSeek", false, false),
@@ -2338,7 +2208,7 @@ async fn start_agent_task(
     // sees current app state without the model needing to guess.
     app_context: Option<String>,
 ) -> Result<String, String> {
-    let provider_name = preferred_provider.unwrap_or_else(|| "native_qwen_ollama".to_string());
+    let provider_name = preferred_provider.unwrap_or_else(|| "gorkh_free".to_string());
     let primary_provider = agent_provider_kind(&provider_name)?;
     let key_provider = credential_provider.unwrap_or_else(|| provider_name.clone());
     let resolved_provider_api_key = provider_api_key.or_else(|| match primary_provider {
@@ -2455,7 +2325,6 @@ async fn submit_agent_user_response(
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct GorkhAppSnapshot {
-    free_ai: local_ai::LocalAiRuntimeStatus,
     permissions: PermissionStatusPayload,
     workspace_configured: bool,
     workspace_root_name: Option<String>,
@@ -2464,10 +2333,7 @@ struct GorkhAppSnapshot {
 
 /// Read a unified snapshot of safe GORKH app state for the assistant.
 #[tauri::command]
-async fn gorkh_app_snapshot(
-    local_ai_state: State<'_, local_ai::LocalAiRuntimeState>,
-) -> Result<GorkhAppSnapshot, String> {
-    let free_ai = local_ai::runtime_status(&local_ai_state).await?;
+async fn gorkh_app_snapshot() -> Result<GorkhAppSnapshot, String> {
     let permissions = PermissionStatusPayload {
         screen_recording: detect_screen_recording_status(),
         accessibility: detect_accessibility_status(),
@@ -2479,7 +2345,6 @@ async fn gorkh_app_snapshot(
     let autostart_enabled = autostart_is_enabled().unwrap_or(false);
 
     Ok(GorkhAppSnapshot {
-        free_ai,
         permissions,
         workspace_configured,
         workspace_root_name,
@@ -2518,7 +2383,6 @@ pub fn run() {
         .manage(TrayRuntimeState::default())
         .manage(OverlayModeRuntimeState::default())
         .manage(DesktopAuthRuntimeState::default())
-        .manage(local_ai::LocalAiRuntimeState::default())
         .manage(AgentState::new())
         .plugin(
             tauri_plugin_opener::Builder::new()
@@ -2564,15 +2428,6 @@ pub fn run() {
             clear_llm_api_key,
             llm_propose_next_action,
             assistant_conversation_turn,
-            local_ai_status,
-            local_ai_install_start,
-            local_ai_enable_vision_boost,
-            local_ai_install_progress,
-            local_ai_start,
-            local_ai_stop,
-            local_ai_hardware_profile,
-            local_ai_recommended_tier,
-            local_ai_reset_to_managed,
             // Iteration 7: Workspace Tools
             workspace::workspace_configure,
             workspace::workspace_get_state,

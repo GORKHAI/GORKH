@@ -85,13 +85,7 @@ test('desktop hosted Free AI helper resolves the authenticated OpenAI-compatible
       ok: true,
       status: 200,
       json: async () => ({
-        choices: [
-          {
-            message: {
-              content: 'OK.',
-            },
-          },
-        ],
+        data: [{ id: 'gorkh-free-ai' }],
       }),
     } as Response;
   }) as typeof fetch;
@@ -104,8 +98,8 @@ test('desktop hosted Free AI helper resolves the authenticated OpenAI-compatible
 
   assert.equal(
     captured?.input,
-    'https://api.example.com/desktop/free-ai/v1/chat/completions',
-    'desktop hosted fallback test should hit the authenticated chat completions route'
+    'https://api.example.com/desktop/free-ai/v1/models',
+    'desktop hosted fallback test should hit the authenticated models route for a lightweight health check'
   );
   assert.match(
     String((captured?.init?.headers as Record<string, string> | undefined)?.Authorization),
@@ -116,18 +110,10 @@ test('desktop hosted Free AI helper resolves the authenticated OpenAI-compatible
 
 test('desktop app and local-compatible provider keep a hosted Free AI execution path with vision enabled', () => {
   const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
-  const taskFlowSource = readFileSync('apps/desktop/src/lib/chatTaskFlow.ts', 'utf8');
   const aiAssistSource = readFileSync('apps/desktop/src/lib/aiAssist.ts', 'utf8');
   const assistantEngineSource = readFileSync('apps/desktop/src/lib/assistantEngine.ts', 'utf8');
   const settingsSource = readFileSync('apps/desktop/src/components/SettingsPanel.tsx', 'utf8');
   const openAiCompatSource = readFileSync('apps/desktop/src-tauri/src/llm/openai_compat.rs', 'utf8');
-  const localCompatSource = readFileSync('apps/desktop/src-tauri/src/agent/providers/local_compat.rs', 'utf8');
-
-  assert.match(
-    taskFlowSource,
-    /hosted_free_ai|providerMode/,
-    'pending task confirmations should be able to carry a hosted Free AI route override from intake to execution'
-  );
 
   assert.match(
     appSource,
@@ -160,20 +146,14 @@ test('desktop app and local-compatible provider keep a hosted Free AI execution 
   );
 
   assert.match(
-    localCompatSource,
-    /supports_vision:\s*self\.supports_vision/,
-    'local-compatible Rust provider should report runtime-configured vision capability instead of hardcoding false'
+    openAiCompatSource,
+    /screenshot_png_base64|image_url/,
+    'OpenAI-compatible Rust provider should support vision and screenshot passing for hosted backends'
   );
 
   assert.match(
-    localCompatSource,
-    /Some\(&request\.screenshot_base64\)/,
-    'local-compatible Rust provider should send the actual screenshot to hosted vision backends'
-  );
-
-  assert.match(
-    localCompatSource,
-    /http1_only/,
-    'hosted Free AI execution requests should pin the Rust HTTP client to HTTP/1.1 for the Render fallback proxy'
+    openAiCompatSource,
+    /create_http_client/,
+    'OpenAI-compatible Rust provider should use a shared HTTP client constructor for hosted backends'
   );
 });

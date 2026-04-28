@@ -4,7 +4,6 @@ import test from 'node:test';
 
 const assistantConversationPath = 'apps/desktop/src/lib/assistantConversation.ts';
 const llmModPath = 'apps/desktop/src-tauri/src/llm/mod.rs';
-const nativeOllamaPath = 'apps/desktop/src-tauri/src/llm/native_ollama.rs';
 const openaiPath = 'apps/desktop/src-tauri/src/llm/openai.rs';
 const openaiCompatPath = 'apps/desktop/src-tauri/src/llm/openai_compat.rs';
 const claudePath = 'apps/desktop/src-tauri/src/llm/claude.rs';
@@ -55,7 +54,7 @@ test('conversation intake bridge exposes a dedicated Tauri IPC entrypoint', () =
   );
 });
 
-for (const providerPath of [nativeOllamaPath, openaiPath, openaiCompatPath, claudePath]) {
+for (const providerPath of [openaiPath, openaiCompatPath, claudePath]) {
   test(`conversation intake prompt is explicit in ${providerPath}`, () => {
     const source = readSource(providerPath);
 

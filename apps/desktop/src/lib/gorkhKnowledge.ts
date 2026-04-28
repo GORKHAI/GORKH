@@ -21,16 +21,14 @@ export interface GorkhFeatureDoc {
 
 export const GORKH_FEATURES: Record<string, GorkhFeatureDoc> = {
   freeAi: {
-    name: 'Free AI (local engine)',
+    name: 'GORKH AI (Free)',
     description:
-      'GORKH can run an AI model directly on your Mac — no internet, no cloud, no subscription required. ' +
-      'The model runs entirely on your device and your conversations stay private.',
+      'GORKH provides a hosted free tier powered by DeepSeek. No API key is required. ' +
+      'Sign in to use it.',
     howToUse:
-      'Go to the Free AI section and click "Set Up Free AI". GORKH will download and install ' +
-      'the local engine automatically. Setup takes a few minutes depending on your connection speed.',
+      'Select GORKH AI (Free) in Settings. Sign in to verify the device. You get a limited number of tasks per day.',
     requirements:
-      'Requires at least 8 GB of free disk space and 8 GB of RAM. A faster Mac with more RAM ' +
-      'can run a stronger model.',
+      'Requires an internet connection and a signed-in GORKH account.',
   },
   remoteControl: {
     name: 'Remote control',
@@ -72,16 +70,6 @@ export const GORKH_FEATURES: Record<string, GorkhFeatureDoc> = {
       'decide. "Stop All" immediately cancels everything.',
     requirements: 'Always on — cannot be disabled.',
   },
-  visionBoost: {
-    name: 'Vision Boost',
-    description:
-      'Upgrades the local AI engine to understand screenshots. Lets the assistant see what is on ' +
-      'your screen and make more accurate decisions about where to click.',
-    howToUse:
-      'Available after the standard tier is installed. Requires additional model download (~3-6 GB).',
-    requirements:
-      'Requires the standard tier to be installed first, plus enough RAM and disk space.',
-  },
 };
 
 // ---------------------------------------------------------------------------
@@ -121,42 +109,20 @@ export const GORKH_SETTINGS: Record<string, GorkhSettingDoc> = {
   aiProvider: {
     label: 'AI provider',
     description:
-      'Chooses which AI model powers the assistant. "Free AI" uses the local engine (no internet ' +
-      'required). Paid providers (OpenAI, Claude, etc.) use your own API key and may incur usage costs.',
+      'Chooses which AI model powers the assistant. GORKH AI (Free) is the hosted free tier. ' +
+      'Paid providers (OpenAI, Claude, etc.) use your own API key and may incur usage costs.',
     howToChange: 'Select a provider in Settings > AI Provider.',
-    default: 'Free AI (local engine)',
+    default: 'GORKH AI (Free)',
   },
 };
 
 // ---------------------------------------------------------------------------
-// State label explanations (plain-English versions of enum values)
+// Provider explanations
 // ---------------------------------------------------------------------------
 
-export const GORKH_INSTALL_STAGE_EXPLANATIONS: Record<string, string> = {
-  not_started: 'Free AI has not been set up on this device yet.',
-  planned: 'GORKH is preparing to set up the local AI engine.',
-  installing: 'GORKH is downloading and installing the local AI engine. This may take several minutes.',
-  installed: 'The local AI engine is installed. Starting it up now…',
-  starting: 'The local AI engine is starting. This usually takes under a minute.',
-  ready: 'Free AI is running and ready to use.',
-  error: 'Something went wrong with the local AI engine. Check the Free AI section for details.',
-};
-
-export const GORKH_TIER_EXPLANATIONS: Record<string, string> = {
-  light:
-    'Light — a smaller, faster model suitable for most everyday tasks. ' +
-    'Recommended for Macs with 8–16 GB RAM.',
-  standard:
-    'Standard — a stronger model with better reasoning and code understanding. ' +
-    'Recommended for Macs with 16 GB+ RAM.',
-  vision:
-    'Vision Boost — adds screenshot understanding to the standard model. ' +
-    'Lets the assistant see what is on your screen.',
-};
-
 export const GORKH_PROVIDER_EXPLANATIONS: Record<string, string> = {
-  native_qwen_ollama:
-    'Free AI — runs a local model on your Mac. No internet required, no usage fees, fully private.',
+  gorkh_free:
+    'GORKH AI (Free) — hosted free tier. No API key required. Limited tasks per day.',
   openai:
     'OpenAI — uses your OpenAI API key. Charges apply per use. The model runs in the cloud.',
   claude:
@@ -169,12 +135,6 @@ export const GORKH_PROVIDER_EXPLANATIONS: Record<string, string> = {
     'Kimi — uses your Kimi API key. Charges apply per use. The model runs in the cloud.',
   openai_compat:
     'Custom local model — a self-hosted OpenAI-compatible endpoint. Advanced use.',
-};
-
-export const GORKH_GPU_CLASS_EXPLANATIONS: Record<string, string> = {
-  discrete: 'Dedicated GPU detected — the local model can use GPU acceleration.',
-  integrated: 'Integrated graphics only — the local model will run on CPU.',
-  unknown: 'GPU not detected — the local model will run on CPU.',
 };
 
 // ---------------------------------------------------------------------------
@@ -200,14 +160,9 @@ export const GORKH_ONBOARDING = {
     "Hi — I'm GORKH, your desktop AI assistant. I can help you automate tasks on your computer, " +
     "answer questions about my own settings and features, or guide you through setup. How can I help you today?",
 
-  freeAiNotReady:
-    "I notice Free AI hasn't been set up yet on this device. " +
-    "I can set it up for you right now — it only takes a few minutes and runs entirely on your Mac. " +
-    "Would you like me to get started, or would you prefer to use a paid AI provider instead?",
-
   providerNotConfigured:
     "I don't have an AI provider configured yet. To get started, " +
-    "you can set up Free AI (runs locally on your Mac, no fees) or enter an API key for a paid provider like OpenAI or Claude.",
+    "you can use GORKH AI (Free) after signing in, or enter an API key for a paid provider like OpenAI or Claude.",
 
   screenRecordingNeeded:
     "To see what's on your screen, I need Screen Recording permission. " +
@@ -216,21 +171,6 @@ export const GORKH_ONBOARDING = {
   accessibilityNeeded:
     "To control your Mac, I need Accessibility permission. " +
     "You can grant it in System Settings > Privacy & Security > Accessibility.",
-};
-
-export const GORKH_FREE_AI_SETUP_COPY = {
-  title: 'Free AI setup',
-  summary:
-    'Free AI is required on the free plan. GORKH will check for an existing local engine and AI model first, then install or download what is missing.',
-  details:
-    'GORKH will keep this setup on your device, prepare the local engine, and download the AI model if it is not already available.',
-  prompt:
-    'Do you approve setting up Free AI now?',
-  actions: {
-    retry: 'Retry Free AI',
-    cancel: 'Cancel this task',
-    openSettings: 'Open Settings',
-  },
 };
 
 // ---------------------------------------------------------------------------
@@ -254,27 +194,20 @@ export const GORKH_FAQ: GorkhQA[] = [
   {
     question: 'Is my data private?',
     answer:
-      'Yes. With Free AI, everything runs on your device — nothing is sent to the cloud. ' +
-      'Screen frames are never stored to disk or the server. ' +
-      'Typed text is never logged. Workspace file contents are never transmitted without your approval.',
+      'Yes. Screen frames are never stored to disk or the server. ' +
+      'Typed text is never logged. Workspace file contents are never transmitted without your approval. ' +
+      'API keys are stored in your OS keychain and never sent to our servers.',
   },
   {
-    question: 'What is Free AI?',
+    question: 'What is GORKH AI (Free)?',
     answer:
-      'Free AI is a local AI model that runs entirely on your Mac — no internet, no API key, no fees. ' +
-      'GORKH manages the download and setup for you.',
+      'GORKH AI (Free) is a hosted free tier powered by DeepSeek. No API key is required. ' +
+      'Sign in to use it. A limited number of tasks are included each day.',
   },
   {
     question: 'Why do I need to approve every action?',
     answer:
       'GORKH requires your approval for every action — clicking, typing, file edits, terminal commands — ' +
       'because you stay in control at all times. Nothing happens on your computer without your confirmation.',
-  },
-  {
-    question: 'How do I set up Free AI?',
-    answer:
-      'Go to the Free AI section in the GORKH sidebar. GORKH will check your hardware and recommend ' +
-      'a model tier. Click "Set Up Free AI" and GORKH handles the rest. ' +
-      'Setup usually takes 5–15 minutes depending on your internet speed.',
   },
 ];

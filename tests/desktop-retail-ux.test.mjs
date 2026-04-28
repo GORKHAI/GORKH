@@ -25,15 +25,14 @@ test('desktop main surface emphasizes assistant chat and task progress instead o
   assert.match(appSource, /Desktop ID|Signed-in desktops|Other signed-in desktops/i, 'retail desktop should keep account-linked desktop labels in product language');
 });
 
-test('desktop retail onboarding uses guided free-AI setup copy on the main surface and hides provider details behind advanced settings', () => {
+test('desktop retail onboarding uses guided GORKH Free copy on the main surface and hides provider details behind advanced settings', () => {
   const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
-  const freeAiSource = readFileSync('apps/desktop/src/components/FreeAiSetupCard.tsx', 'utf8');
   const settingsSource = readFileSync('apps/desktop/src/components/SettingsPanel.tsx', 'utf8');
 
   assert.match(
     appSource,
-    /Set Up Free AI|Install local engine|Choose workspace|Ready to use/i,
-    'main desktop onboarding should present a guided setup path in product language'
+    /GORKH AI|Free tier|Choose workspace/i,
+    'main desktop onboarding should present GORKH Free in product language'
   );
   assert.match(
     appSource,
@@ -47,42 +46,17 @@ test('desktop retail onboarding uses guided free-AI setup copy on the main surfa
   );
 
   assert.match(
-    freeAiSource,
-    /Set Up Free AI|Installing local engine|Downloading AI model|Repair Free AI/i,
-    'free AI setup card should describe the guided install flow in plain product language'
-  );
-  assert.match(
     settingsSource,
     /Restart to update|Downloading update|Preparing update/i,
     'desktop settings should surface background updater progress and restart-to-update copy'
   );
-  assert.doesNotMatch(
-    freeAiSource,
-    /Start Free AI|Vision Boost optional/i,
-    'the primary setup card should not lead with tier-selection jargon or optional upsells'
-  );
 });
 
-test('desktop retail onboarding reserves approval and recovery language for chat-owned Free AI setup', () => {
+test('desktop retail onboarding reserves approval and recovery language for chat-owned setup', () => {
   const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
-  const gateIndex = appSource.indexOf('if (!providerConfigured)');
-  const conversationIndex = appSource.indexOf('assistantConversationTurn', gateIndex);
-  const setupStateIndex = appSource.indexOf('pendingFreeAiSetup', gateIndex);
-  const setupSection =
-    setupStateIndex !== -1 && conversationIndex !== -1
-      ? appSource.slice(setupStateIndex, conversationIndex)
-      : appSource;
 
-  assert.match(setupSection, /Retry Free AI/, 'retail onboarding should offer retry copy for setup failures');
-  assert.match(setupSection, /Cancel this task/, 'retail onboarding should offer cancel copy for setup failures');
-  assert.match(setupSection, /Open Settings/, 'retail onboarding should offer a settings escape hatch from the pending setup state');
-  assert.match(
-    setupSection,
-    /resumeDeferredTaskAfterFreeAiReady|replayDeferredUserTask/,
-    'retail onboarding should resume the deferred task after Free AI is ready'
-  );
   assert.doesNotMatch(
-    setupSection,
+    appSource,
     /brew|ollama pull|manual install/i,
     'retail onboarding should not direct users to manual Ollama installation'
   );

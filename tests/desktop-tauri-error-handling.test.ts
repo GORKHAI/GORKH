@@ -10,11 +10,11 @@ test('desktop parses structured Tauri errors into code and message fields', asyn
   assert.deepEqual(
     imported.parseDesktopError({
       code: 'CONNECTION_FAILED',
-      message: 'Failed to connect to Ollama at http://127.0.0.1:11434',
+      message: 'Failed to connect to the AI service',
     }),
     {
       code: 'CONNECTION_FAILED',
-      message: 'Failed to connect to Ollama at http://127.0.0.1:11434',
+      message: 'Failed to connect to the AI service',
     }
   );
 
@@ -51,11 +51,6 @@ test('desktop chat and settings use the shared Tauri error parser for user-facin
     settingsSource,
     /parseDesktopError\(e,\s*'Test failed'\)/,
     'settings test connection should normalize plain-object Tauri errors before categorizing the failure'
-  );
-  assert.match(
-    settingsSource,
-    /parsedError\.code === 'LOCAL_AI_COMPATIBILITY_ERROR'/,
-    'settings should surface managed Free AI compatibility failures directly instead of wrapping them in generic test-copy'
   );
   assert.match(
     compatSource,

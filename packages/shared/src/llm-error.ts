@@ -48,8 +48,8 @@ export const LlmErrorCode = {
   /** Rate limited by provider */
   RATE_LIMITED: 'RATE_LIMITED',
 
-  /** Ollama-specific error */
-  OLLAMA_ERROR: 'OLLAMA_ERROR',
+  /** Local AI runtime error (deprecated: local AI removed) */
+  LOCAL_AI_ERROR: 'LOCAL_AI_ERROR',
 
   /** Free AI fallback service is unavailable */
   FREE_AI_FALLBACK_UNAVAILABLE: 'FREE_AI_FALLBACK_UNAVAILABLE',

@@ -5,7 +5,42 @@ import {
   type LlmProvider,
   type LlmSettings,
 } from './llmConfig.js';
-import { taskLikelyNeedsVision, type LocalAiRuntimeStatus } from './localAi.js';
+// ---------------------------------------------------------------------------
+// Vision heuristic (moved from deleted localAi.ts)
+// ---------------------------------------------------------------------------
+
+function taskLikelyNeedsVision(goal: string): boolean {
+  const normalized = goal.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const visionPatterns = [
+    /\bphotoshop\b/,
+    /\bblender\b/,
+    /\bfigma\b/,
+    /\bscreenshot\b/,
+    /\bscreen\b/,
+    /\bwindow\b/,
+    /\bmenu\b/,
+    /\bbutton\b/,
+    /\bdialog\b/,
+    /\bcanvas\b/,
+    /\bui\b/,
+    /\bgui\b/,
+    /\bimage\b/,
+    /\bpicture\b/,
+    /\bbackground\b/,
+    /\bremove the background\b/,
+    /\bwhat(?:'s| is) on screen\b/,
+    /\bopen .* and\b/,
+    /\bclick\b/,
+    /\blook at\b/,
+  ];
+
+  return visionPatterns.some((pattern) => pattern.test(normalized));
+}
+
 import {
   buildRedactedLocalToolPreview,
   buildRedactedToolSummary,
@@ -15,6 +50,13 @@ import {
   executeGorkhReadTool,
   executeGorkhWriteTool,
 } from './gorkhTools.js';
+import {
+  clampAction,
+  sha256ScreenshotBase64,
+  verifyActionEffect,
+  type ActionRecord,
+  type ScreenshotObservation,
+} from './computerUseVerifier.js';
 import { sanitizeRunLogLine } from '@ai-operator/shared';
 import type {
   AgentProposal,
@@ -95,19 +137,6 @@ function modelSupportsVision(settings: LlmSettings): boolean {
 
 // Helper function to check if LLM provider is configured
 export async function hasLlMProviderConfigured(provider: LlmProvider): Promise<boolean> {
-  if (provider === 'native_qwen_ollama') {
-    try {
-      const status = await invoke<LocalAiRuntimeStatus>('local_ai_status');
-      return (
-        status.runtimeRunning
-        && status.targetModelAvailable === true
-        && (Boolean(status.selectedModel) || status.externalServiceDetected)
-      );
-    } catch {
-      return false;
-    }
-  }
-
   if (!providerRequiresApiKey(provider)) {
     return true;
   }
@@ -125,6 +154,10 @@ export class AiAssistController {
   private abortController: AbortController | null = null;
   private logs: LogLine[] = [];
   private actionResults: string[] = [];
+  private actionHistory: ActionRecord[] = [];
+  private lastObservation?: ScreenshotObservation;
+  private retryCount = 0;
+
   private activeSettings: LlmSettings | null = null;
   private paused = false;
   private statusBeforePause: AiAssistState['status'] = 'capturing';
@@ -200,7 +233,7 @@ export class AiAssistController {
     try {
       // GORKH write tools dispatch differently (no workspace execution, no tool_execute IPC)
       // Legacy engine only supports settings.set and free_ai.install
-      if (toolCall.tool === 'settings.set' || toolCall.tool === 'free_ai.install') {
+      if (toolCall.tool === 'settings.set') {
         const resultText = await executeGorkhWriteTool(toolCall);
         this.actionResults.push(`${toolCall.tool} result: ${resultText}`);
         this.sendSafeRunLog(`GORKH tool executed: ${toolCall.tool}`, 'info');
@@ -492,16 +525,125 @@ export class AiAssistController {
     // Report action creation to server
     this.options.wsClient.sendActionCreate(actionId, action, createdAt, this.options.runId);
 
+    // Clamp coordinates for safety
+    const clamped = clampAction(action);
+    if (!clamped) {
+      const errorMsg = 'Action rejected: invalid coordinates (NaN or Infinity)';
+      console.error('[AiAssist]', errorMsg);
+      this.options.wsClient.sendActionResult(actionId, false, { code: 'INVALID_COORDINATES', message: errorMsg });
+      this.sendSafeRunLog(errorMsg, 'error');
+
+      this.state.currentProposal = {
+        kind: 'ask_user',
+        question: `The proposed action had invalid coordinates. Would you like me to try a different approach?`,
+      };
+      this.state.status = 'asking_user';
+      this.options.onProposal?.(this.state.currentProposal);
+      this.notifyStateChange();
+      return { ok: false, error: errorMsg };
+    }
+
     try {
       // Execute the action locally
-      await this.executeAction(action);
+      await this.executeAction(clamped);
       
       // Report success
       this.options.wsClient.sendActionResult(actionId, true);
-      this.sendSafeRunLog(`Action executed: ${this.summarizeAction(action)}`, 'info');
+      this.sendSafeRunLog(`Action executed: ${this.summarizeAction(clamped)}`, 'info');
 
-      // Track action result for history
-      this.actionResults.push(`Executed: ${this.summarizeAction(action)}`);
+      // Wait briefly, then capture after screenshot for verification
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const afterObservation = await this.captureScreenshot();
+
+      // Verify the action had the intended effect
+      const verification = await verifyActionEffect({
+        goal: this.options.goal,
+        action: clamped,
+        beforeObservation: this.lastObservation,
+        afterObservation: afterObservation ?? undefined,
+        executionResult: { ok: true },
+        recentActions: this.actionHistory,
+      });
+
+      // Record structured history
+      const record: ActionRecord = {
+        kind: clamped.kind,
+        summary: this.summarizeAction(clamped),
+        verificationStatus: verification.status,
+        verificationReason: verification.reason,
+        screenshotHashBefore: this.lastObservation?.hash,
+        screenshotHashAfter: afterObservation?.hash,
+      };
+      this.actionHistory.push(record);
+      const historyLine = `${record.kind} → ${record.verificationStatus}${record.screenshotHashBefore && record.screenshotHashAfter ? ' | hash: ' + record.screenshotHashBefore.slice(0, 8) + '→' + record.screenshotHashAfter.slice(0, 8) : ''}`;
+      this.actionResults.push(historyLine);
+
+      // Retry logic for failed verification
+      if (verification.status === 'failed' && verification.shouldRetry && this.retryCount < 1) {
+        this.retryCount++;
+        this.log('info', `Retrying action: ${verification.reason}`);
+        this.sendSafeRunLog(`Retrying: ${verification.reason}`, 'warn');
+        
+        // Retry the same action once
+        const retryId = crypto.randomUUID();
+        this.options.wsClient.sendActionCreate(retryId, clamped, Date.now(), this.options.runId);
+        await this.executeAction(clamped);
+        this.options.wsClient.sendActionResult(retryId, true);
+        
+        // Re-verify after retry
+        const afterRetryObservation = await this.captureScreenshot();
+        const retryVerification = await verifyActionEffect({
+          goal: this.options.goal,
+          action: clamped,
+          beforeObservation: afterObservation ?? undefined,
+          afterObservation: afterRetryObservation ?? undefined,
+          executionResult: { ok: true },
+          recentActions: this.actionHistory,
+        });
+        
+        const retryRecord: ActionRecord = {
+          kind: clamped.kind,
+          summary: this.summarizeAction(clamped) + ' (retry)',
+          verificationStatus: retryVerification.status,
+          verificationReason: retryVerification.reason,
+          screenshotHashBefore: afterObservation?.hash,
+          screenshotHashAfter: afterRetryObservation?.hash,
+        };
+        this.actionHistory.push(retryRecord);
+        const retryHistoryLine = `${retryRecord.kind} (retry) → ${retryRecord.verificationStatus}${retryRecord.screenshotHashBefore && retryRecord.screenshotHashAfter ? ' | hash: ' + retryRecord.screenshotHashBefore.slice(0, 8) + '→' + retryRecord.screenshotHashAfter.slice(0, 8) : ''}`;
+        this.actionResults.push(retryHistoryLine);
+
+        if (retryVerification.status === 'failed') {
+          this.state.currentProposal = {
+            kind: 'ask_user',
+            question: `I tried the action twice but verification failed: ${retryVerification.reason}. Would you like me to try a different approach or stop?`,
+          };
+          this.state.status = 'asking_user';
+          this.options.onProposal?.(this.state.currentProposal);
+          this.notifyStateChange();
+          this.retryCount = 0;
+          return { ok: true };
+        }
+      } else if (verification.status === 'failed' || verification.status === 'uncertain') {
+        this.log('info', `Verification ${verification.status}: ${verification.reason}`);
+      }
+
+      // Reset retry count on success
+      this.retryCount = 0;
+
+      // Stuck-loop detection
+      if (this.isStuckLoop()) {
+        this.log('warn', 'Stuck loop detected');
+        this.sendSafeRunLog('Stuck loop detected: repeating the same action without progress', 'warn');
+        this.state.currentProposal = {
+          kind: 'ask_user',
+          question: `I seem to be stuck — I've repeated the same action without making progress. Would you like me to try a different approach or stop?`,
+        };
+        this.state.status = 'asking_user';
+        this.options.onProposal?.(this.state.currentProposal);
+        this.notifyStateChange();
+        return { ok: true };
+      }
 
       // Increment action count
       this.state.actionCount++;
@@ -640,6 +782,7 @@ export class AiAssistController {
         this.notifyStateChange();
 
         const screenshot = await this.captureScreenshotForTask(settings);
+        this.lastObservation = screenshot ?? undefined;
 
         if (this.paused) {
           return;
@@ -749,7 +892,7 @@ export class AiAssistController {
     }
   }
 
-  private async captureScreenshot(): Promise<string | null> {
+  private async captureScreenshot(): Promise<ScreenshotObservation | null> {
     try {
       const result = await invoke<{ png_base64: string; width: number; height: number; byte_length: number }>(
         'capture_display_png',
@@ -758,14 +901,23 @@ export class AiAssistController {
           maxWidth: 1280,
         }
       );
-      return result.png_base64;
+      const hash = await sha256ScreenshotBase64(result.png_base64);
+      return {
+        pngBase64: result.png_base64,
+        width: result.width,
+        height: result.height,
+        byteLength: result.byte_length,
+        displayId: this.options.displayId,
+        capturedAt: new Date().toISOString(),
+        hash,
+      };
     } catch (e) {
       console.warn('[AiAssist] Screenshot failed:', e);
       return null;
     }
   }
 
-  private async captureScreenshotForTask(settings: LlmSettings): Promise<string | null> {
+  private async captureScreenshotForTask(settings: LlmSettings): Promise<ScreenshotObservation | null> {
     if (!taskLikelyNeedsVision(this.options.goal)) {
       return null;
     }
@@ -777,14 +929,17 @@ export class AiAssistController {
     return this.captureScreenshot();
   }
 
-  private async getLlmProposal(settings: LlmSettings, screenshot: string | null): Promise<AgentProposal> {
+  private async getLlmProposal(settings: LlmSettings, screenshot: ScreenshotObservation | null): Promise<AgentProposal> {
     const result = await invoke<{ proposal: AgentProposal }>('llm_propose_next_action', {
       params: {
         provider: settings.provider,
         baseUrl: settings.baseUrl,
         model: settings.model,
         goal: this.options.goal,
-        screenshotPngBase64: screenshot,
+        screenshotPngBase64: screenshot?.pngBase64 ?? null,
+        screenshotWidth: screenshot?.width ?? null,
+        screenshotHeight: screenshot?.height ?? null,
+        displayId: this.options.displayId,
         history: {
           lastActions: this.actionResults.slice(-5),
         },
@@ -871,6 +1026,27 @@ export class AiAssistController {
       default:
         return 'unknown action';
     }
+  }
+
+  private isStuckLoop(): boolean {
+    if (this.actionHistory.length < 3) return false;
+    const last3 = this.actionHistory.slice(-3);
+    const first = last3[0];
+    const allSameKind = last3.every((r) => r.kind === first.kind);
+    const allSameCoords = last3.every((r) => r.summary === first.summary);
+    if (allSameKind && allSameCoords) return true;
+
+    if (this.actionHistory.length >= 2) {
+      const last2 = this.actionHistory.slice(-2);
+      if (
+        last2[0].screenshotHashAfter &&
+        last2[1].screenshotHashAfter &&
+        last2[0].screenshotHashAfter === last2[1].screenshotHashAfter
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private log(level: 'info' | 'warn' | 'error', line: string): void {

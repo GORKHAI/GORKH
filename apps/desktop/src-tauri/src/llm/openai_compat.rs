@@ -79,6 +79,10 @@ fn is_localhost_url(url: &str) -> bool {
         || lower.starts_with("https://[::1]")
 }
 
+fn is_hosted_free_ai_fallback_endpoint(url: &str) -> bool {
+    url.trim_end_matches('/').to_lowercase().ends_with("/desktop/free-ai/v1")
+}
+
 #[async_trait::async_trait]
 impl LlmProvider for OpenAiCompatProvider {
     async fn propose_next_action(
@@ -100,6 +104,8 @@ impl LlmProvider for OpenAiCompatProvider {
         let user_prompt = super::build_user_prompt(
             &params.goal,
             params.screenshot_png_base64.as_deref(),
+            params.screenshot_width,
+            params.screenshot_height,
             &params.history,
             0,
         );
@@ -141,7 +147,9 @@ impl LlmProvider for OpenAiCompatProvider {
         };
 
         let url = super::build_openai_chat_completions_url(&params.base_url);
-        let location = if is_localhost_url(&url) {
+        let location = if is_hosted_free_ai_fallback_endpoint(&url) {
+            "Hosted Free AI fallback"
+        } else if is_localhost_url(&url) {
             "local LLM server"
         } else {
             "remote provider"
@@ -196,9 +204,17 @@ impl LlmProvider for OpenAiCompatProvider {
                 _ => LlmErrorCode::ApiError,
             };
             let message = if status.as_u16() == 404 {
-                format!("{} returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", location, text)
+                if location == "Hosted Free AI fallback" {
+                    format!("Hosted Free AI fallback returned 404. Ensure the desktop API exposes /desktop/free-ai/v1/chat/completions. Error: {}", text)
+                } else {
+                    format!("{} returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", location, text)
+                }
             } else if status.as_u16() == 401 {
-                format!("{} requires authentication. If your server needs an API key, enter it above.", location)
+                if location == "Hosted Free AI fallback" {
+                    "Hosted Free AI fallback requires desktop sign-in. Sign out and sign back in, then try again.".to_string()
+                } else {
+                    format!("{} requires authentication. If your server needs an API key, enter it above.", location)
+                }
             } else {
                 format!("{} error {}: {}", location, status, text)
             };
@@ -279,7 +295,14 @@ impl LlmProvider for OpenAiCompatProvider {
 
         let url = super::build_openai_chat_completions_url(&params.base_url);
         let is_remote = !is_localhost_url(&url);
-        let location = if is_remote { "remote provider" } else { "local LLM server" };
+        let is_hosted_fallback = is_hosted_free_ai_fallback_endpoint(&url);
+        let location = if is_hosted_fallback {
+            "Hosted Free AI fallback"
+        } else if is_remote {
+            "remote provider"
+        } else {
+            "local LLM server"
+        };
 
         // For remote hosts (e.g. hosted fallback on Render) retry on connection failure
         // to handle cold-start delays. Local servers fail fast without retry.
@@ -344,9 +367,17 @@ impl LlmProvider for OpenAiCompatProvider {
                 _ => LlmErrorCode::ApiError,
             };
             let message = if status.as_u16() == 404 {
-                format!("{} returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", location, text)
+                if location == "Hosted Free AI fallback" {
+                    format!("Hosted Free AI fallback returned 404. Ensure the desktop API exposes /desktop/free-ai/v1/chat/completions. Error: {}", text)
+                } else {
+                    format!("{} returned 404. Ensure the server supports OpenAI-compatible endpoints at /v1/chat/completions. Error: {}", location, text)
+                }
             } else if status.as_u16() == 401 {
-                format!("{} requires authentication. If your server needs an API key, enter it above.", location)
+                if location == "Hosted Free AI fallback" {
+                    "Hosted Free AI fallback requires desktop sign-in. Sign out and sign back in, then try again.".to_string()
+                } else {
+                    format!("{} requires authentication. If your server needs an API key, enter it above.", location)
+                }
             } else {
                 format!("{} error {}: {}", location, status, text)
             };

@@ -63,11 +63,8 @@ export function shouldRetryWithHostedFreeAiFallback(error: unknown): boolean {
   }
 
   return (
-    normalizedMessage.includes('ollama')
-    || normalizedMessage.includes('local ai service')
-    || normalizedMessage.includes('free ai reached a mac graphics compatibility problem')
-    || normalizedMessage.includes('failed to connect to local llm server')
-    || normalizedMessage.includes('failed to connect to local server')
+    normalizedMessage.includes('free ai')
+    || normalizedMessage.includes('gorkh ai')
     || normalizedMessage.includes('this task needs a vision-capable model')
   );
 }

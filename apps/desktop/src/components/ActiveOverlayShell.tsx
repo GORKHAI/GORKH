@@ -20,15 +20,13 @@ export function ActiveOverlayShell({
       }}
     >
       {/* Soft translucent dim layer — click-through so the user can interact
-          with apps underneath, while vibrancy + backdrop-filter give the glass
-          feel that makes the overlay feel present without blocking the view. */}
+          with apps underneath. Intentionally no backdropFilter to avoid
+          fullscreen blur per design test. */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
           background: 'rgba(0,0,0,0.12)',
-          backdropFilter: 'blur(20px) saturate(140%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(140%)',
           pointerEvents: 'none',
         }}
       />

@@ -25,10 +25,6 @@ const advancedAgentSource = readFileSync('apps/desktop/src/lib/advancedAgent.ts'
 const aiAssistSource = readFileSync('apps/desktop/src/lib/aiAssist.ts', 'utf8');
 const llmModSource = readFileSync('apps/desktop/src-tauri/src/llm/mod.rs', 'utf8');
 const libRsSource = readFileSync('apps/desktop/src-tauri/src/lib.rs', 'utf8');
-const nativeOllamaProviderSource = readFileSync(
-  'apps/desktop/src-tauri/src/agent/providers/native_ollama.rs',
-  'utf8'
-);
 
 // ---------------------------------------------------------------------------
 // TypeScript: App.tsx → engine options
@@ -195,28 +191,11 @@ test('Rust llm_propose_next_action accepts app_context in ProposalRequest', () =
   // The ProposalRequest struct region contains app_context
   const proposalRequestRegion = libRsSource.slice(
     libRsSource.indexOf('struct ProposalRequest'),
-    libRsSource.indexOf('struct ProposalRequest') + 800
+    libRsSource.indexOf('struct ProposalRequest') + 1200
   );
   assert.match(
     proposalRequestRegion,
     /app_context/,
     'ProposalRequest must include app_context field for grounding'
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Rust: native_ollama provider — GORKH identity in planner + proposal prompts
-// ---------------------------------------------------------------------------
-
-test('Rust native_ollama provider planner says "You are GORKH"', () => {
-  assert.match(
-    nativeOllamaProviderSource,
-    /You are GORKH/,
-    'native_ollama provider must identify as GORKH in its planning/proposal system prompts'
-  );
-  assert.doesNotMatch(
-    nativeOllamaProviderSource,
-    /You are a computer automation agent[^.]*(\.)/,
-    'native_ollama provider must not use the old generic automation agent identity'
   );
 });

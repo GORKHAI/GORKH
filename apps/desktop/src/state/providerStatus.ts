@@ -5,7 +5,6 @@ import {
   providerRequiresApiKey,
   type LlmProvider,
 } from '../lib/llmConfig.js';
-import type { LocalAiRuntimeStatus } from '../lib/localAi.js';
 
 export interface ProviderStatusState {
   /** Map of provider -> whether it's configured */
@@ -31,19 +30,18 @@ export function __setInvokeForTesting(
 
 /** Test-only hook to reset all internal state. */
 export function __resetForTesting(): void {
-  _localAiStatus = null;
   sessionToken = null;
   currentState = {
     configured: Object.fromEntries(
       ALL_PROVIDER_ORDER.map((p) => [p, false])
     ) as Record<LlmProvider, boolean>,
-    activeProvider: FREE_AI_ENABLED ? 'native_qwen_ollama' : 'openai',
+    activeProvider: 'gorkh_free',
     activeConfigured: false,
     busy: false,
   };
 }
 
-const DEFAULT_PROVIDER: LlmProvider = FREE_AI_ENABLED ? 'native_qwen_ollama' : 'openai';
+const DEFAULT_PROVIDER: LlmProvider = 'gorkh_free';
 
 let currentState: ProviderStatusState = {
   configured: Object.fromEntries(
@@ -57,7 +55,6 @@ let currentState: ProviderStatusState = {
 const listeners = new Set<Listener>();
 
 let sessionToken: string | null = null;
-let _localAiStatus: LocalAiRuntimeStatus | null = null;
 
 function notify(): void {
   const snapshot = {
@@ -112,48 +109,7 @@ export function setSessionToken(token: string | null): void {
   void refreshProvider('gorkh_free');
 }
 
-export function setLocalAiStatus(status: LocalAiRuntimeStatus | null): void {
-  _localAiStatus = status;
-  const configured = status
-    ? status.runtimeRunning
-      && status.targetModelAvailable === true
-      && (Boolean(status.selectedModel) || status.externalServiceDetected)
-    : false;
-  if (currentState.configured.native_qwen_ollama === configured) return;
-  currentState = {
-    ...currentState,
-    configured: {
-      ...currentState.configured,
-      native_qwen_ollama: configured,
-    },
-  };
-  recalculateActiveConfigured();
-  notify();
-}
-
 async function checkProviderConfigured(provider: LlmProvider): Promise<boolean> {
-  if (provider === 'native_qwen_ollama') {
-    // If App.tsx has pushed a status, trust it; otherwise query Rust directly
-    if (_localAiStatus) {
-      return (
-        _localAiStatus.runtimeRunning
-        && _localAiStatus.targetModelAvailable === true
-        && (Boolean(_localAiStatus.selectedModel) || _localAiStatus.externalServiceDetected)
-      );
-    }
-    try {
-      const status = await _invoke<LocalAiRuntimeStatus>('local_ai_status');
-      _localAiStatus = status;
-      return (
-        status.runtimeRunning
-        && status.targetModelAvailable === true
-        && (Boolean(status.selectedModel) || status.externalServiceDetected)
-      );
-    } catch {
-      return false;
-    }
-  }
-
   if (provider === 'gorkh_free') {
     return FREE_AI_ENABLED && Boolean(sessionToken);
   }

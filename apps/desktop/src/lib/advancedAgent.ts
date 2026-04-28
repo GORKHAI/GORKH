@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type Event } from '@tauri-apps/api/event';
 import type { AgentProposal } from '@ai-operator/shared';
 
-export type ProviderType = 'native_qwen_ollama' | 'local_openai_compat' | 'openai' | 'claude' | 'deepseek' | 'kimi' | 'gorkh_free';
+export type ProviderType = 'local_openai_compat' | 'openai' | 'claude' | 'deepseek' | 'kimi' | 'gorkh_free';
 
 export interface ProviderInfo {
   providerType: ProviderType;
@@ -154,7 +154,6 @@ export function estimateCost(
   if (!provider) return 0;
   
   switch (provider) {
-    case 'native_qwen_ollama':
     case 'local_openai_compat':
       return 0.0;
     case 'openai':

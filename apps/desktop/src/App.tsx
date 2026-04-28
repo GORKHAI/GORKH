@@ -22,7 +22,6 @@ import {
   subscribe as subscribeProviderStatus,
   setActiveProvider as setProviderStatusActiveProvider,
   setSessionToken as setProviderStatusSessionToken,
-  setLocalAiStatus as setProviderStatusLocalAiStatus,
   refresh as refreshProviderStatus,
 } from './state/providerStatus.js';
 import {
@@ -57,44 +56,17 @@ import {
 } from './lib/freeAiFallback.js';
 import { fetchFreeTierUsage, type FreeTierUsage } from './lib/freeTier.js';
 import {
-  buildFreeAiSetupPreflightReport,
   ensureAssistantRunForMessage,
-  interpretFreeAiSetupResponse,
   interpretAssistantTaskConfirmationResponse,
   isAssistantRunActive,
   type AssistantTaskConfirmation,
-  type FreeAiSetupPreflightReport,
 } from './lib/chatTaskFlow.js';
 import type {
   AssistantConversationMessage,
   AssistantConversationTurnResult,
 } from './lib/assistantConversation.js';
 import { assistantConversationTurn } from './lib/assistantConversation.js';
-import {
-  enableLocalAiVisionBoost,
-  getLocalAiHardwareProfile,
-  getLocalAiInstallProgress,
-  getLocalAiRecommendedTier,
-  getLocalAiStatus,
-  isLocalAiInstallActive,
-  resetLocalAiToManaged,
-  resolveManagedLocalLlmBinding,
-  resolveManagedLocalTaskBinding,
-  startLocalAiInstall,
-  type LocalAiHardwareProfile,
-  type LocalAiInstallProgress,
-  type LocalAiRuntimeStatus,
-  type LocalAiTier,
-  type LocalAiTierRecommendation,
-} from './lib/localAi.js';
-import {
-  canStartManagedLocalTask,
-  getLocalAiPlanPolicy,
-  getTodayUsageKey,
-  readLocalAiTaskUsage,
-  recordManagedLocalTaskStart,
-  type LocalAiTaskUsage,
-} from './lib/localPlan.js';
+
 import {
   enterOverlayMode,
   exitOverlayMode,
@@ -128,10 +100,7 @@ import {
 } from './lib/taskReadiness.js';
 import {
   buildGorkhContextBlock,
-  type GorkhInstallStage,
-  type GorkhLocalAiTier,
   type GorkhPermissionStatus,
-  type GorkhGpuClass,
 } from './lib/gorkhContext.js';
 import { GORKH_ONBOARDING } from './lib/gorkhKnowledge.js';
 import { ChatOverlay } from './components/ChatOverlay.js';
@@ -142,7 +111,7 @@ import { ControlPanel } from './components/ControlPanel.js';
 import { ActionApprovalModal } from './components/ActionApprovalModal.js';
 import { SettingsPanel } from './components/SettingsPanel.js';
 import { ToolApprovalModal } from './components/ToolApprovalModal.js';
-import { FreeAiSetupCard } from './components/FreeAiSetupCard.js';
+
 import { BrandWordmark } from './components/BrandWordmark.js';
 import { ActiveOverlayShell } from './components/ActiveOverlayShell.js';
 import { OverlayController } from './components/OverlayController.js';
@@ -238,22 +207,6 @@ type PendingProposalPayload =
       proposal: Extract<AgentProposal, { kind: 'propose_tool' }>;
     };
 
-type PendingFreeAiSetupStage = 'approval' | 'installing' | 'error';
-
-interface PendingFreeAiSetup {
-  deferredTask: string;
-  preferredTier: LocalAiTier;
-  report: FreeAiSetupPreflightReport;
-  title: string;
-  retryLabel: string;
-  cancelLabel: string;
-  settingsLabel: string;
-  stage: PendingFreeAiSetupStage;
-  progressLabel: string | null;
-  statusMessage: string | null;
-  error: string | null;
-}
-
 const DEFAULT_PERMISSION_STATUS: NativePermissionStatus = {
   screenRecording: 'unknown',
   accessibility: 'unknown',
@@ -295,9 +248,7 @@ function toAssistantConversationMessages(items: ChatItem[]): AssistantConversati
 
 function getAssistantConversationGreeting(provider: string, providerConfigured: boolean): string {
   if (!providerConfigured) {
-    return provider === 'native_qwen_ollama'
-      ? GORKH_ONBOARDING.freeAiNotReady
-      : getEmptyStateMessage(provider as LlmProvider, FREE_AI_ENABLED);
+    return getEmptyStateMessage(provider as LlmProvider, FREE_AI_ENABLED);
   }
 
   return GORKH_ONBOARDING.firstGreeting;
@@ -307,49 +258,6 @@ function getRunDisplayGoal(goal: string | null | undefined): string {
   return goal?.trim() || 'Ready for your instructions';
 }
 
-function getPendingFreeAiSetupStage(
-  progress: LocalAiInstallProgress | null,
-  status: LocalAiRuntimeStatus | null
-): PendingFreeAiSetupStage {
-  const currentStage = progress?.stage ?? status?.installStage ?? 'not_started';
-  if (currentStage === 'error') {
-    return 'error';
-  }
-  if (currentStage === 'installed' || isLocalAiInstallActive(currentStage)) {
-    return 'installing';
-  }
-  return 'approval';
-}
-
-function getPendingFreeAiSetupProgressLabel(
-  progress: LocalAiInstallProgress | null,
-  status: LocalAiRuntimeStatus | null
-): string | null {
-  const currentStage = progress?.stage ?? status?.installStage ?? 'not_started';
-  if (currentStage === 'planned') return 'Check this device';
-  if (currentStage === 'installing') return 'Download AI model';
-  if (currentStage === 'installed') return 'Install local engine';
-  if (currentStage === 'starting') return 'Start local engine';
-  if (currentStage === 'ready') return 'Ready to use';
-  if (currentStage === 'error') return 'Repair available';
-  return null;
-}
-
-function getPendingFreeAiSetupStatusMessage(
-  progress: LocalAiInstallProgress | null,
-  status: LocalAiRuntimeStatus | null,
-  recommendation: LocalAiTierRecommendation | null,
-  fallback: string | null = null
-): string | null {
-  return (
-    progress?.message
-    || status?.lastError
-    || recommendation?.reason
-    || fallback
-    || null
-  );
-}
-
 function App() {
   const platform = detectPlatform();
   const [client, setClient] = useState<WsClient | null>(null);
@@ -357,10 +265,7 @@ function App() {
   const [messages, setMessages] = useState<ChatItem[]>([]);
   const [pendingTaskConfirmation, setPendingTaskConfirmation] = useState<AssistantTaskConfirmation | null>(null);
   const [pendingTaskConfirmationBusy, setPendingTaskConfirmationBusy] = useState(false);
-  const [pendingFreeAiSetup, setPendingFreeAiSetup] = useState<PendingFreeAiSetup | null>(null);
-  const [pendingFreeAiSetupBusy, setPendingFreeAiSetupBusy] = useState(false);
-  // pendingFreeAiSetup keeps the Free AI setup approval and recovery path in one place:
-  // Retry Free AI, Cancel this task, Open Settings, and resumeDeferredTaskAfterFreeAiReady.
+
   const [deviceId, setDeviceId] = useState<string>('');
   const [authState, setAuthState] = useState<'checking' | 'signed_out' | 'signing_in' | 'signed_in' | 'signing_out'>('checking');
   const [authError, setAuthError] = useState<string | null>(null);
@@ -414,21 +319,9 @@ function App() {
   const [primaryDisplayId, setPrimaryDisplayId] = useState<string>('display-0');
   const [workspaceState, setWorkspaceState] = useState<LocalWorkspaceState>({ configured: false });
   const [toolHistoryByRun, setToolHistoryByRun] = useState<Record<string, LocalToolEvent[]>>({});
-  const [localAiStatus, setLocalAiStatus] = useState<LocalAiRuntimeStatus | null>(null);
-  const [localAiInstallProgress, setLocalAiInstallProgress] = useState<LocalAiInstallProgress | null>(null);
-  const [localAiHardwareProfile, setLocalAiHardwareProfile] = useState<LocalAiHardwareProfile | null>(null);
-  const [localAiRecommendation, setLocalAiRecommendation] = useState<LocalAiTierRecommendation | null>(null);
-  const [localAiBusy, setLocalAiBusy] = useState(false);
-  const [localAiActionBusy, setLocalAiActionBusy] = useState(false);
-  const [localAiError, setLocalAiError] = useState<string | null>(null);
-  const [localAiTaskUsage, setLocalAiTaskUsage] = useState<LocalAiTaskUsage>(() => ({
-    dayKey: getTodayUsageKey(),
-    tasksStarted: 0,
-  }));
   const [freeTierUsage, setFreeTierUsage] = useState<FreeTierUsage | null>(null);
   const [overlayModeStatus, setOverlayModeStatus] = useState<OverlayModeStatus | null>(null);
   const [overlayDetailsOpen, setOverlayDetailsOpen] = useState(false);
-  const [visionBoostRequested, setVisionBoostRequested] = useState(false);
   const controlEnabledRef = useRef(localSettings.allowControlEnabled);
   const workspaceConfiguredRef = useRef(workspaceState.configured);
   const assistantStartingRunIdRef = useRef<string | null>(null);
@@ -446,16 +339,6 @@ function App() {
     authState,
     provider: llmSettings.provider,
     providerConfigured: providerStatusState.activeConfigured,
-    freeAi: localAiStatus
-      ? {
-          installStage: localAiStatus.installStage as GorkhInstallStage,
-          runtimeRunning: localAiStatus.runtimeRunning,
-          selectedTier: localAiStatus.selectedTier as GorkhLocalAiTier | null,
-          selectedModel: localAiStatus.selectedModel,
-          externalServiceDetected: localAiStatus.externalServiceDetected,
-          lastError: localAiStatus.lastError,
-        }
-      : null,
     permissions: {
       screenRecordingStatus: permissionStatus.screenRecording as GorkhPermissionStatus,
       accessibilityStatus: permissionStatus.accessibility as GorkhPermissionStatus,
@@ -464,14 +347,6 @@ function App() {
     },
     workspaceConfigured: workspaceState.configured,
     workspaceRootName: workspaceState.rootName ?? null,
-    hardware: localAiHardwareProfile
-      ? {
-          gpuClass: localAiHardwareProfile.gpuClass as GorkhGpuClass,
-          ramGb: localAiHardwareProfile.ramBytes !== null
-            ? Math.round(localAiHardwareProfile.ramBytes / (1024 * 1024 * 1024))
-            : null,
-        }
-      : null,
   });
 
   useEffect(() => {
@@ -500,26 +375,7 @@ function App() {
     }
   }, []);
 
-  const refreshLocalAiState = useCallback(async () => {
-    setLocalAiBusy(true);
-    setLocalAiError(null);
-    try {
-      const [statusPayload, progressPayload, hardwarePayload, recommendationPayload] = await Promise.all([
-        getLocalAiStatus(),
-        getLocalAiInstallProgress(),
-        getLocalAiHardwareProfile(),
-        getLocalAiRecommendedTier(),
-      ]);
-      setLocalAiStatus(statusPayload);
-      setLocalAiInstallProgress(progressPayload);
-      setLocalAiHardwareProfile(hardwarePayload);
-      setLocalAiRecommendation(recommendationPayload);
-    } catch (err) {
-      setLocalAiError(err instanceof Error ? err.message : 'Failed to load Free AI status');
-    } finally {
-      setLocalAiBusy(false);
-    }
-  }, [llmSettings.provider]);
+
 
 
 
@@ -737,8 +593,6 @@ function App() {
 
     setPendingTaskConfirmation(null);
     setPendingTaskConfirmationBusy(false);
-    setPendingFreeAiSetup(null);
-    setPendingFreeAiSetupBusy(false);
     setAssistantConversationBusy(false);
     assistantConversationRequestIdRef.current += 1;
     assistantStartingRunIdRef.current = null;
@@ -770,10 +624,7 @@ function App() {
     setProviderStatusSessionToken(sessionDeviceToken ?? null);
   }, [sessionDeviceToken]);
 
-  // Keep store local AI status in sync
-  useEffect(() => {
-    setProviderStatusLocalAiStatus(localAiStatus);
-  }, [localAiStatus]);
+
 
   useEffect(() => {
     if (llmSettings.provider === 'gorkh_free') {
@@ -793,45 +644,7 @@ function App() {
     void refreshPermissionStatus();
   }, [refreshPermissionStatus]);
 
-  useEffect(() => {
-    if (!isSignedIn) {
-      setLocalAiStatus(null);
-      setLocalAiInstallProgress(null);
-      setLocalAiHardwareProfile(null);
-      setLocalAiRecommendation(null);
-      setLocalAiBusy(false);
-      setLocalAiActionBusy(false);
-      setLocalAiError(null);
-      setLocalAiTaskUsage({
-        dayKey: getTodayUsageKey(),
-        tasksStarted: 0,
-      });
-      setVisionBoostRequested(false);
-      return;
-    }
 
-    setLocalAiTaskUsage(readLocalAiTaskUsage(window.localStorage));
-    void refreshLocalAiState();
-  }, [isSignedIn, refreshLocalAiState]);
-
-  useEffect(() => {
-    if (!isSignedIn) {
-      return undefined;
-    }
-
-    const currentStage = localAiInstallProgress?.stage ?? localAiStatus?.installStage;
-    if (!isLocalAiInstallActive(currentStage)) {
-      return undefined;
-    }
-
-    const intervalId = window.setInterval(() => {
-      void refreshLocalAiState();
-    }, 2000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [isSignedIn, localAiInstallProgress?.stage, localAiStatus?.installStage, refreshLocalAiState]);
 
   useEffect(() => {
     if (currentProposal?.kind !== 'ask_user') {
@@ -885,36 +698,7 @@ function App() {
     }
   }, [aiState?.isRunning, aiState?.status]);
 
-  useEffect(() => {
-    if (llmSettings.provider !== DEFAULT_LLM_PROVIDER) {
-      return;
-    }
 
-    const binding = resolveManagedLocalLlmBinding(localAiStatus, localAiRecommendation);
-    if (llmSettings.baseUrl === binding.baseUrl && llmSettings.model === binding.model) {
-      return;
-    }
-
-    setLlmSettings((current) => {
-      if (current.provider !== DEFAULT_LLM_PROVIDER) {
-        return current;
-      }
-      if (current.baseUrl === binding.baseUrl && current.model === binding.model) {
-        return current;
-      }
-      return {
-        ...current,
-        baseUrl: binding.baseUrl,
-        model: binding.model,
-      };
-    });
-  }, [
-    llmSettings.baseUrl,
-    llmSettings.model,
-    llmSettings.provider,
-    localAiRecommendation,
-    localAiStatus,
-  ]);
 
   useEffect(() => {
     approvalController.start();
@@ -1539,17 +1323,7 @@ function App() {
       return [...prev, createChatItem('agent', text)];
     });
 
-    const effectiveSettings: LlmSettings = runLlmSettingsByRunId[runId]
-      ?? (llmSettings.provider === DEFAULT_LLM_PROVIDER
-        ? (() => {
-            const binding = resolveManagedLocalTaskBinding(localAiStatus, localAiRecommendation, goal);
-            return {
-              ...llmSettings,
-              baseUrl: binding.baseUrl,
-              model: binding.model,
-            };
-          })()
-        : llmSettings);
+    const effectiveSettings: LlmSettings = runLlmSettingsByRunId[runId] ?? llmSettings;
     const providerReady = await hasLlMProviderConfigured(effectiveSettings.provider);
 
     if (!providerReady) {
@@ -1608,8 +1382,6 @@ function App() {
     deviceId,
     gorkhAppContext,
     llmSettings,
-    localAiRecommendation,
-    localAiStatus,
     primaryDisplayId,
     runLlmSettingsByRunId,
   ]);
@@ -1655,12 +1427,6 @@ function App() {
     );
     const taskRequiresScreen = taskLikelyNeedsScreenObservation(trimmed);
     const taskRequiresWorkspace = taskLikelyNeedsWorkspace(trimmed);
-    const hostedFreeAiAvailable = canUseHostedFreeAiFallback({
-      runtimeConfig,
-      deviceToken: sessionDeviceToken,
-      hostedFreeAiEnabled: desktopBootstrap?.readiness.hostedFreeAiEnabled ?? false,
-    });
-
     if (startingNewTask) {
       const executionReadiness = evaluateDesktopTaskReadiness({
         mode: 'ai_assist',
@@ -1689,45 +1455,6 @@ function App() {
     }
 
     try {
-      let runtimeOverride: LlmSettings | null = null;
-      if (llmSettings.provider === DEFAULT_LLM_PROVIDER && startingNewTask) {
-        const localTaskBinding = resolveManagedLocalTaskBinding(localAiStatus, localAiRecommendation, trimmed);
-        const shouldForceHostedFallback = pendingTaskConfirmation?.goal === trimmed
-          && pendingTaskConfirmation.providerMode === 'hosted_free_ai';
-
-        if (shouldForceHostedFallback || (PLUS_TIER_ENABLED && localTaskBinding.requiresVisionBoost)) {
-          if (!hostedFreeAiAvailable) {
-            setMessages((prev) => [
-              ...prev,
-              createChatItem(
-                'agent',
-                PLUS_TIER_ENABLED
-                  ? 'This task needs Vision Boost or the hosted Free AI fallback, but that fallback is not available for this desktop right now. Enable Vision Boost locally or try again when hosted fallback is available.'
-                  : 'The hosted Free AI fallback is not available for this desktop right now. Please try again in a moment.'
-              ),
-            ]);
-            return false;
-          }
-
-          runtimeOverride = resolveHostedFreeAiBinding(runtimeConfig, sessionDeviceToken);
-        }
-
-        if (!runtimeOverride) {
-          const usage = readLocalAiTaskUsage(window.localStorage);
-          const taskAllowance = canStartManagedLocalTask(
-            getLocalAiPlanPolicy(desktopBootstrap?.billing ?? desktopAccount?.billing),
-            usage
-          );
-          if (!taskAllowance.allowed) {
-            setMessages((prev) => [
-              ...prev,
-              createChatItem('agent', taskAllowance.reason || 'Free local task limit reached for today.'),
-            ]);
-            return false;
-          }
-        }
-      }
-
       assistantConversationRequestIdRef.current += 1;
       setAssistantConversationBusy(false);
 
@@ -1739,13 +1466,6 @@ function App() {
       });
       if (startingNewTask) {
         setRunLlmSettingsByRunId((current) => {
-          if (runtimeOverride) {
-            return {
-              ...current,
-              [run.runId]: runtimeOverride,
-            };
-          }
-
           if (!(run.runId in current)) {
             return current;
           }
@@ -1757,9 +1477,6 @@ function App() {
       }
       setActiveRun(run);
       setRecentRuns((currentRuns) => upsertRunHistory(currentRuns, run));
-      if (llmSettings.provider === DEFAULT_LLM_PROVIDER && startingNewTask && !runtimeOverride) {
-        setLocalAiTaskUsage(recordManagedLocalTaskStart(window.localStorage));
-      }
 
       const sent = client.sendChat(trimmed, run.runId);
       if (!sent) {
@@ -1794,8 +1511,6 @@ function App() {
     desktopBootstrap?.billing,
     desktopBootstrap?.billing.subscriptionStatus,
     desktopAccount?.billing,
-    localAiRecommendation,
-    localAiStatus,
     localSettings,
     llmSettings.provider,
     pendingTaskConfirmation,
@@ -1817,9 +1532,7 @@ function App() {
     void (async () => {
       try {
         const isGorkhFree = llmSettings.provider === 'gorkh_free';
-        const conversationSettings = llmSettings.provider === DEFAULT_LLM_PROVIDER
-          ? resolveManagedLocalLlmBinding(localAiStatus, localAiRecommendation)
-          : llmSettings;
+        const conversationSettings = llmSettings;
         const conversationMessages = toAssistantConversationMessages(conversationItems);
         const hostedFreeAiAvailable = canUseHostedFreeAiFallback({
           runtimeConfig,
@@ -1843,7 +1556,7 @@ function App() {
           });
         } catch (error) {
           const eligibleForFallback =
-            llmSettings.provider === DEFAULT_LLM_PROVIDER
+            llmSettings.provider === 'gorkh_free'
             && shouldRetryWithHostedFreeAiFallback(error);
 
           if (!eligibleForFallback) {
@@ -1852,7 +1565,7 @@ function App() {
 
           if (!hostedFreeAiAvailable) {
             throw new Error(
-              'Free AI could not respond because the local engine is not ready, and the hosted Free AI fallback is not available for this desktop right now.'
+              'GORKH AI (Free) is not available right now. Please try again in a moment.'
             );
           }
 
@@ -1881,7 +1594,7 @@ function App() {
               || msg.includes('429')
             ) {
               throw new Error(
-                'Your daily Free AI fallback limit has been reached. Try again tomorrow, or set up local Free AI in Settings.'
+                'Your daily GORKH AI (Free) limit has been reached. Try again tomorrow, or add your own API key in Settings for unlimited tasks.'
               );
             }
             if (
@@ -1890,7 +1603,7 @@ function App() {
               || msg.includes('503')
             ) {
               throw new Error(
-                'The hosted Free AI fallback is temporarily unavailable. This may be due to a cold start or service issue. Please try again in a moment.'
+                'GORKH AI (Free) is temporarily unavailable. This may be due to a cold start or service issue. Please try again in a moment.'
               );
             }
             if (
@@ -1899,11 +1612,11 @@ function App() {
               || msg.includes('502')
             ) {
               throw new Error(
-                'The hosted Free AI fallback could not reach the upstream AI service. Please try again in a moment.'
+                'GORKH AI (Free) could not reach the upstream AI service. Please try again in a moment.'
               );
             }
             throw new Error(
-              `Free AI could not respond, and the hosted fallback also failed: ${parsed.message}`
+              `GORKH AI (Free) could not respond, and the hosted fallback also failed: ${parsed.message}`
             );
           }
         }
@@ -1943,23 +1656,7 @@ function App() {
           goal: result.goal,
           summary: result.summary,
           prompt: result.prompt,
-          providerMode: (() => {
-            if (usedHostedFreeAi) {
-              return 'hosted_free_ai';
-            }
-
-            if (
-              PLUS_TIER_ENABLED
-              && llmSettings.provider === DEFAULT_LLM_PROVIDER
-              && hostedFreeAiAvailable
-              && resolveManagedLocalTaskBinding(localAiStatus, localAiRecommendation, result.goal)
-                .requiresVisionBoost
-            ) {
-              return 'hosted_free_ai';
-            }
-
-            return 'local';
-          })(),
+          providerMode: usedHostedFreeAi ? 'hosted_free_ai' : 'local',
         });
         setMessages((prev) => [
           ...prev,
@@ -1989,204 +1686,11 @@ function App() {
     })();
   }, [
     gorkhAppContext,
-    localAiRecommendation,
-    localAiStatus,
     desktopBootstrap?.readiness.hostedFreeAiEnabled,
     llmSettings,
     runtimeConfig,
     sessionDeviceToken,
     workspaceState,
-  ]);
-
-  const replayDeferredUserTask = useCallback((deferredTask: string) => {
-    const trimmed = deferredTask.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    setPendingTaskConfirmation(null);
-    setPendingTaskConfirmationBusy(false);
-    setPendingFreeAiSetup(null);
-    setPendingFreeAiSetupBusy(false);
-    setMessages((prev) => [
-      ...prev,
-      createChatItem('agent', "Free AI is ready. I'm resuming your request now."),
-    ]);
-    startAssistantConversation(messages);
-  }, [messages, startAssistantConversation]);
-
-  const resumeDeferredTaskAfterFreeAiReady = useCallback(() => {
-    if (!pendingFreeAiSetup || assistantConversationBusy || pendingTaskConfirmationBusy) {
-      return;
-    }
-    replayDeferredUserTask(pendingFreeAiSetup.deferredTask);
-  }, [
-    assistantConversationBusy,
-    pendingFreeAiSetup,
-    pendingTaskConfirmationBusy,
-    replayDeferredUserTask,
-  ]);
-
-  const handleCancelPendingFreeAiSetup = useCallback(() => {
-    if (!pendingFreeAiSetup) {
-      return;
-    }
-    assistantConversationRequestIdRef.current += 1;
-    setPendingFreeAiSetup(null);
-    setPendingFreeAiSetupBusy(false);
-    setAssistantConversationBusy(false);
-    setMessages((prev) => [
-      ...prev,
-      createChatItem('agent', 'Okay, I will not resume that task after Free AI finishes getting ready.'),
-    ]);
-  }, [pendingFreeAiSetup]);
-
-  const handleOpenPendingFreeAiSetupSettings = useCallback(() => {
-    setSettingsOpen(true);
-    if (!pendingFreeAiSetup) {
-      return;
-    }
-    setMessages((prev) => [
-      ...prev,
-      createChatItem('agent', 'Opening Settings so you can choose another provider or inspect Free AI details.'),
-    ]);
-  }, [pendingFreeAiSetup]);
-
-  const startFreeAiSetup = useCallback(async (tier: LocalAiTier) => {
-    setLocalAiActionBusy(true);
-    setLocalAiError(null);
-    try {
-      const progress = await startLocalAiInstall(tier);
-      setLocalAiInstallProgress(progress);
-      await refreshLocalAiState();
-      setLlmSettings((current) => mergeLlmSettings(current.provider === DEFAULT_LLM_PROVIDER ? current : getLlmDefaults(DEFAULT_LLM_PROVIDER)));
-      setDiagnosticsStatus('Free AI setup started for this desktop.');
-      return {
-        ok: true as const,
-        progress,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to start Free AI setup';
-      setLocalAiError(message);
-      return {
-        ok: false as const,
-        message,
-      };
-    } finally {
-      setLocalAiActionBusy(false);
-    }
-  }, [refreshLocalAiState]);
-
-  const beginPendingFreeAiSetup = useCallback(() => {
-    if (!pendingFreeAiSetup || pendingFreeAiSetupBusy) {
-      return;
-    }
-
-    assistantConversationRequestIdRef.current += 1;
-    setPendingFreeAiSetupBusy(true);
-    setAssistantConversationBusy(false);
-    setPendingFreeAiSetup((current) => current ? {
-      ...current,
-      stage: 'installing',
-      progressLabel: 'Check this device',
-      error: null,
-      statusMessage: 'Free AI setup approved. GORKH is preparing this desktop now.',
-    } : current);
-    setMessages((prev) => [
-      ...prev,
-      createChatItem('agent', 'Free AI setup approved. I am preparing the local engine now.'),
-    ]);
-
-    void (async () => {
-      const result = await startFreeAiSetup(pendingFreeAiSetup.preferredTier);
-      if (result.ok) {
-        return;
-      }
-
-      setPendingFreeAiSetupBusy(false);
-      setPendingFreeAiSetup((current) => current ? {
-        ...current,
-        stage: 'error',
-        progressLabel: 'Repair available',
-        statusMessage: result.message,
-        error: result.message,
-      } : current);
-      setMessages((prev) => [
-        ...prev,
-        createChatItem(
-          'agent',
-          `${result.message} Use Retry Free AI, Cancel this task, or Open Settings.`
-        ),
-      ]);
-    })();
-  }, [pendingFreeAiSetup, pendingFreeAiSetupBusy, startFreeAiSetup]);
-
-  const handleRetryPendingFreeAiSetup = useCallback(() => {
-    if (!pendingFreeAiSetup) {
-      return;
-    }
-    beginPendingFreeAiSetup();
-  }, [beginPendingFreeAiSetup, pendingFreeAiSetup]);
-
-  useEffect(() => {
-    if (!pendingFreeAiSetup) {
-      return;
-    }
-
-    if (providerStatusState.activeConfigured) {
-      void resumeDeferredTaskAfterFreeAiReady();
-      return;
-    }
-
-    if (llmSettings.provider !== DEFAULT_LLM_PROVIDER) {
-      return;
-    }
-
-    const nextStage = getPendingFreeAiSetupStage(localAiInstallProgress, localAiStatus);
-    const nextProgressLabel = getPendingFreeAiSetupProgressLabel(localAiInstallProgress, localAiStatus);
-    const nextError = nextStage === 'error'
-      ? localAiError || localAiStatus?.lastError || 'Free AI setup needs attention before I can continue.'
-      : null;
-    const nextStatusMessage = getPendingFreeAiSetupStatusMessage(
-      localAiInstallProgress,
-      localAiStatus,
-      localAiRecommendation,
-      pendingFreeAiSetup.statusMessage
-    );
-
-    setPendingFreeAiSetup((current) => {
-      if (!current) {
-        return current;
-      }
-      if (
-        current.stage === nextStage
-        && current.progressLabel === nextProgressLabel
-        && current.statusMessage === nextStatusMessage
-        && current.error === nextError
-      ) {
-        return current;
-      }
-      return {
-        ...current,
-        stage: nextStage,
-        progressLabel: nextProgressLabel,
-        statusMessage: nextStatusMessage,
-        error: nextError,
-      };
-    });
-    setPendingFreeAiSetupBusy(nextStage === 'installing');
-    if (nextStage === 'error') {
-      setAssistantConversationBusy(false);
-    }
-  }, [
-    llmSettings.provider,
-    localAiError,
-    localAiInstallProgress,
-    localAiRecommendation,
-    localAiStatus,
-    pendingFreeAiSetup,
-    providerStatusState.activeConfigured,
-    resumeDeferredTaskAfterFreeAiReady,
   ]);
 
   const handleCancelPendingTask = useCallback(() => {
@@ -2223,7 +1727,7 @@ function App() {
   const handleSendMessage = useCallback(
     (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || assistantConversationBusy || pendingTaskConfirmationBusy || pendingFreeAiSetupBusy) {
+      if (!trimmed || assistantConversationBusy || pendingTaskConfirmationBusy) {
         return;
       }
 
@@ -2232,11 +1736,6 @@ function App() {
       const confirmationAction = pendingTaskConfirmation && !pendingTaskConfirmationBusy
         ? interpretAssistantTaskConfirmationResponse(trimmed)
         : null;
-      const freeAiSetupAction = pendingFreeAiSetup && !pendingFreeAiSetupBusy
-        ? interpretFreeAiSetupResponse(trimmed)
-        : null;
-      const retryFreeAiSetup = pendingFreeAiSetup && /retry free ai|retry setup|try again/i.test(trimmed);
-      const openFreeAiSettings = pendingFreeAiSetup && /open settings|settings/i.test(trimmed);
       const draftUserMessage = createChatItem('user', trimmed);
       const nextMessages = [...messages, draftUserMessage];
 
@@ -2252,30 +1751,8 @@ function App() {
         return;
       }
 
-      if (freeAiSetupAction === 'confirm') {
-        beginPendingFreeAiSetup();
-        return;
-      }
-
-      if (freeAiSetupAction === 'cancel') {
-        handleCancelPendingFreeAiSetup();
-        return;
-      }
-
-      if (retryFreeAiSetup) {
-        handleRetryPendingFreeAiSetup();
-        return;
-      }
-
-      if (openFreeAiSettings) {
-        handleOpenPendingFreeAiSetupSettings();
-        return;
-      }
-
       setPendingTaskConfirmation(null);
       setPendingTaskConfirmationBusy(false);
-      setPendingFreeAiSetup(null);
-      setPendingFreeAiSetupBusy(false);
 
       if (!client || !runtimeConfig || !sessionDeviceToken) {
         setMessages((prev) => [
@@ -2291,53 +1768,6 @@ function App() {
       }
 
       if (!providerStatusState.activeConfigured) {
-        if (llmSettings.provider === DEFAULT_LLM_PROVIDER) {
-          // pendingFreeAiSetup keeps the Free AI setup approval state with Retry Free AI,
-          // Cancel this task, Open Settings, and resumeDeferredTaskAfterFreeAiReady.
-          const report = buildFreeAiSetupPreflightReport();
-          const stage = getPendingFreeAiSetupStage(localAiInstallProgress, localAiStatus);
-          const progressLabel = getPendingFreeAiSetupProgressLabel(localAiInstallProgress, localAiStatus);
-          const setupTitle = 'Free AI setup';
-          const retryLabel = 'Retry Free AI';
-          const cancelLabel = 'Cancel this task';
-          const settingsLabel = 'Open Settings';
-          // resumeDeferredTaskAfterFreeAiReady replays the original request once Free AI is ready.
-          const nextPendingFreeAiSetup: PendingFreeAiSetup = {
-            deferredTask: trimmed,
-            preferredTier: localAiRecommendation?.tier ?? 'light',
-            report,
-            title: setupTitle,
-            retryLabel,
-            cancelLabel,
-            settingsLabel,
-            stage,
-            progressLabel,
-            statusMessage: getPendingFreeAiSetupStatusMessage(
-              localAiInstallProgress,
-              localAiStatus,
-              localAiRecommendation,
-              GORKH_ONBOARDING.freeAiNotReady
-            ),
-            error: stage === 'error'
-              ? localAiError || localAiStatus?.lastError || 'Free AI setup needs attention before I can continue.'
-              : null,
-          };
-          setPendingFreeAiSetup(nextPendingFreeAiSetup);
-          setPendingFreeAiSetupBusy(stage === 'installing');
-          setMessages((prev) => [
-            ...prev,
-            createChatItem(
-              'agent',
-              stage === 'installing'
-                ? 'Free AI setup is already in progress on this desktop. I will resume your task as soon as it is ready.'
-                : stage === 'error'
-                  ? `${setupTitle} needs attention before I can continue. Use ${retryLabel}, ${cancelLabel}, or ${settingsLabel}.`
-                  : `${report.summary} ${report.prompt} I need your approval before I install anything on this desktop.`
-            ),
-          ]);
-          return;
-        }
-
         setMessages((prev) => [
           ...prev,
           createChatItem('agent', getEmptyStateMessage(llmSettings.provider, FREE_AI_ENABLED)),
@@ -2354,77 +1784,21 @@ function App() {
     },
     [
       activeRun,
-      beginPendingFreeAiSetup,
       client,
-      desktopBootstrap?.billing.subscriptionStatus,
-      desktopBootstrap?.billing,
-      desktopAccount?.billing,
       dispatchConfirmedAssistantTask,
       handleCancelPendingTask,
       handleConfirmPendingTask,
-      handleCancelPendingFreeAiSetup,
-      handleOpenPendingFreeAiSetupSettings,
-      handleRetryPendingFreeAiSetup,
       assistantConversationBusy,
       messages,
-      pendingFreeAiSetup,
-      pendingFreeAiSetupBusy,
       pendingTaskConfirmation,
       pendingTaskConfirmationBusy,
       providerStatusState.activeConfigured,
       runtimeConfig,
       sessionDeviceToken,
-      localAiStatus,
-      localAiRecommendation,
-      localAiError,
-      localAiInstallProgress,
       llmSettings.provider,
       startAssistantConversation,
     ]
   );
-
-  const handleStartFreeAi = useCallback(async (tier: LocalAiTier) => {
-    await startFreeAiSetup(tier);
-  }, [startFreeAiSetup]);
-
-  const handleEnableVisionBoost = useCallback(async () => {
-    if (!PLUS_TIER_ENABLED) {
-      setLocalAiError('Vision Boost is not available.');
-      return;
-    }
-    setLocalAiActionBusy(true);
-    setLocalAiError(null);
-    try {
-      const localPlanPolicy = getLocalAiPlanPolicy(desktopBootstrap?.billing ?? desktopAccount?.billing);
-      if (!localPlanPolicy.visionBoostIncluded) {
-        throw new Error('Vision Boost is included with Plus. Free local AI stays on lightweight text models.');
-      }
-      const progress = await enableLocalAiVisionBoost();
-      setLocalAiInstallProgress(progress);
-      await refreshLocalAiState();
-      setVisionBoostRequested(false);
-      setDiagnosticsStatus('Vision Boost setup started for this desktop.');
-    } catch (err) {
-      setLocalAiError(err instanceof Error ? err.message : 'Failed to enable Vision Boost');
-    } finally {
-      setLocalAiActionBusy(false);
-    }
-  }, [desktopBootstrap?.billing, desktopAccount?.billing, refreshLocalAiState]);
-
-  const handleResetLocalAiToManaged = useCallback(async () => {
-    setLocalAiActionBusy(true);
-    setLocalAiError(null);
-    try {
-      const status = await resetLocalAiToManaged();
-      setLocalAiStatus(status);
-      setLocalAiInstallProgress(null);
-      setDiagnosticsStatus('Switched to GORKH-managed Free AI. Click Set Up Free AI to start the managed runtime.');
-    } catch (err) {
-      setLocalAiError(err instanceof Error ? err.message : 'Failed to switch to managed Free AI');
-    } finally {
-      setLocalAiActionBusy(false);
-    }
-  }, []);
 
   const handleDesktopSignIn = useCallback(async () => {
     if (!runtimeConfig) {
@@ -2517,7 +1891,7 @@ function App() {
     assistantEngineRef.current?.stop('Desktop signed out');
     setAssistantEngine(null);
     setAiState(null);
-    setVisionBoostRequested(false);
+
   }, [client, deviceId, runtimeConfig, sessionDeviceToken]);
 
   const handleSelectRecentRun = useCallback((runId: string) => {
@@ -2827,8 +2201,6 @@ function App() {
     .sort((left, right) => left.createdAt - right.createdAt);
   const isOverlayActive = Boolean(overlayModeStatus?.active && aiState?.isRunning);
   const subscriptionStatus = desktopBootstrap?.billing.subscriptionStatus ?? 'inactive';
-  const localPlanPolicy = getLocalAiPlanPolicy(desktopBootstrap?.billing ?? desktopAccount?.billing);
-  const localTaskAllowance = canStartManagedLocalTask(localPlanPolicy, localAiTaskUsage);
   const siblingDevices = desktopAccount?.devices.filter((device) => device.deviceId !== desktopAccount.currentDevice?.deviceId) ?? [];
   const assistantReadiness = evaluateDesktopTaskReadiness({
     mode: 'ai_assist',
@@ -2838,7 +2210,7 @@ function App() {
     localSettings,
     workspaceConfigured: workspaceState.configured,
     providerConfigured: providerStatusState.activeConfigured,
-    isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
+    isManagedLocalProvider: false,
     requireControl: false,
     requireScreen: false,
     requireWorkspace: false,
@@ -2851,7 +2223,7 @@ function App() {
     localSettings,
     workspaceConfigured: workspaceState.configured,
     providerConfigured: providerStatusState.activeConfigured,
-    isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
+    isManagedLocalProvider: false,
     requireControl: false,
     requireScreen: false,
     requireWorkspace: false,
@@ -2864,7 +2236,7 @@ function App() {
     localSettings,
     workspaceConfigured: workspaceState.configured,
     providerConfigured: providerStatusState.activeConfigured,
-    isManagedLocalProvider: llmSettings.provider === DEFAULT_LLM_PROVIDER,
+    isManagedLocalProvider: false,
     requireControl: true,
     requireScreen: false,
     requireWorkspace: false,
@@ -2874,20 +2246,7 @@ function App() {
   );
   const overlayReadinessBlockers =
     controlSetupItems.length > 0 ? controlReadiness.blockers : assistantReadiness.blockers;
-  const showFreeAiSetup =
-    isSignedIn
-    && llmSettings.provider === DEFAULT_LLM_PROVIDER
-    && !providerStatusState.activeConfigured;
-  const showVisionBoostSetup =
-    PLUS_TIER_ENABLED
-    && isSignedIn
-    && llmSettings.provider === DEFAULT_LLM_PROVIDER
-    && (visionBoostRequested || Boolean(localAiRecommendation?.visionAvailable || localAiStatus?.selectedTier === 'vision'));
-  const assistantSetupMessage = showFreeAiSetup
-    ? localAiInstallProgress?.message
-        || localAiRecommendation?.reason
-        || 'Set up Free AI to prepare the local assistant for this desktop.'
-    : assistantReadiness.requiredSetup[0]?.detail || 'Open settings or permission prompts to finish setup.';
+  const assistantSetupMessage = assistantReadiness.requiredSetup[0]?.detail || 'Open settings or permission prompts to finish setup.';
   const accessibilityPermissionBannerMessage = getPermissionBannerMessage('accessibility', platform);
   const accessibilityPermissionSettingsLabel = getPermissionSettingsButtonLabel('accessibility', platform);
   const overlayStatusLabel = aiState?.status === 'paused'
@@ -3045,7 +2404,7 @@ function App() {
           <section style={subPanelStyle}>
             <h4 style={{ margin: 0, fontSize: '0.98rem' }}>Desktop readiness</h4>
             <p style={{ margin: '0.35rem 0 0', color: '#64748b', fontSize: '0.875rem' }}>
-              Subscription, permissions, workspace, and Free AI setup for this desktop.
+              Subscription, permissions, workspace, and provider setup for this desktop.
             </p>
 
             {desktopBootstrapBusy && (
@@ -3087,11 +2446,7 @@ function App() {
             )}
 
             <div style={{ marginTop: '1rem', display: 'grid', gap: '0.45rem' }}>
-              {PLUS_TIER_ENABLED && (
-                <div style={{ fontSize: '0.875rem' }}>
-                  <strong>Plan:</strong> {localPlanPolicy.plan === 'plus' ? 'Plus' : 'Free local'}
-                </div>
-              )}
+
               <div style={{ fontSize: '0.875rem' }}>
                 <strong>Billing subscription:</strong> {subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
               </div>
@@ -3113,13 +2468,9 @@ function App() {
               <div style={{ fontSize: '0.875rem' }}>
                 <strong>Assistant engine:</strong> {providerStatusState.busy
                   ? 'Checking...'
-                  : llmSettings.provider === DEFAULT_LLM_PROVIDER
-                    ? providerStatusState.activeConfigured
-                      ? 'Free AI ready'
-                      : 'Free AI not ready'
-                    : providerStatusState.activeConfigured
-                      ? 'Custom model ready'
-                      : 'Custom model not ready'}
+                  : providerStatusState.activeConfigured
+                    ? `${getLlmProviderLabel(llmSettings.provider)} ready`
+                    : `${getLlmProviderLabel(llmSettings.provider)} not ready`}
               </div>
             </div>
 
@@ -3186,18 +2537,12 @@ function App() {
                           Open Settings
                         </button>
                       )}
-                      {blocker.id === 'local-engine' && (
+                      {blocker.id === 'provider' && (
                         <button
-                          onClick={() => {
-                            if (showFreeAiSetup) {
-                              void handleStartFreeAi(localAiRecommendation?.tier ?? 'light');
-                              return;
-                            }
-                            setSettingsOpen(true);
-                          }}
+                          onClick={() => setSettingsOpen(true)}
                           style={{ padding: '0.45rem 0.65rem', borderRadius: '10px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
                         >
-                          {showFreeAiSetup ? 'Set Up Free AI' : 'Open Settings'}
+                          Open Settings
                         </button>
                       )}
                     </div>
@@ -3777,7 +3122,7 @@ function App() {
                       color: '#1d4ed8',
                     }}
                   >
-                    Assistant engine: {llmSettings.provider === DEFAULT_LLM_PROVIDER ? 'Free AI' : getLlmProviderLabel(llmSettings.provider)}
+                    Assistant engine: {getLlmProviderLabel(llmSettings.provider)}
                   </span>
                   {PLUS_TIER_ENABLED && (
                     <span
@@ -3788,11 +3133,11 @@ function App() {
                         borderRadius: '9999px',
                         fontSize: '0.75rem',
                         fontWeight: 600,
-                        background: localPlanPolicy.plan === 'plus' ? '#ede9fe' : '#fef3c7',
-                        color: localPlanPolicy.plan === 'plus' ? '#6d28d9' : '#92400e',
+                        background: '#fef3c7',
+                        color: '#92400e',
                       }}
                     >
-                      {localPlanPolicy.plan === 'plus' ? 'Plus plan' : 'Free plan'}
+                      Free plan
                     </span>
                   )}
                   {activeRun && (
@@ -3830,17 +3175,6 @@ function App() {
                     {assistantSetupMessage}
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-                    {showFreeAiSetup && (
-                      <button
-                        onClick={() => {
-                          void handleStartFreeAi(localAiRecommendation?.tier ?? 'light');
-                        }}
-                        disabled={localAiActionBusy}
-                        style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: localAiActionBusy ? 'not-allowed' : 'pointer' }}
-                      >
-                        {localAiActionBusy ? 'Preparing Free AI...' : 'Set Up Free AI'}
-                      </button>
-                    )}
                     <button
                       onClick={() => setSettingsOpen(true)}
                       style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #d1d5db', background: 'white', cursor: 'pointer' }}
@@ -3918,68 +3252,15 @@ function App() {
                 </div>
               )}
 
-              {FREE_AI_ENABLED && (showFreeAiSetup || showVisionBoostSetup) && (
-                <FreeAiSetupCard
-                  status={localAiStatus}
-                  installProgress={localAiInstallProgress}
-                  recommendation={localAiRecommendation}
-                  hardwareProfile={localAiHardwareProfile}
-                  busy={localAiBusy}
-                  actionBusy={localAiActionBusy}
-                  error={localAiError}
-                  showVisionBoost={showVisionBoostSetup}
-                  onStart={(tier) => {
-                    void handleStartFreeAi(tier);
-                  }}
-                  onEnableVisionBoost={() => {
-                    void handleEnableVisionBoost();
-                  }}
-                  onRefresh={() => {
-                    void refreshLocalAiState();
-                  }}
-                  onResetToManaged={() => {
-                    void handleResetLocalAiToManaged();
-                  }}
-                />
-              )}
-
               <div style={{ marginTop: '1rem' }}>
-                {llmSettings.provider === DEFAULT_LLM_PROVIDER && (
-                  <div
-                    style={{
-                      marginBottom: '0.75rem',
-                      padding: '0.75rem',
-                      background: PLUS_TIER_ENABLED && localPlanPolicy.plan === 'plus' ? '#f5f3ff' : '#fffbeb',
-                      border: `1px solid ${PLUS_TIER_ENABLED && localPlanPolicy.plan === 'plus' ? '#c4b5fd' : '#fde68a'}`,
-                      borderRadius: '8px',
-                      color: PLUS_TIER_ENABLED && localPlanPolicy.plan === 'plus' ? '#5b21b6' : '#92400e',
-                      fontSize: '0.875rem',
-                    }}
-                  >
-                    {PLUS_TIER_ENABLED && localPlanPolicy.plan === 'plus'
-                      ? 'Plus plan: unlimited local tasks and Vision Boost are enabled on this desktop.'
-                      : `Free plan: ${localAiTaskUsage.tasksStarted}/${localPlanPolicy.localTaskLimit ?? 0} local tasks used today.${PLUS_TIER_ENABLED ? ' Vision Boost is reserved for Plus.' : ''}`}
-                    {localTaskAllowance.remaining != null && (
-                      <div style={{ marginTop: '0.35rem' }}>
-                        {localTaskAllowance.remaining} free local task{localTaskAllowance.remaining === 1 ? '' : 's'} remaining today.
-                      </div>
-                    )}
-                  </div>
-                )}
                 <ChatOverlay
                   messages={messages}
                   status={status}
                   onSendMessage={handleSendMessage}
-                  busy={assistantConversationBusy || pendingTaskConfirmationBusy || pendingFreeAiSetupBusy}
+                  busy={assistantConversationBusy || pendingTaskConfirmationBusy}
                   assistantStatusLabel={isSignedIn ? overlayStatusLabel : null}
-                  pendingFreeAiSetup={pendingFreeAiSetup}
-                  pendingFreeAiSetupBusy={pendingFreeAiSetupBusy}
                   pendingTaskConfirmation={pendingTaskConfirmation}
                   pendingTaskConfirmationBusy={pendingTaskConfirmationBusy}
-                  onApprovePendingFreeAiSetup={beginPendingFreeAiSetup}
-                  onRetryPendingFreeAiSetup={handleRetryPendingFreeAiSetup}
-                  onCancelPendingFreeAiSetup={handleCancelPendingFreeAiSetup}
-                  onOpenPendingFreeAiSetupSettings={handleOpenPendingFreeAiSetupSettings}
                   onConfirmPendingTask={handleConfirmPendingTask}
                   onCancelPendingTask={handleCancelPendingTask}
                   freeTierUsage={freeTierUsage}
@@ -4253,7 +3534,6 @@ function App() {
           onExportDiagnostics={handleExportDiagnostics}
           diagnosticsStatus={diagnosticsStatus}
           overviewPanels={settingsOperationalPanels}
-          hostedFreeAiEnabled={desktopBootstrap?.readiness.hostedFreeAiEnabled ?? false}
           runtimeConfig={runtimeConfig}
           sessionDeviceToken={sessionDeviceToken}
         />

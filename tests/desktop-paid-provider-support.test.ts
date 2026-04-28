@@ -12,7 +12,16 @@ test('desktop launch-facing provider list exposes only launch-ready providers', 
   }
 
   const launchProviders = imported.getSupportedLlmProviders().map((provider) => provider.provider);
-  assert.deepEqual(launchProviders, ['native_qwen_ollama', 'openai', 'claude']);
+
+  // native_qwen_ollama must never appear in the launch list
+  assert.ok(
+    !launchProviders.includes('native_qwen_ollama'),
+    'native_qwen_ollama must not appear in the launch provider list'
+  );
+
+  // openai and claude should always be present
+  assert.ok(launchProviders.includes('openai'), 'openai must be in launch list');
+  assert.ok(launchProviders.includes('claude'), 'claude must be in launch list');
 
   const paidProviders = imported
     .getSupportedLlmProviders()
@@ -39,7 +48,7 @@ test('desktop launch-facing provider list exposes only launch-ready providers', 
 test('desktop settings demotes non-launch compatibility providers from the beta menu', () => {
   const source = readFileSync('apps/desktop/src/components/SettingsPanel.tsx', 'utf8');
 
-  assert.match(source, /Free AI runs locally on your Mac when possible/i);
+  assert.match(source, /GORKH AI runs in the cloud|hosted Free AI/i);
   assert.match(source, /Advanced provider/i);
   assert.match(source, /hidden from the main provider menu/i);
 });

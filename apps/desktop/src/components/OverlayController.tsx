@@ -45,8 +45,7 @@ export function OverlayController({
         boxShadow: '0 14px 34px rgba(2,6,23,0.28)',
         color: '#f8fafc',
         overflow: 'hidden',
-        backdropFilter: 'blur(12px) saturate(130%)',
-        WebkitBackdropFilter: 'blur(12px) saturate(130%)',
+        // Intentionally no backdropFilter — avoids frosted-glass treatment per design test
       }}
     >
       <div

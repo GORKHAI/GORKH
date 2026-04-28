@@ -3,21 +3,13 @@
  *
  * Verifies that:
  * - Provider labels clearly distinguish free vs paid (no blurred lines)
- * - User-visible strings never mention "Ollama" as a retail name
  * - gorkhKnowledge provider explanations are honest about cost and execution location
  * - Rust error messages that surface as lastError don't leak internal names
  * - No unshipped features (training, fine-tuning, personalisation) are claimed
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
-
-// ---------------------------------------------------------------------------
-// Source files
-// ---------------------------------------------------------------------------
-
-const localAiRsSource = readFileSync('apps/desktop/src-tauri/src/local_ai.rs', 'utf8');
 
 // ---------------------------------------------------------------------------
 // llmConfig: free vs paid clarity
@@ -26,11 +18,11 @@ const localAiRsSource = readFileSync('apps/desktop/src-tauri/src/local_ai.rs', '
 test('llmConfig free provider is paid=false and requires no API key', async () => {
   const { getLlmProviderDefinition } = await import('../apps/desktop/src/lib/llmConfig.ts');
 
-  const freeAi = getLlmProviderDefinition('native_qwen_ollama');
-  assert.equal(freeAi.paid, false, 'native_qwen_ollama must be marked paid=false');
-  assert.equal(freeAi.requiresApiKey, false, 'native_qwen_ollama must not require an API key');
-  assert.match(freeAi.label, /free ai/i, 'native_qwen_ollama label must include "Free AI"');
-  assert.match(freeAi.shortLabel, /free ai/i, 'native_qwen_ollama shortLabel must include "Free AI"');
+  const freeAi = getLlmProviderDefinition('gorkh_free');
+  assert.equal(freeAi.paid, false, 'gorkh_free must be marked paid=false');
+  assert.equal(freeAi.requiresApiKey, false, 'gorkh_free must not require an API key');
+  assert.match(freeAi.label, /free/i, 'gorkh_free label must include "Free"');
+  assert.match(freeAi.shortLabel, /gorkh/i, 'gorkh_free shortLabel must include "GORKH"');
 });
 
 test('llmConfig paid providers are paid=true and require an API key', async () => {
@@ -49,13 +41,13 @@ test('llmConfig paid providers are paid=true and require an API key', async () =
   }
 });
 
-test('llmConfig native_qwen_ollama label and setupHint do not mention Ollama to the user', async () => {
+test('llmConfig gorkh_free label and setupHint describe the hosted free tier', async () => {
   const { getLlmProviderDefinition } = await import('../apps/desktop/src/lib/llmConfig.ts');
 
-  const def = getLlmProviderDefinition('native_qwen_ollama');
-  assert.doesNotMatch(def.label, /ollama/i, 'Free AI label must not expose "Ollama"');
-  assert.doesNotMatch(def.shortLabel, /ollama/i, 'Free AI shortLabel must not expose "Ollama"');
-  assert.doesNotMatch(def.setupHint, /ollama|brew|homebrew/i, 'Free AI setupHint must not mention Ollama or Homebrew');
+  const def = getLlmProviderDefinition('gorkh_free');
+  assert.match(def.label, /gorkh/i, 'GORKH Free label must include "GORKH"');
+  assert.doesNotMatch(def.label, /ollama/i, 'GORKH Free label must not expose "Ollama"');
+  assert.doesNotMatch(def.setupHint, /ollama|brew|homebrew|install|download/i, 'GORKH Free setupHint must not mention local installation');
 });
 
 test('llmConfig openai_compat is marked free and has no billingHint', async () => {
@@ -74,21 +66,21 @@ test('llmConfig openai_compat is marked free and has no billingHint', async () =
 test('gorkhKnowledge provider explanations are honest about cost and execution location', async () => {
   const { GORKH_PROVIDER_EXPLANATIONS } = await import('../apps/desktop/src/lib/gorkhKnowledge.ts');
 
-  // Free AI: must say "free" or "no fees" and "local" or "on your Mac"
+  // Free AI: must say "free" or "no fees" and "hosted" or "cloud"
   assert.match(
-    GORKH_PROVIDER_EXPLANATIONS.native_qwen_ollama,
+    GORKH_PROVIDER_EXPLANATIONS.gorkh_free,
     /free|no.*fee/i,
-    'Free AI explanation must mention zero cost'
+    'GORKH Free explanation must mention zero cost'
   );
   assert.match(
-    GORKH_PROVIDER_EXPLANATIONS.native_qwen_ollama,
-    /local|on your mac/i,
-    'Free AI explanation must mention local execution'
+    GORKH_PROVIDER_EXPLANATIONS.gorkh_free,
+    /hosted|cloud|gorkh/i,
+    'GORKH Free explanation must mention hosted/cloud execution'
   );
   assert.doesNotMatch(
-    GORKH_PROVIDER_EXPLANATIONS.native_qwen_ollama,
+    GORKH_PROVIDER_EXPLANATIONS.gorkh_free,
     /ollama/i,
-    'Free AI explanation must not expose "Ollama" branding'
+    'GORKH Free explanation must not expose "Ollama" branding'
   );
 
   // Paid providers: must say "charges" or "billed" and "cloud"
@@ -114,31 +106,5 @@ test('gorkhKnowledge does not claim unshipped training or personalisation featur
     allText,
     /fine.tun|LoRA|lora.*train|personaliz.*your.*data|learn.*from.*your/i,
     'knowledge base must not promise model fine-tuning, LoRA, or personalisation as shipped features'
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Rust local_ai.rs: user-visible error messages avoid Ollama branding
-// ---------------------------------------------------------------------------
-
-test('local_ai.rs user-facing error messages do not mention "Ollama" as a product name', () => {
-  // Extract strings that appear in format!() macros (user-visible errors stored in lastError).
-  // Internal binary filenames ("ollama", "ollama.exe") and function names are fine — only
-  // prose error messages shown to users must avoid exposing the Ollama brand.
-  const userFacingPattern =
-    /format!\(\s*"[^"]*[Oo]llama binary[^"]*"/;
-  assert.doesNotMatch(
-    localAiRsSource,
-    userFacingPattern,
-    'local_ai.rs must not expose "Ollama binary" in user-facing error messages'
-  );
-});
-
-test('local_ai.rs fallback error message uses retail-friendly language', () => {
-  // The fallback error when the managed download fails and no system binary is found.
-  assert.match(
-    localAiRsSource,
-    /local AI engine binary was also not found/,
-    'fallback error must say "local AI engine binary" rather than exposing Ollama brand'
   );
 });

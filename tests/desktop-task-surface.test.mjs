@@ -13,8 +13,7 @@ const actionExecutorPath = 'apps/desktop/src/lib/actionExecutor.ts';
 test('desktop primary surface exposes an assistant-first shell instead of a run-first task composer', () => {
   const source = readFileSync(appPath, 'utf8');
 
-  assert.match(source, /Start Free AI|Set up Free AI/i, 'desktop retail shell should make the free local setup path visible');
-  assert.match(source, /Free plan|Plus plan|unlimited local tasks|Vision Boost/i, 'desktop retail shell should reflect the free-vs-plus local AI posture');
+  assert.match(source, /GORKH AI|Free tier/i, 'desktop retail shell should make the GORKH Free tier visible');
   assert.match(source, /Settings & details|Debug view|Diagnostics/i, 'desktop should demote technical run details to a secondary view');
   assert.match(source, /ensureAssistantRunForMessage/, 'desktop chat entry should create or resume a hidden run');
   assert.doesNotMatch(source, /Create Task|Start Task|Manual launch/i, 'desktop retail surface should not lead with explicit task creation');

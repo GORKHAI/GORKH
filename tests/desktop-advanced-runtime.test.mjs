@@ -62,8 +62,6 @@ test('advanced runtime wires open_app through parser, executor mapping, and prov
   const runtimeSource = readFileSync('apps/desktop/src-tauri/src/agent/mod.rs', 'utf8');
   const executorSource = readFileSync('apps/desktop/src-tauri/src/agent/executor.rs', 'utf8');
   const llmSource = readFileSync('apps/desktop/src-tauri/src/llm/mod.rs', 'utf8');
-  const nativeProviderSource = readFileSync('apps/desktop/src-tauri/src/agent/providers/native_ollama.rs', 'utf8');
-  const localCompatProviderSource = readFileSync('apps/desktop/src-tauri/src/agent/providers/local_compat.rs', 'utf8');
   const openAiProviderSource = readFileSync('apps/desktop/src-tauri/src/agent/providers/openai.rs', 'utf8');
   const claudeProviderSource = readFileSync('apps/desktop/src-tauri/src/agent/providers/claude.rs', 'utf8');
 
@@ -91,16 +89,6 @@ test('advanced runtime wires open_app through parser, executor mapping, and prov
     runtimeSource,
     /executor::Action::OpenApp/,
     'advanced runtime should map retail open_app proposals into executor::Action::OpenApp'
-  );
-  assert.match(
-    nativeProviderSource,
-    /open_app/,
-    'native Ollama provider prompt should tell the model that open_app is valid'
-  );
-  assert.match(
-    localCompatProviderSource,
-    /open_app/,
-    'local OpenAI-compatible provider prompt should tell the model that open_app is valid'
   );
   assert.match(
     openAiProviderSource,

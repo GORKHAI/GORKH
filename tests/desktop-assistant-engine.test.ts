@@ -41,7 +41,6 @@ test('desktop defines one assistant-engine catalog with ai assist default and ad
 test('desktop chat shell routes through the unified assistant-engine abstraction', () => {
   const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
   const advancedDialogSource = readFileSync('apps/desktop/src/components/agent/AgentTaskDialog.tsx', 'utf8');
-  const workflowSource = readFileSync('apps/desktop/src/components/AgentWorkflow.tsx', 'utf8');
 
   assert.match(appSource, /createAssistantEngine/, 'desktop app should create the retail engine through the unified assistant engine helper');
   assert.doesNotMatch(appSource, /new AiAssistController/, 'desktop app should no longer construct AiAssistController directly');
@@ -54,10 +53,5 @@ test('desktop chat shell routes through the unified assistant-engine abstraction
     advancedDialogSource,
     /debug|secondary|internal/i,
     'any remaining extra engine launch surface should be clearly labeled secondary'
-  );
-  assert.match(
-    workflowSource,
-    /secondary|debug|internal/i,
-    'engineering workflow surface should remain clearly secondary'
   );
 });

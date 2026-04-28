@@ -48,9 +48,6 @@ pub enum LlmErrorCode {
     /// Rate limited by provider
     RateLimited,
 
-    /// Ollama-specific error
-    OllamaError,
-
     /// Free AI fallback service is unavailable
     FreeAiFallbackUnavailable,
 
@@ -77,7 +74,6 @@ impl LlmErrorCode {
             LlmErrorCode::ModelNotFound => "MODEL_NOT_FOUND",
             LlmErrorCode::AuthFailed => "AUTH_FAILED",
             LlmErrorCode::RateLimited => "RATE_LIMITED",
-            LlmErrorCode::OllamaError => "OLLAMA_ERROR",
             LlmErrorCode::FreeAiFallbackUnavailable => "FREE_AI_FALLBACK_UNAVAILABLE",
             LlmErrorCode::FreeAiFallbackUpstreamError => "FREE_AI_FALLBACK_UPSTREAM_ERROR",
             LlmErrorCode::FreeTierExhausted => "FREE_TIER_EXHAUSTED",
@@ -131,7 +127,6 @@ mod tests {
             (LlmErrorCode::ModelNotFound, "MODEL_NOT_FOUND"),
             (LlmErrorCode::AuthFailed, "AUTH_FAILED"),
             (LlmErrorCode::RateLimited, "RATE_LIMITED"),
-            (LlmErrorCode::OllamaError, "OLLAMA_ERROR"),
             (LlmErrorCode::FreeAiFallbackUnavailable, "FREE_AI_FALLBACK_UNAVAILABLE"),
             (LlmErrorCode::FreeAiFallbackUpstreamError, "FREE_AI_FALLBACK_UPSTREAM_ERROR"),
             (LlmErrorCode::FreeTierExhausted, "FREE_TIER_EXHAUSTED"),

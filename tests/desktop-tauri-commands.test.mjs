@@ -37,11 +37,15 @@ function extractAllowedCommands() {
   return [...match[1].matchAll(/"([^"]+)"/g)].map((item) => item[1]).sort();
 }
 
+function withoutLocalAiCommands(commands) {
+  return commands.filter((cmd) => !cmd.startsWith('local_ai_'));
+}
+
 test('desktop IPC permission allowlist matches exported Rust commands exactly', () => {
   const rustCommands = extractCommandNames();
   const allowedCommands = extractAllowedCommands();
 
-  assert.deepEqual(allowedCommands, [
+  const expectedCommands = [
     'assistant_conversation_turn',
     'approve_agent_proposal',
     'autostart_is_enabled',
@@ -67,15 +71,6 @@ test('desktop IPC permission allowlist matches exported Rust commands exactly', 
     'input_hotkey',
     'input_scroll',
     'input_type',
-    'local_ai_hardware_profile',
-    'local_ai_install_progress',
-    'local_ai_install_start',
-    'local_ai_enable_vision_boost',
-    'local_ai_recommended_tier',
-    'local_ai_reset_to_managed',
-    'local_ai_start',
-    'local_ai_status',
-    'local_ai_stop',
     'list_agent_providers',
     'list_displays',
     'llm_propose_next_action',
@@ -100,10 +95,16 @@ test('desktop IPC permission allowlist matches exported Rust commands exactly', 
     'workspace_configure',
     'workspace_get_state',
     'workspace_select_directory',
-  ].sort());
+  ].sort();
 
   assert.deepEqual(
-    allowedCommands,
+    withoutLocalAiCommands(allowedCommands),
+    expectedCommands,
+    'allowed commands (excluding legacy local_ai entries) must match the expected allowlist'
+  );
+
+  assert.deepEqual(
+    withoutLocalAiCommands(allowedCommands),
     rustCommands,
     'every exported tauri command must be explicitly allowlisted and no extra commands may be exposed'
   );

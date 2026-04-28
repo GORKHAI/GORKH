@@ -38,28 +38,20 @@ use tokio::sync::RwLock;
 pub mod claude;
 pub mod deepseek;
 pub mod gorkh_free;
-pub mod local_compat;
 pub mod moonshot;
-pub mod native_ollama;
 pub mod openai;
 pub mod openai_format;
 
 pub use claude::ClaudeProvider;
 pub use deepseek::DeepSeekProvider;
 pub use gorkh_free::GorkhFreeProvider;
-pub use local_compat::LocalCompatProvider;
 pub use moonshot::MoonshotProvider;
-pub use native_ollama::NativeOllamaProvider;
 pub use openai::OpenAiProvider;
 
 /// Provider types supported by the agent
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderType {
-    /// Native Qwen model via Ollama (free, local)
-    NativeQwenOllama,
-    /// Local OpenAI-compatible server (e.g., llama.cpp)
-    LocalOpenAiCompat,
     /// OpenAI API (paid)
     OpenAi,
     /// Anthropic Claude API (paid)
@@ -75,8 +67,6 @@ pub enum ProviderType {
 impl ProviderType {
     pub fn name(&self) -> &'static str {
         match self {
-            ProviderType::NativeQwenOllama => "GORKH Native",
-            ProviderType::LocalOpenAiCompat => "Local (OpenAI-compatible)",
             ProviderType::OpenAi => "OpenAI",
             ProviderType::Claude => "Claude",
             ProviderType::DeepSeek => "DeepSeek",
@@ -86,10 +76,7 @@ impl ProviderType {
     }
 
     pub fn is_free(&self) -> bool {
-        matches!(
-            self,
-            ProviderType::NativeQwenOllama | ProviderType::LocalOpenAiCompat | ProviderType::GorkhFree
-        )
+        matches!(self, ProviderType::GorkhFree)
     }
 
     pub fn is_cloud(&self) -> bool {
@@ -238,7 +225,7 @@ pub struct ProviderConfig {
 impl Default for UserPreferences {
     fn default() -> Self {
         Self {
-            default_provider: ProviderType::NativeQwenOllama,
+            default_provider: ProviderType::GorkhFree,
             fallback_enabled: true,
             ask_before_paid: true,
             cost_limit_per_task: 1.0,
@@ -251,10 +238,9 @@ impl ProviderRouter {
     pub fn new() -> Self {
         Self {
             providers: RwLock::new(HashMap::new()),
-            default_provider: RwLock::new(ProviderType::NativeQwenOllama),
+            default_provider: RwLock::new(ProviderType::GorkhFree),
             fallback_order: RwLock::new(vec![
-                ProviderType::NativeQwenOllama,
-                ProviderType::LocalOpenAiCompat,
+                ProviderType::GorkhFree,
                 ProviderType::Claude,
                 ProviderType::OpenAi,
                 ProviderType::DeepSeek,

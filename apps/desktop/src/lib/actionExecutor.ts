@@ -6,26 +6,38 @@ export interface ActionResult {
   error?: { code: string; message: string; permissionTarget?: 'accessibility' };
 }
 
+function clampNormalizedCoord(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
 export async function executeAction(action: InputAction, displayId: string = 'display-0'): Promise<ActionResult> {
   try {
     switch (action.kind) {
-      case 'click':
+      case 'click': {
+        if (Number.isNaN(action.x) || !Number.isFinite(action.x) || Number.isNaN(action.y) || !Number.isFinite(action.y)) {
+          return { ok: false, error: { code: 'INVALID_COORDINATES', message: 'Coordinates are NaN or Infinity' } };
+        }
         await invoke('input_click', {
-          xNorm: action.x,
-          yNorm: action.y,
+          xNorm: clampNormalizedCoord(action.x),
+          yNorm: clampNormalizedCoord(action.y),
           button: action.button,
           displayId,
         });
         return { ok: true };
+      }
 
-      case 'double_click':
+      case 'double_click': {
+        if (Number.isNaN(action.x) || !Number.isFinite(action.x) || Number.isNaN(action.y) || !Number.isFinite(action.y)) {
+          return { ok: false, error: { code: 'INVALID_COORDINATES', message: 'Coordinates are NaN or Infinity' } };
+        }
         await invoke('input_double_click', {
-          xNorm: action.x,
-          yNorm: action.y,
+          xNorm: clampNormalizedCoord(action.x),
+          yNorm: clampNormalizedCoord(action.y),
           button: action.button,
           displayId,
         });
         return { ok: true };
+      }
 
       case 'scroll':
         await invoke('input_scroll', {

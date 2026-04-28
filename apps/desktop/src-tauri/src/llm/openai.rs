@@ -89,6 +89,8 @@ impl LlmProvider for OpenAiProvider {
         let user_prompt = super::build_user_prompt(
             &params.goal,
             params.screenshot_png_base64.as_deref(),
+            params.screenshot_width,
+            params.screenshot_height,
             &params.history,
             0, // Action count is tracked separately
         );

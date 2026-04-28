@@ -14,10 +14,7 @@
  */
 
 import {
-  GORKH_INSTALL_STAGE_EXPLANATIONS,
   GORKH_PROVIDER_EXPLANATIONS,
-  GORKH_TIER_EXPLANATIONS,
-  GORKH_GPU_CLASS_EXPLANATIONS,
 } from './gorkhKnowledge.js';
 
 // ---------------------------------------------------------------------------
@@ -26,25 +23,6 @@ import {
 
 export type GorkhAuthState = 'checking' | 'signed_out' | 'signing_in' | 'signed_in' | 'signing_out';
 export type GorkhPermissionStatus = 'granted' | 'denied' | 'unknown';
-export type GorkhInstallStage =
-  | 'not_started'
-  | 'planned'
-  | 'installing'
-  | 'installed'
-  | 'starting'
-  | 'ready'
-  | 'error';
-export type GorkhLocalAiTier = 'light' | 'standard' | 'vision';
-export type GorkhGpuClass = 'unknown' | 'integrated' | 'discrete';
-
-export interface GorkhFreeAiSnapshot {
-  installStage: GorkhInstallStage;
-  runtimeRunning: boolean;
-  selectedTier: GorkhLocalAiTier | null;
-  selectedModel: string | null;
-  externalServiceDetected: boolean;
-  lastError: string | null;
-}
 
 export interface GorkhPermissionsSnapshot {
   screenRecordingStatus: GorkhPermissionStatus;
@@ -53,20 +31,13 @@ export interface GorkhPermissionsSnapshot {
   controlEnabled: boolean;
 }
 
-export interface GorkhHardwareSnapshot {
-  gpuClass: GorkhGpuClass;
-  ramGb: number | null;
-}
-
 export interface GorkhAppSnapshot {
   authState: GorkhAuthState;
   provider: string | null;
   providerConfigured: boolean;
-  freeAi: GorkhFreeAiSnapshot | null;
   permissions: GorkhPermissionsSnapshot | null;
   workspaceConfigured: boolean;
   workspaceRootName: string | null;
-  hardware: GorkhHardwareSnapshot | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,47 +64,11 @@ export function buildGorkhContextBlock(snapshot: GorkhAppSnapshot): string | nul
     if (snapshot.providerConfigured) {
       lines.push(`AI provider: ${providerExplanation} — configured and ready`);
     } else {
-      lines.push(`AI provider: ${providerExplanation} — NOT configured (setup required)`);
+      lines.push(`AI provider: ${providerExplanation} — NOT configured (setup required)`
+      );
     }
   } else {
     lines.push('AI provider: not selected');
-  }
-
-  // Free AI / local engine
-  if (snapshot.freeAi) {
-    const ai = snapshot.freeAi;
-    const stageExplanation =
-      GORKH_INSTALL_STAGE_EXPLANATIONS[ai.installStage] ?? ai.installStage;
-
-    if (ai.runtimeRunning) {
-      const tierLabel = ai.selectedTier
-        ? (GORKH_TIER_EXPLANATIONS[ai.selectedTier] ?? ai.selectedTier)
-        : 'unknown tier';
-      lines.push(`Free AI (local engine): running — ${tierLabel}`);
-      if (ai.selectedModel) {
-        lines.push(`  Model: ${ai.selectedModel}`);
-      }
-      if (ai.externalServiceDetected) {
-        lines.push('  Runtime source: external local AI service (not managed by GORKH)');
-      }
-    } else {
-      lines.push(`Free AI (local engine): not running — ${stageExplanation}`);
-      if (ai.lastError) {
-        // Truncate long error messages to avoid bloating the context
-        const truncated = ai.lastError.length > 120 ? ai.lastError.slice(0, 120) + '…' : ai.lastError;
-        lines.push(`  Last error: ${truncated}`);
-      }
-    }
-  }
-
-  // Hardware (only surface GPU truth, not full profile)
-  if (snapshot.hardware) {
-    const gpuLabel = GORKH_GPU_CLASS_EXPLANATIONS[snapshot.hardware.gpuClass]
-      ?? 'GPU status unknown';
-    lines.push(`Hardware: ${gpuLabel}`);
-    if (snapshot.hardware.ramGb !== null) {
-      lines.push(`  RAM: approximately ${snapshot.hardware.ramGb} GB`);
-    }
   }
 
   // Permissions

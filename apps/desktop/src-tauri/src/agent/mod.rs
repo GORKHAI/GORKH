@@ -74,7 +74,7 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            primary_provider: ProviderType::NativeQwenOllama,
+            primary_provider: ProviderType::GorkhFree,
             fallback_provider: None,
             safety_level: SafetyLevel::Strict,
             ask_before_paid: true,
@@ -1165,16 +1165,6 @@ async fn execute_pending(
 
 fn build_provider(config: &AgentConfig) -> Result<Box<dyn providers::LlmProvider>, AgentError> {
     match config.primary_provider {
-        ProviderType::NativeQwenOllama => Ok(Box::new(providers::NativeOllamaProvider::new(
-            config.provider_base_url.clone(),
-            config.provider_model.clone(),
-        ))),
-        ProviderType::LocalOpenAiCompat => Ok(Box::new(providers::LocalCompatProvider::new(
-            config.provider_base_url.clone(),
-            config.provider_model.clone(),
-            config.provider_api_key.clone(),
-            config.provider_supports_vision,
-        ))),
         ProviderType::OpenAi => Ok(Box::new(providers::OpenAiProvider::new(
             config.provider_api_key.clone().ok_or_else(|| {
                 AgentError::Provider("OpenAI-compatible provider is missing an API key".to_string())

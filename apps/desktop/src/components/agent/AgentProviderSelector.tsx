@@ -16,10 +16,6 @@ interface AgentProviderSelectorProps {
 }
 
 const providerDetails: Record<ProviderType, { name: string; description: string }> = {
-  native_qwen_ollama: {
-    name: 'Free AI',
-    description: 'Free, runs locally on your Mac. No internet required.',
-  },
   local_openai_compat: {
     name: 'Local OpenAI-compatible',
     description: 'Your own local server (vLLM, llama.cpp, etc.)',
@@ -293,7 +289,7 @@ export function AgentProviderSelector({ value, onChange }: AgentProviderSelector
 
                 {!provider.available && provider.isFree && (
                   <p style={{ fontSize: '0.75rem', color: '#d97706', marginTop: '8px' }}>
-                    Not available. Use "Set Up Free AI" in the main assistant view to install and start the local AI engine.
+                    Not available. Sign in to use the hosted free tier.
                   </p>
                 )}
               </div>

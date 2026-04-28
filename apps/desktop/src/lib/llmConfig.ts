@@ -1,6 +1,5 @@
 export type LlmProvider =
   | 'gorkh_free'
-  | 'native_qwen_ollama'
   | 'openai'
   | 'claude'
   | 'deepseek'
@@ -8,7 +7,7 @@ export type LlmProvider =
   | 'kimi'
   | 'openai_compat';
 
-export type LlmRuntimeProvider = 'gorkh_free' | 'native_qwen_ollama' | 'openai' | 'claude' | 'openai_compat';
+export type LlmRuntimeProvider = 'gorkh_free' | 'openai' | 'claude' | 'openai_compat';
 
 export interface LlmSettings {
   provider: LlmProvider;
@@ -31,7 +30,7 @@ export interface LlmProviderDefinition {
   billingHint?: string;
 }
 
-export const DEFAULT_LLM_PROVIDER: LlmProvider = 'native_qwen_ollama';
+export const DEFAULT_LLM_PROVIDER: LlmProvider = 'gorkh_free';
 
 /** Default provider for brand-new users (no saved settings) */
 export const DEFAULT_NEW_USER_PROVIDER: LlmProvider = 'gorkh_free';
@@ -52,17 +51,6 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
     requiresApiKey: false,
     paid: false,
     setupHint: '5 tasks per day. No setup needed. Powered by DeepSeek.',
-  },
-  native_qwen_ollama: {
-    provider: 'native_qwen_ollama',
-    label: 'Free AI',
-    shortLabel: 'Free AI',
-    baseUrl: 'http://127.0.0.1:11434',
-    model: 'qwen2.5:1.5b',
-    runtimeProvider: 'native_qwen_ollama',
-    requiresApiKey: false,
-    paid: false,
-    setupHint: 'GORKH manages the local AI engine for you. Use "Set Up Free AI" in the main assistant view to install and start it automatically.',
   },
   openai: {
     provider: 'openai',
@@ -97,7 +85,7 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
     runtimeProvider: 'openai_compat',
     requiresApiKey: true,
     paid: true,
-    setupHint: 'Uses DeepSeek’s OpenAI-compatible chat completions API.',
+    setupHint: 'Uses DeepSeek\u2019s OpenAI-compatible chat completions API.',
     billingHint: 'Paid provider. Usage is billed by your DeepSeek account.',
   },
   minimax: {
@@ -109,7 +97,7 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
     runtimeProvider: 'openai_compat',
     requiresApiKey: true,
     paid: true,
-    setupHint: 'Uses MiniMax’s OpenAI-compatible chat completions API.',
+    setupHint: 'Uses MiniMax\u2019s OpenAI-compatible chat completions API.',
     billingHint: 'Paid provider. Usage is billed by your MiniMax account.',
   },
   kimi: {
@@ -121,7 +109,7 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
     runtimeProvider: 'openai_compat',
     requiresApiKey: true,
     paid: true,
-    setupHint: 'Uses Moonshot/Kimi’s OpenAI-compatible chat completions API.',
+    setupHint: 'Uses Moonshot/Kimi\u2019s OpenAI-compatible chat completions API.',
     billingHint: 'Paid provider. Usage is billed by your Moonshot account.',
   },
   openai_compat: {
@@ -139,7 +127,6 @@ const PROVIDER_DEFINITIONS: Record<LlmProvider, LlmProviderDefinition> = {
 
 export const ALL_PROVIDER_ORDER: LlmProvider[] = [
   'gorkh_free',
-  'native_qwen_ollama',
   'openai',
   'claude',
   'deepseek',
@@ -149,15 +136,12 @@ export const ALL_PROVIDER_ORDER: LlmProvider[] = [
 ];
 
 const LAUNCH_PROVIDER_ORDER: LlmProvider[] = [
-  'gorkh_free',
-  'native_qwen_ollama',
   'openai',
   'claude',
 ];
 
 export function isLlmProvider(value: string | undefined | null): value is LlmProvider {
   return value === 'gorkh_free'
-    || value === 'native_qwen_ollama'
     || value === 'openai'
     || value === 'claude'
     || value === 'deepseek'
@@ -170,7 +154,7 @@ export function normalizeLlmProvider(value: string | undefined | null): LlmProvi
   if (isLlmProvider(value)) {
     return value;
   }
-  return FREE_AI_ENABLED ? DEFAULT_LLM_PROVIDER : 'openai';
+  return 'gorkh_free';
 }
 
 export function getLlmDefaults(provider: LlmProvider): LlmSettings {
@@ -195,8 +179,8 @@ export function providerRequiresApiKey(provider: LlmProvider): boolean {
   return PROVIDER_DEFINITIONS[provider].requiresApiKey;
 }
 
-export function isLocalLlmProvider(provider: LlmProvider): boolean {
-  return !PROVIDER_DEFINITIONS[provider].paid;
+export function isLocalLlmProvider(_provider: LlmProvider): boolean {
+  return false;
 }
 
 export function getLlmProviderLabel(provider: LlmProvider): string {
@@ -216,17 +200,11 @@ export function getLlmProviderDefinition(provider: LlmProvider): LlmProviderDefi
 }
 
 export function isLaunchLlmProvider(provider: LlmProvider): boolean {
-  const launchOrder = FREE_AI_ENABLED
-    ? LAUNCH_PROVIDER_ORDER
-    : LAUNCH_PROVIDER_ORDER.filter((p) => p !== 'native_qwen_ollama');
-  return launchOrder.includes(provider);
+  return LAUNCH_PROVIDER_ORDER.includes(provider);
 }
 
 export function getSupportedLlmProviders(): LlmProviderDefinition[] {
-  const order = FREE_AI_ENABLED
-    ? LAUNCH_PROVIDER_ORDER
-    : LAUNCH_PROVIDER_ORDER.filter((p) => p !== 'native_qwen_ollama');
-  return order.map((provider) => PROVIDER_DEFINITIONS[provider]);
+  return LAUNCH_PROVIDER_ORDER.map((provider) => PROVIDER_DEFINITIONS[provider]);
 }
 
 export function getAdvancedLlmProviders(): LlmProviderDefinition[] {
@@ -236,15 +214,12 @@ export function getAdvancedLlmProviders(): LlmProviderDefinition[] {
 }
 
 export function getAllLlmProviders(): LlmProviderDefinition[] {
-  const order = FREE_AI_ENABLED
-    ? ALL_PROVIDER_ORDER
-    : ALL_PROVIDER_ORDER.filter((p) => p !== 'native_qwen_ollama');
-  return order.map((provider) => PROVIDER_DEFINITIONS[provider]);
+  return ALL_PROVIDER_ORDER.map((provider) => PROVIDER_DEFINITIONS[provider]);
 }
 
 export function getEmptyStateMessage(
   activeProvider: LlmProvider,
-  freeAiEnabled: boolean,
+  _freeAiEnabled: boolean,
 ): string {
   const providerLabel = getLlmProviderLabel(activeProvider);
 
@@ -252,19 +227,8 @@ export function getEmptyStateMessage(
     return 'Sign in to use GORKH AI (Free). No API key needed.';
   }
 
-  if (activeProvider === 'native_qwen_ollama') {
-    return freeAiEnabled
-      ? 'Free AI is not ready yet. Set it up in Settings to get started.'
-      : 'Local AI is not available. Choose a cloud provider in Settings to get started.';
-  }
-
   const otherProviders = ALL_PROVIDER_ORDER
     .filter((p) => p !== activeProvider)
-    .filter((p) => {
-      if (p === 'gorkh_free') return true;
-      if (p === 'native_qwen_ollama' || p === 'openai_compat') return freeAiEnabled;
-      return true;
-    })
     .map(getLlmProviderLabel);
 
   const othersText =
