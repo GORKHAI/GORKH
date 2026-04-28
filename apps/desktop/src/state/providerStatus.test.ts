@@ -136,3 +136,24 @@ test('local AI provider is not configured when runtime is down', async () => {
 
   assert.equal(getProviderStatus().configured.native_qwen_ollama, false);
 });
+
+// Regression test for the stale providerConfigured bug:
+// Saving a key for the current provider must flip activeConfigured to true
+// without requiring a provider change or app restart.
+test('notifyKeyChanged flips activeConfigured after key save (regression)', async () => {
+  __resetForTesting();
+
+  // 1. Start with deepseek selected and no key
+  __setInvokeForTesting(createMockInvoke({}));
+  setActiveProvider('deepseek');
+  await refresh();
+
+  assert.equal(getProviderStatus().activeConfigured, false, 'should start unconfigured');
+
+  // 2. Simulate saving a key (SettingsPanel calls notifyKeyChanged)
+  __setInvokeForTesting(createMockInvoke({ 'llm_api_key:deepseek': 'sk-deepseek-xxx' }));
+  await notifyKeyChanged('deepseek');
+
+  // 3. activeConfigured should now be true immediately
+  assert.equal(getProviderStatus().activeConfigured, true, 'should become configured after key save');
+});
