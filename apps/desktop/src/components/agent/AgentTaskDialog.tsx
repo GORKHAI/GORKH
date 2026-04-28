@@ -10,6 +10,8 @@ import {
   formatCost,
   estimateCost,
 } from '../../lib/advancedAgent.js';
+import { isPaidLlmProvider, getLlmProviderLabel } from '../../lib/llmConfig.js';
+import type { LlmProvider } from '../../lib/llmConfig.js';
 
 interface AgentTaskDialogProps {
   trigger?: React.ReactNode;
@@ -42,7 +44,8 @@ export function AgentTaskDialog({ trigger }: AgentTaskDialogProps) {
     }
   };
 
-  const isPaidProvider = (p: ProviderType | null) => p === 'openai' || p === 'claude';
+  const isPaidProvider = (p: ProviderType | null) =>
+    p !== null && isPaidLlmProvider(p as LlmProvider);
 
   const handleStart = async () => {
     if (!goal.trim()) return;
@@ -228,7 +231,7 @@ export function AgentTaskDialog({ trigger }: AgentTaskDialogProps) {
               Paid Provider Selected
             </div>
             <div style={styles.warningText}>
-              <p><strong>Provider:</strong> {selectedProvider === 'openai' ? 'OpenAI GPT-4o' : 'Claude 3.5 Sonnet'}</p>
+              <p><strong>Provider:</strong> {selectedProvider ? getLlmProviderLabel(selectedProvider as LlmProvider) : 'Unknown'}</p>
               <p><strong>Estimated cost:</strong> ~{formatCost(estimatedCost)} per task</p>
               <p style={{ marginTop: '8px', opacity: 0.8 }}>
                 Consider using the free local Qwen model for privacy and cost savings.

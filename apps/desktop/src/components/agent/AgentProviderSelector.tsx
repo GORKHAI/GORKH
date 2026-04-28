@@ -7,6 +7,8 @@ import {
   testProvider,
   setProviderApiKey,
 } from '../../lib/advancedAgent.js';
+import { isPaidLlmProvider } from '../../lib/llmConfig.js';
+import type { LlmProvider } from '../../lib/llmConfig.js';
 
 interface AgentProviderSelectorProps {
   value: ProviderType | null;
@@ -89,7 +91,7 @@ export function AgentProviderSelector({ value, onChange }: AgentProviderSelector
   };
 
   const isPaidProvider = (provider: ProviderType) =>
-    provider === 'openai' || provider === 'claude' || provider === 'deepseek' || provider === 'kimi';
+    isPaidLlmProvider(provider as LlmProvider);
 
   const styles: Record<string, React.CSSProperties> = {
     container: {
