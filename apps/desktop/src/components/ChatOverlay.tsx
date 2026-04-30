@@ -89,7 +89,8 @@ export function ChatOverlay({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
+        flex: 1,
+        minHeight: 0,
         background: 'rgba(255,255,255,0.72)',
         borderRadius: '22px',
         border: '1px solid rgba(148,163,184,0.22)',
@@ -100,6 +101,7 @@ export function ChatOverlay({
       <div
         style={{
           flex: 1,
+          minHeight: 0,
           overflowY: 'auto',
           padding: '1.25rem',
           display: 'flex',
@@ -163,6 +165,7 @@ export function ChatOverlay({
                 lineHeight: 1.5,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
+                overflowWrap: 'break-word',
               }}
             >
               {msg.text}

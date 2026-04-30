@@ -216,3 +216,69 @@ test('desktop app seeds the greeting from onboarding copy and keeps fresh chat i
     'desktop app should wire a stable background updater flow into the shell instead of leaving update checks settings-only'
   );
 });
+
+test('ChatOverlay message area is scrollable with proper flex constraints', () => {
+  const chatOverlaySource = readFileSync('apps/desktop/src/components/ChatOverlay.tsx', 'utf8');
+
+  assert.match(
+    chatOverlaySource,
+    /overflowY:\s*'auto'/,
+    'ChatOverlay messages area must have overflowY:auto for scrolling'
+  );
+  assert.match(
+    chatOverlaySource,
+    /minHeight:\s*0/,
+    'ChatOverlay must use minHeight:0 to allow flex shrinking'
+  );
+  assert.match(
+    chatOverlaySource,
+    /flex:\s*1/,
+    'ChatOverlay root or message area must use flex:1 to fill available space'
+  );
+  assert.doesNotMatch(
+    chatOverlaySource,
+    /line-clamp|truncate|textOverflow:\s*'ellipsis'/,
+    'ChatOverlay must not truncate message text'
+  );
+  // Note: maxHeight on textarea input is acceptable; message bubbles must not clip
+});
+
+test('ChatOverlay message bubbles wrap long text without clipping', () => {
+  const chatOverlaySource = readFileSync('apps/desktop/src/components/ChatOverlay.tsx', 'utf8');
+
+  assert.match(
+    chatOverlaySource,
+    /whiteSpace:\s*'pre-wrap'/,
+    'Message bubbles must preserve newlines and wrap text'
+  );
+  assert.match(
+    chatOverlaySource,
+    /wordBreak:\s*'break-word'/,
+    'Message bubbles must break long words to prevent horizontal overflow'
+  );
+  assert.match(
+    chatOverlaySource,
+    /overflowWrap:\s*'break-word'/,
+    'Message bubbles must use overflowWrap for reliable long-string wrapping'
+  );
+});
+
+test('App.tsx ChatOverlay wrapper provides a definite height context', () => {
+  const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
+
+  assert.match(
+    appSource,
+    /height:\s*'calc\(100vh - \d+px\)'/,
+    'ChatOverlay wrapper must have a definite height so internal flex scrolling works'
+  );
+  assert.match(
+    appSource,
+    /minHeight:\s*'\d+px'/,
+    'ChatOverlay wrapper must have a minHeight so it does not collapse on small windows'
+  );
+  assert.match(
+    appSource,
+    /display:\s*'flex'[\s\S]{0,200}flexDirection:\s*'column'/,
+    'ChatOverlay wrapper must be a flex column to establish a height context for ChatOverlay'
+  );
+});

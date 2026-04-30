@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "ai-operator-desktop"
-version = "0.0.44"
+version = "0.0.45"
 dependencies = [
  "async-trait",
  "auto-launch",

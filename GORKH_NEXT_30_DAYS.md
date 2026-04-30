@@ -816,7 +816,7 @@ Kimi must update this table at the end of every session.
 
 | Phase | Name | Status | Completion | Blockers | Next Action |
 | --- | --- | --- | ---: | --- | --- |
-| 0 | Stable macOS release gate | Active | 80% | B-007 resolved; B-008 open: conversation parser plain-text fallback + operator intent routing | Human: test 0.0.44 DMG with trash-emptying request |
+| 0 | Stable macOS release gate | Active | 80% | B-007 resolved; B-008 open: conversation parser plain-text fallback + operator intent routing | Human: test 0.0.45 DMG with trash-emptying request |
 | 1 | Computer-use eval harness | Not started | 0% | Phase 0 incomplete | Wait |
 | 2 | Policy engine v1 | Not started | 0% | Phase 1 incomplete | Wait |
 | 3 | Mistral provider behind flag | Not started | 0% | Phase 2 incomplete | Wait |

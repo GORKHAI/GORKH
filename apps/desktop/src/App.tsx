@@ -3248,7 +3248,15 @@ function App() {
                 </div>
               )}
 
-              <div style={{ marginTop: '1rem' }}>
+              <div
+                style={{
+                  marginTop: '1rem',
+                  height: 'calc(100vh - 320px)',
+                  minHeight: '300px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
                 <ChatOverlay
                   messages={messages}
                   status={status}
