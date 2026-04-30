@@ -348,8 +348,8 @@ pub struct RunConstraints {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_conversation_user_prompt, build_user_prompt, parse_conversation_turn_result,
-        repair_unescaped_quotes_in_json,
+        build_conversation_system_prompt, build_conversation_user_prompt, build_user_prompt,
+        parse_conversation_turn_result, repair_unescaped_quotes_in_json,
         ConversationTurnMessage, ConversationTurnResult, RunConstraints,
     };
 
@@ -495,6 +495,77 @@ mod tests {
         );
         assert!(!prompt.contains("Screenshot dimensions"));
         assert!(prompt.contains("CURRENT SCREENSHOT:"));
+    }
+
+    #[test]
+    fn parse_conversation_turn_falls_back_to_reply_for_plain_text() {
+        let plain = "I'd love to help, but I need a bit more context to proceed.";
+        let result = parse_conversation_turn_result(plain).expect("plain text should fallback to reply");
+        match result {
+            ConversationTurnResult::Reply { message } => {
+                assert_eq!(message, plain);
+            }
+            _ => panic!("expected plain text to become a reply"),
+        }
+    }
+
+    #[test]
+    fn parse_conversation_turn_falls_back_to_reply_for_plain_text_with_leading_whitespace() {
+        let plain = "  Sure, I can help with that. What would you like to do?  ";
+        let result = parse_conversation_turn_result(plain).expect("plain text with whitespace should fallback to reply");
+        match result {
+            ConversationTurnResult::Reply { message } => {
+                assert_eq!(message, plain.trim());
+            }
+            _ => panic!("expected plain text to become a reply"),
+        }
+    }
+
+    #[test]
+    fn parse_conversation_turn_accepts_valid_json_reply() {
+        let json = r#"{"kind":"reply","message":"Hello, how can I help?"}"#;
+        let result = parse_conversation_turn_result(json).expect("valid JSON should parse");
+        match result {
+            ConversationTurnResult::Reply { message } => {
+                assert_eq!(message, "Hello, how can I help?");
+            }
+            _ => panic!("expected reply"),
+        }
+    }
+
+    #[test]
+    fn parse_conversation_turn_accepts_valid_json_confirm_task() {
+        let json = r#"{"kind":"confirm_task","goal":"Empty Trash","summary":"I will empty your Mac Trash.","prompt":"Empty the Trash? Confirm?"}"#;
+        let result = parse_conversation_turn_result(json).expect("valid confirm_task JSON should parse");
+        match result {
+            ConversationTurnResult::ConfirmTask { goal, summary, prompt } => {
+                assert_eq!(goal, "Empty Trash");
+                assert_eq!(summary, "I will empty your Mac Trash.");
+                assert_eq!(prompt, "Empty the Trash? Confirm?");
+            }
+            _ => panic!("expected confirm_task"),
+        }
+    }
+
+    #[test]
+    fn conversation_system_prompt_mentions_operator_capabilities() {
+        let prompt = build_conversation_system_prompt(None);
+        assert!(
+            prompt.contains("desktop AI operator"),
+            "prompt should identify GORKH as a desktop operator"
+        );
+        assert!(
+            prompt.contains("propose actions"),
+            "prompt should mention proposing actions"
+        );
+        assert!(
+            prompt.contains("Never claim that GORKH cannot interact with the computer"),
+            "prompt should forbid denying computer interaction"
+        );
+        assert!(
+            prompt.contains("confirm_task"),
+            "prompt should mention confirm_task for actionable requests"
+        );
     }
 }
 
@@ -965,6 +1036,12 @@ GORKH APP TOOLS (always available — use these to read or change GORKH settings
 - settings.set: {{ "tool": "settings.set", "key": "autostart", "value": true }}  // Change a GORKH setting; key must be "autostart" (bool)
 - free_ai.install: {{ "tool": "free_ai.install", "tier": "standard" }}  // Start Free AI installation; tier: "light" | "standard" | "vision"
 Use these when the user asks about their GORKH configuration or asks you to change a setting or set up Free AI.
+
+SYSTEM TOOLS (always available — macOS system actions that require user approval):
+- system.empty_trash: {{ "tool": "system.empty_trash" }}  // Empty the macOS Trash. Destructive — always request explicit approval.
+- system.get_clipboard: {{ "tool": "system.get_clipboard" }}  // Read the system clipboard contents.
+- system.set_clipboard: {{ "tool": "system.set_clipboard", "text": "..." }}  // Write text to the system clipboard.
+Use system.empty_trash when the user asks to empty the Trash or recycle bin. This is destructive and cannot be undone.
 {}{}
 
 OUTPUT FORMAT:
@@ -1045,20 +1122,20 @@ pub fn build_conversation_system_prompt(app_context: Option<&str>) -> String {
     format!(
         "{}{}",
         concat!(
-            "You are GORKH, an AI desktop assistant handling the conversation and intake stage only.\n",
-            "You are not executing tasks in this turn.\n",
-            "Do not start execution from the intake turn.\n",
-            "Ask clarifying questions when details are missing.\n",
-            "Never invent missing details. Never claim execution has started.\n",
+            "You are GORKH, a desktop AI operator.\n",
+            "You do not directly control the computer yourself.\n",
+            "You may propose actions that the GORKH desktop runtime can execute after validation and user approval.\n",
+            "Never claim that GORKH cannot interact with the computer if a supported local tool or action exists.\n",
+            "For privileged or destructive actions, request explicit approval.\n",
             "\n",
-            "You MUST respond with ONLY a valid JSON object. No extra text, no markdown, no explanation.\n",
-            "\n",
-            "When the user request is clear and specific enough to execute, respond with EXACTLY this format:\n",
+            "When the user asks you to do something on their Mac (e.g., empty Trash, open an app, move files),\n",
+            "respond with EXACTLY this format so they can approve it:\n",
             "{\"kind\":\"confirm_task\",\"goal\":\"concise goal\",\"summary\":\"I will ...\",\"prompt\":\"...? Confirm?\"}\n",
             "\n",
-            "For all other responses (greetings, questions, clarifications), respond with EXACTLY this format:\n",
+            "For greetings, questions, or clarifications, respond with EXACTLY this format:\n",
             "{\"kind\":\"reply\",\"message\":\"your reply here\"}\n",
             "\n",
+            "You MUST respond with ONLY a valid JSON object. No extra text, no markdown, no explanation.\n",
             "The JSON must have a \"kind\" field set to either \"reply\" or \"confirm_task\". No other formats are accepted."
         ),
         app_context_section

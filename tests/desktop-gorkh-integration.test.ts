@@ -145,6 +145,37 @@ test('Rust build_system_prompt opens with GORKH identity, not generic assistant'
   );
 });
 
+test('Rust build_system_prompt mentions system tools including empty_trash', () => {
+  assert.match(
+    llmModSource,
+    /system\.empty_trash/,
+    'build_system_prompt must mention system.empty_trash so the model knows it can propose trash emptying'
+  );
+  assert.match(
+    llmModSource,
+    /destructive.*approval|explicit approval/i,
+    'build_system_prompt must warn that empty_trash is destructive and requires approval'
+  );
+});
+
+test('Rust build_conversation_system_prompt mentions operator capabilities', () => {
+  assert.match(
+    llmModSource,
+    /desktop AI operator/,
+    'build_conversation_system_prompt must identify GORKH as a desktop operator, not just a chatbot'
+  );
+  assert.match(
+    llmModSource,
+    /Never claim that GORKH cannot interact with the computer/,
+    'build_conversation_system_prompt must forbid the model from denying computer interaction'
+  );
+  assert.match(
+    llmModSource,
+    /confirm_task/,
+    'build_conversation_system_prompt must mention confirm_task for actionable requests'
+  );
+});
+
 test('Rust build_system_prompt accepts app_context parameter and injects it into the prompt', () => {
   assert.match(
     llmModSource,

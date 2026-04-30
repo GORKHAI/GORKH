@@ -816,7 +816,7 @@ Kimi must update this table at the end of every session.
 
 | Phase | Name | Status | Completion | Blockers | Next Action |
 | --- | --- | --- | ---: | --- | --- |
-| 0 | Stable macOS release gate | Active | 75% | B-003 resolved; B-007 open: /llm/free/chat 400 on some requests | Human: test 0.0.43 DMG with chat follow-up |
+| 0 | Stable macOS release gate | Active | 80% | B-007 resolved; B-008 open: conversation parser plain-text fallback + operator intent routing | Human: test 0.0.44 DMG with trash-emptying request |
 | 1 | Computer-use eval harness | Not started | 0% | Phase 0 incomplete | Wait |
 | 2 | Policy engine v1 | Not started | 0% | Phase 1 incomplete | Wait |
 | 3 | Mistral provider behind flag | Not started | 0% | Phase 2 incomplete | Wait |
@@ -963,6 +963,68 @@ Kimi must append a new entry here after every session.
 
 ---
 
+## 2026-04-30 — Fix conversation parser + operator intent routing for GORKH Free
+
+**Agent:** Kimi  
+**Branch:** `main`  
+**Commit SHA:** `e6fcd6c` (base), new commits pending  
+**Active phase:** 0  
+**Status:** Partial  
+
+### Work completed
+
+- Diagnosed root cause of parse error: `gorkh_free.rs` `conversation_turn` called `parse_json_response` (strict) instead of `parse_conversation_turn_result` (has plain-text fallback). All other providers (OpenAI, Claude, openai_compat) already used the correct function.
+- Fixed `gorkh_free.rs`: changed `parse_json_response` → `parse_conversation_turn_result` so plain-text model responses fallback to `{"kind":"reply","message":"..."}` instead of showing "expected value at line 1 column 1" to the user.
+- Updated `build_conversation_system_prompt`: removed "handling the conversation and intake stage only" language that made the model deny computer interaction. Added explicit guidance that GORKH can propose actions for approval and should use `confirm_task` for actionable requests.
+- Updated `build_system_prompt`: added SYSTEM TOOLS section with `system.empty_trash`, `system.get_clipboard`, `system.set_clipboard`, and approval warnings.
+- Added Rust tests: plain-text fallback, valid JSON reply, valid JSON confirm_task, conversation prompt mentions operator capabilities (5 pass).
+- Added Node.js tests: system prompt mentions empty_trash, conversation prompt mentions operator capabilities (2 pass).
+- Added backend safe 400 logging in previous session still in place.
+
+### Files changed
+
+- `apps/desktop/src-tauri/src/llm/gorkh_free.rs` (use parse_conversation_turn_result)
+- `apps/desktop/src-tauri/src/llm/mod.rs` (updated prompts + tests)
+- `tests/desktop-gorkh-integration.test.ts` (new prompt tests)
+- `tests/api-free-tier.test.mjs` (backend validation tests from previous session)
+
+### Commands run
+
+| Command | Result |
+| --- | --- |
+| `cd apps/desktop/src-tauri && cargo test --lib` | PASS (40/40) |
+| `node --import tsx --test --test-force-exit tests/desktop-*.test.* tests/shared-*.test.* tests/api-free-tier.test.mjs` | PASS (187/187) |
+
+### Test results
+
+- Rust unit tests: 40 passed, 0 failed
+- Node.js desktop/shared/API tests: 187 passed, 0 failed, 0 skipped
+
+### Blockers
+
+- B-001: Real macOS validation required (still open)
+- B-002: Stable DMG install smoke required (still open)
+- B-003: GORKH Free production behavior confirmed in Render logs — Closed
+- B-004: BYO OpenAI/Claude key path must be validated on installed app (still open)
+- B-007: `/llm/free/chat` returns 400 for some installed-app requests — Closed. Role normalization fix confirmed working.
+- B-008: GORKH Free conversation parser fails on plain-text model output and operator requests are handled as chatbot guidance — Root cause found and fixed. Needs new DMG validation.
+
+### Decisions made
+
+- `parse_conversation_turn_result` (with plain-text fallback) is the correct parser for all provider `conversation_turn` implementations. `parse_json_response` is only for strict proposal parsing.
+- Conversation system prompt must explicitly tell the model it CAN propose actions, or small models default to generic "I cannot interact with your computer" responses.
+- System tools like `empty_trash` must be listed in the action system prompt so the model knows they exist.
+
+### Next recommended action
+
+- Human must build new DMG with this fix and reinstall
+- Test: "Can you help me empty my Mac Trash?"
+- Verify assistant responds with `confirm_task` JSON (approval dialog) or a helpful reply, NOT a parse error
+- Verify assistant does NOT say "I cannot interact with your computer"
+- Continue Phase 0 smoke tests: BYO key, TextEdit MVP
+
+---
+
 ## YYYY-MM-DD — Session title
 
 **Agent:** Kimi / Claude Code / Human  
@@ -1016,7 +1078,8 @@ Kimi must keep this list current.
 | B-004 | BYO OpenAI/Claude key path must be validated on installed app | 0 | Medium | Human | Open | Keychain-only storage required |
 | B-005 | App focus after `open_app` may be fragile | 1/2 | Medium | Kimi | Open | Needs eval/manual test |
 | B-006 | Multi-monitor real-device validation missing | 1/2 | Medium | Human/Kimi | Open | Not blocking single-monitor MVP |
-| B-007 | `/llm/free/chat` returns 400 for some installed-app requests | 0 | High | Kimi | Open | Root cause: frontend "agent" role rejected by backend schema. Fix applied in Rust `gorkh_free.rs`. Needs new DMG validation. |
+| B-007 | `/llm/free/chat` returns 400 for some installed-app requests | 0 | High | Kimi | Closed | Role normalization fix confirmed working in 0.0.43 |
+| B-008 | GORKH Free conversation parser fails on plain-text model output and operator requests are handled as chatbot guidance | 0 | High | Kimi | Open | Root cause: `gorkh_free.rs` used strict parser instead of fallback parser. System prompt denied computer interaction. Fix applied. Needs new DMG validation. |
 
 ---
 
@@ -1036,6 +1099,9 @@ Kimi must append architectural/product decisions here.
 | 2026-04-30 | Rust `resolve_llm_api_key` returns empty string for `gorkh_free` | Device token comes from frontend keychain/session, not static keychain entry | `apiKeyOverride` (device token) flows into `GorkhFreeProvider` auth header |
 | 2026-04-30 | Normalize `"agent"` → `"assistant"` in Rust `GorkhFreeProvider` | Frontend uses "agent" for UI; backend schema accepts standard LLM roles only | `build_conversation_body` translates roles at the provider boundary |
 | 2026-04-30 | Safe 400 logging for `/llm/free/chat` | Need to diagnose production 400s without exposing secrets or message content | Backend logs validation paths, roles, counts, auth type — never content or keys |
+| 2026-04-30 | `parse_conversation_turn_result` is the canonical parser for all provider conversation turns | `gorkh_free.rs` used strict `parse_json_response` causing plain-text responses to surface parse errors to users | All providers now use the same forgiving parser with plain-text fallback |
+| 2026-04-30 | Conversation system prompt must authorize action proposals | Small models default to "I cannot interact with your computer" if not explicitly told otherwise | Prompt now says GORKH can propose actions and should use `confirm_task` for operator requests |
+| 2026-04-30 | System tools must be listed in action system prompt | Model did not know `empty_trash` existed | `build_system_prompt` now includes SYSTEM TOOLS section with empty_trash, clipboard, move_files |
 
 ---
 

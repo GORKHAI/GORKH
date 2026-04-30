@@ -286,7 +286,7 @@ impl LlmProvider for GorkhFreeProvider {
             other => other.to_string(),
         };
 
-        super::parse_json_response::<ConversationTurnResult>(&content, "conversation turn")
+        super::parse_conversation_turn_result(&content)
     }
 }
 
