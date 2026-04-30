@@ -467,6 +467,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install create-dmg for Tauri DMG bundling
+        run: brew install create-dmg
+
       - name: Install dependencies
         run: pnpm -r install --frozen-lockfile
 
