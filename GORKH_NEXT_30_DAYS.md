@@ -1224,3 +1224,96 @@ Final response after first session must include:
 5. DMG/native checks still requiring human Mac validation
 6. Whether Phase 0 is pass/fail
 7. Next recommended human action
+
+
+---
+
+# 17. NEXT SESSION CONTINUATION — STOP HERE
+
+> **This section is written by the current agent before handing off.**
+> **The next agent MUST read this first and continue from here.**
+
+## Current State (as of end of this session)
+
+- **Working tree:** clean — everything committed and pushed to `origin/main`
+- **Latest tag:** `v0.0.47` (pushed to origin)
+- **Latest commit:** `e41a884` — "feat(desktop): deterministic operator-intent router + GORKH persona guard"
+- **Active phase:** 0 (Stable macOS release gate)
+- **Phase 0 completion:** ~85%
+
+## What was just shipped
+
+1. **Deterministic operator-intent router** (`apps/desktop/src/lib/operatorIntentRouter.ts`)
+   - Keyword/rule-based v1 classifier before LLM call
+   - Routes: empty_trash (high-risk), open_app, open_terminal, computer_use_task, file_management, informational_capability
+   - Canned GORKH reply for capability questions — never DeepSeek
+   - Specific permission guidance instead of generic refusal
+
+2. **App.tsx integration**
+   - `handleSendMessage` now calls `classifyOperatorIntent()` before `startAssistantConversation()`
+   - Operator intents set `pendingTaskConfirmation` directly (no LLM chat call)
+   - Permission checks (accessibility, screen, workspace) run before confirmation
+   - Normal chat still falls through to `/llm/free/chat`
+
+3. **Rust prompt strengthening** (`apps/desktop/src-tauri/src/llm/mod.rs`)
+   - `build_conversation_system_prompt` now explicitly forbids DeepSeek identity
+   - Blocks dangerous manual terminal command suggestions
+
+4. **CI fix** (`.github/workflows/desktop-release.yml`)
+   - Added `brew install create-dmg` for macOS DMG bundling
+
+5. **Tests**
+   - `tests/operator-intent-router.test.ts` — 9 unit tests (all pass)
+   - `tests/desktop-chat-entry.test.ts` — 4 new integration source-tests
+
+## Open Blockers Requiring Human Validation
+
+| Blocker | Description | What to test |
+|---|---|---|
+| **B-008** | Operator-intent router shipped but NOT yet validated on real installed Mac | Install v0.0.47 DMG, test: "Empty my Mac Trash", "Open Terminal", "What can you do", "Click the OK button" (with/without Accessibility) |
+| **B-004** | BYO OpenAI/Claude key path not validated on installed app | Add OpenAI key in Settings, verify chat works |
+| **B-005** | App focus after `open_app` may be fragile | After opening Terminal via approval, verify Terminal gets focus |
+| **B-006** | Multi-monitor real-device validation missing | Not blocking single-monitor MVP |
+
+## Pre-existing Test Failure (Unrelated)
+
+- `tests/api-desktop-session.test.mjs` — "desktop session helper revokes only the addressed device token and leaves sibling devices untouched" — **failing before and after this session**. Not related to any changes made. Do not investigate unless specifically asked.
+
+## What the Next Agent Should Do
+
+**WAIT for human feedback on v0.0.47 DMG before making more code changes.**
+
+The human needs to:
+1. Download the v0.0.47 DMG from GitHub Releases
+2. Install and run on real Mac
+3. Test the 5 operator-intent cases listed above
+4. Report back which cases pass/fail and the exact reply text for failures
+
+**If human reports failures**, the next agent should:
+1. Read the exact failure descriptions from the human
+2. Refine `operatorIntentRouter.ts` regex patterns or classification logic
+3. Adjust `App.tsx` routing if edge cases are found
+4. Strengthen Rust prompts further if the model still misbehaves on edge cases
+5. Run tests: `pnpm -w typecheck && pnpm -w test`
+6. Bump version, commit, tag, push
+
+**If human reports all cases pass**, the next agent should:
+1. Update GORKH_NEXT_30_DAYS.md: mark B-008 resolved, Phase 0 completion to ~90%
+2. Focus on remaining blockers: B-004 (BYO key validation), B-005 (app focus)
+3. Consider whether Phase 0 exit criteria are met for stable tag promotion
+
+## DO NOT (next agent constraints)
+
+- Do NOT start Phase 1
+- Do NOT reintroduce local AI / Ollama
+- Do NOT switch to AdvancedAgent
+- Do NOT implement Mistral or Blender
+- Do NOT build policy engine
+- Do NOT make speculative code changes without human test feedback
+
+## Files to Read First (next agent)
+
+1. `GORKH_NEXT_30_DAYS.md` (this file) — Phase Status Board
+2. `apps/desktop/src/lib/operatorIntentRouter.ts` — router logic
+3. `apps/desktop/src/App.tsx` — around `handleSendMessage` (line ~1726)
+4. Human's feedback message (if any) about v0.0.47 DMG testing
