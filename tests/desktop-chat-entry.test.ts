@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { GORKH_CAPABILITIES_REPLY } from '../apps/desktop/src/lib/operatorIntentRouter.js';
 
 interface MinimalRun {
   runId: string;
@@ -280,5 +281,90 @@ test('App.tsx ChatOverlay wrapper provides a definite height context', () => {
     appSource,
     /display:\s*'flex'[\s\S]{0,200}flexDirection:\s*'column'/,
     'ChatOverlay wrapper must be a flex column to establish a height context for ChatOverlay'
+  );
+});
+
+test('App.tsx integrates operator-intent router before assistantConversationTurn', () => {
+  const appSource = readFileSync('apps/desktop/src/App.tsx', 'utf8');
+
+  assert.match(
+    appSource,
+    /classifyOperatorIntent/,
+    'App.tsx must import and use classifyOperatorIntent'
+  );
+  assert.match(
+    appSource,
+    /GORKH_CAPABILITIES_REPLY/,
+    'App.tsx must use the canned GORKH capabilities reply for capability questions'
+  );
+  assert.match(
+    appSource,
+    /ACCESSIBILITY_PERMISSION_GUIDANCE/,
+    'App.tsx must show specific accessibility guidance instead of generic refusal'
+  );
+  assert.match(
+    appSource,
+    /setPendingTaskConfirmation/,
+    'App.tsx must set pending task confirmation for operator intents'
+  );
+  assert.match(
+    appSource,
+    /intent\.type !== 'chat'/,
+    'App.tsx must route operator intents away from normal chat'
+  );
+});
+
+test('operator intent router file exists and exports expected members', () => {
+  const routerSource = readFileSync('apps/desktop/src/lib/operatorIntentRouter.ts', 'utf8');
+
+  assert.match(
+    routerSource,
+    /export function classifyOperatorIntent/,
+    'Router must export classifyOperatorIntent'
+  );
+  assert.match(
+    routerSource,
+    /export const GORKH_CAPABILITIES_REPLY/,
+    'Router must export GORKH_CAPABILITIES_REPLY'
+  );
+  assert.match(
+    routerSource,
+    /export const ACCESSIBILITY_PERMISSION_GUIDANCE/,
+    'Router must export ACCESSIBILITY_PERMISSION_GUIDANCE'
+  );
+  assert.doesNotMatch(
+    GORKH_CAPABILITIES_REPLY,
+    /DeepSeek/,
+    'GORKH_CAPABILITIES_REPLY must not mention DeepSeek'
+  );
+  assert.doesNotMatch(
+    routerSource,
+    /rm -rf/,
+    'Router must not suggest dangerous terminal commands'
+  );
+});
+
+
+test('Rust build_conversation_system_prompt forbids DeepSeek identity', () => {
+  const rustSource = readFileSync('apps/desktop/src-tauri/src/llm/mod.rs', 'utf8');
+  const promptFn = rustSource.slice(
+    rustSource.indexOf('pub fn build_conversation_system_prompt'),
+    rustSource.indexOf('pub fn build_conversation_user_prompt')
+  );
+
+  assert.match(
+    promptFn,
+    /do NOT identify as DeepSeek/,
+    'Conversation prompt must explicitly forbid DeepSeek identity'
+  );
+  assert.match(
+    promptFn,
+    /Always speak as GORKH/,
+    'Conversation prompt must enforce GORKH persona'
+  );
+  assert.match(
+    promptFn,
+    /NEVER suggest manual terminal commands/,
+    'Conversation prompt must block dangerous manual terminal suggestions'
   );
 });

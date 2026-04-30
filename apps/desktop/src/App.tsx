@@ -60,6 +60,12 @@ import {
   isAssistantRunActive,
   type AssistantTaskConfirmation,
 } from './lib/chatTaskFlow.js';
+import {
+  classifyOperatorIntent,
+  GORKH_CAPABILITIES_REPLY,
+  ACCESSIBILITY_PERMISSION_GUIDANCE,
+  SCREEN_PERMISSION_GUIDANCE,
+} from './lib/operatorIntentRouter.js';
 import type {
   AssistantConversationMessage,
   AssistantConversationTurnResult,
@@ -1759,6 +1765,62 @@ function App() {
           createChatItem('agent', 'Sign in and reconnect this desktop before asking the assistant to work.'),
         ]);
         return;
+      }
+
+      // Operator-intent router: deterministic classification before LLM call.
+      // When the user asks for concrete actions (empty Trash, open app, click, type),
+      // we skip generic chat and route directly into the GORKH task/approval flow.
+      if (!isAssistantRunActive(activeRun)) {
+        const intent = classifyOperatorIntent(trimmed);
+
+        if (intent.type === 'informational_capability') {
+          setMessages((prev) => [
+            ...prev,
+            createChatItem('agent', GORKH_CAPABILITIES_REPLY),
+          ]);
+          return;
+        }
+
+        if (intent.type !== 'chat') {
+          // Operator intent detected — check required permissions before confirming
+          const permissionBlockers: string[] = [];
+
+          if (intent.requiresAccessibility && permissionStatus.accessibility !== 'granted') {
+            permissionBlockers.push(ACCESSIBILITY_PERMISSION_GUIDANCE);
+          }
+
+          if (intent.requiresScreen && permissionStatus.screenRecording !== 'granted') {
+            permissionBlockers.push(SCREEN_PERMISSION_GUIDANCE);
+          }
+
+          if (permissionBlockers.length > 0) {
+            setMessages((prev) => [
+              ...prev,
+              createChatItem('agent', permissionBlockers.join(' ')),
+            ]);
+            return;
+          }
+
+          // Workspace check for file-management tasks
+          if (intent.requiresWorkspace && !workspaceState.configured) {
+            setMessages((prev) => [
+              ...prev,
+              createChatItem(
+                'agent',
+                'I can help with file operations, but I need a workspace folder configured first. Please open Settings and choose a workspace directory, then try again.'
+              ),
+            ]);
+            return;
+          }
+
+          setPendingTaskConfirmation({
+            goal: intent.goal!,
+            summary: intent.summary!,
+            prompt: intent.prompt!,
+            providerMode: llmSettings.provider === 'gorkh_free' ? 'hosted_free_ai' : 'local',
+          });
+          return;
+        }
       }
 
       if (isAssistantRunActive(activeRun)) {
