@@ -104,3 +104,35 @@ test('free tier route rejects oversized input', () => {
     'Route should reject input exceeding 16k token estimate'
   );
 });
+
+test('free tier route logs validation failures safely', () => {
+  const source = readFileSync(freeRoutePath, 'utf8');
+  assert.match(
+    source,
+    /phase: 'free_tier_validation_failed'/,
+    'Route should log validation failures with safe metadata'
+  );
+  assert.doesNotMatch(
+    source,
+    /log.*content.*message/i,
+    'Route should not log message content in validation failure logs'
+  );
+});
+
+test('free tier route accepts standard LLM message roles', () => {
+  const source = readFileSync(freeRoutePath, 'utf8');
+  assert.match(
+    source,
+    /z\.enum\(\['user', 'assistant', 'system', 'tool'\]\)/,
+    'Schema should accept standard LLM roles'
+  );
+});
+
+test('free tier route rejects invalid message roles', () => {
+  const source = readFileSync(freeRoutePath, 'utf8');
+  assert.match(
+    source,
+    /invalid_request/,
+    'Route should return invalid_request for schema violations'
+  );
+});

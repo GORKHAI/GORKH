@@ -104,7 +104,14 @@ impl GorkhFreeProvider {
             .messages
             .iter()
             .map(|m| GorkhFreeMessage {
-                role: m.role.clone(),
+                // The desktop frontend uses "agent" for assistant messages in chat history,
+                // but the backend /llm/free/chat schema only accepts standard LLM roles:
+                // "user", "assistant", "system", "tool". Normalize here at the provider boundary.
+                role: if m.role == "agent" {
+                    "assistant".to_string()
+                } else {
+                    m.role.clone()
+                },
                 content: serde_json::Value::String(m.text.clone()),
             })
             .collect();
@@ -280,5 +287,64 @@ impl LlmProvider for GorkhFreeProvider {
         };
 
         super::parse_json_response::<ConversationTurnResult>(&content, "conversation turn")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::ConversationTurnMessage;
+
+    #[test]
+    fn build_conversation_body_normalizes_agent_role_to_assistant() {
+        let params = super::super::ConversationTurnParams {
+            provider: "gorkh_free".to_string(),
+            base_url: "https://api.example.com".to_string(),
+            model: "deepseek-chat".to_string(),
+            api_key: "test-token".to_string(),
+            messages: vec![
+                ConversationTurnMessage {
+                    role: "user".to_string(),
+                    text: "Hello".to_string(),
+                },
+                ConversationTurnMessage {
+                    role: "agent".to_string(),
+                    text: "Hi there".to_string(),
+                },
+                ConversationTurnMessage {
+                    role: "system".to_string(),
+                    text: "You are GORKH".to_string(),
+                },
+            ],
+            app_context: None,
+            correlation_id: None,
+        };
+
+        let body = GorkhFreeProvider::build_conversation_body(&params);
+        assert_eq!(body.messages.len(), 3);
+        assert_eq!(body.messages[0].role, "user");
+        assert_eq!(body.messages[1].role, "assistant", "agent role should be normalized to assistant");
+        assert_eq!(body.messages[2].role, "system");
+    }
+
+    #[test]
+    fn build_conversation_body_preserves_assistant_role() {
+        let params = super::super::ConversationTurnParams {
+            provider: "gorkh_free".to_string(),
+            base_url: "https://api.example.com".to_string(),
+            model: "deepseek-chat".to_string(),
+            api_key: "test-token".to_string(),
+            messages: vec![
+                ConversationTurnMessage {
+                    role: "assistant".to_string(),
+                    text: "Hello".to_string(),
+                },
+            ],
+            app_context: None,
+            correlation_id: None,
+        };
+
+        let body = GorkhFreeProvider::build_conversation_body(&params);
+        assert_eq!(body.messages[0].role, "assistant");
     }
 }

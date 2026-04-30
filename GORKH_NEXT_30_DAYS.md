@@ -816,7 +816,7 @@ Kimi must update this table at the end of every session.
 
 | Phase | Name | Status | Completion | Blockers | Next Action |
 | --- | --- | --- | ---: | --- | --- |
-| 0 | Stable macOS release gate | Active | 65% | Real Mac validation required | Human: build DMG on real Mac and run native smoke |
+| 0 | Stable macOS release gate | Active | 75% | B-003 resolved; B-007 open: /llm/free/chat 400 on some requests | Human: test 0.0.43 DMG with chat follow-up |
 | 1 | Computer-use eval harness | Not started | 0% | Phase 0 incomplete | Wait |
 | 2 | Policy engine v1 | Not started | 0% | Phase 1 incomplete | Wait |
 | 3 | Mistral provider behind flag | Not started | 0% | Phase 2 incomplete | Wait |
@@ -900,6 +900,69 @@ Kimi must append a new entry here after every session.
 
 ---
 
+## 2026-04-30 — Diagnose /llm/free/chat 400 in installed 0.0.42
+
+**Agent:** Kimi  
+**Branch:** `main`  
+**Commit SHA:** `be16718` (base), new commits pending  
+**Active phase:** 0  
+**Status:** Partial  
+
+### Work completed
+
+- Diagnosed 400 root cause: frontend `ChatItem.role` is `'user' | 'agent'`, but backend `/llm/free/chat` schema only accepts `['user', 'assistant', 'system', 'tool']`. The `conversation_turn` path passes raw messages through `GorkhFreeProvider`, so `"agent"` fails zod validation.
+- Why first request worked: `propose_next_action` builds its own messages with `role: "system"` and `role: "user"` — both valid.
+- Why second request failed: `conversation_turn` maps frontend chat history directly, containing `"agent"` roles.
+- Fixed Rust `gorkh_free.rs`: `build_conversation_body` now normalizes `"agent"` → `"assistant"` before sending to backend.
+- Added backend safe 400 logging in `free.ts`: logs validation failure path, message count, roles present, auth type, quota state — no content, no secrets.
+- Added backend logging for `input_too_large` and `upstream_bad_request` cases.
+- Added Rust tests: `build_conversation_body_normalizes_agent_role_to_assistant` and `build_conversation_body_preserves_assistant_role` (2 pass).
+- Added Node.js backend tests: validation failure logging, schema role acceptance, invalid role rejection (4 pass).
+- Verified `refreshFreeTierUsage()` is already called after successful turn in App.tsx. User not seeing `GET /llm/free/usage` may be log truncation or the 400 failure path skipping refresh.
+
+### Files changed
+
+- `apps/desktop/src-tauri/src/llm/gorkh_free.rs` (role normalization + tests)
+- `apps/api/src/routes/free.ts` (safe 400 logging)
+- `tests/api-free-tier.test.mjs` (new backend validation tests)
+
+### Commands run
+
+| Command | Result |
+| --- | --- |
+| `cd apps/desktop/src-tauri && cargo test --lib` | PASS (35/35) |
+| `node --import tsx --test --test-force-exit tests/api-free-tier.test.mjs` | PASS (8/8) |
+| `node --import tsx --test --test-force-exit tests/desktop-*.test.* tests/shared-*.test.*` | PASS (177/177) |
+
+### Test results
+
+- Rust unit tests: 35 passed, 0 failed
+- Node.js desktop/shared tests: 177 passed, 0 failed
+- Node.js API tests: 8 passed, 0 failed
+
+### Blockers
+
+- B-001: Real macOS validation required (still open)
+- B-002: Stable DMG install smoke required (still open)
+- B-003: GORKH Free production behavior confirmed in Render logs — RESOLVED. `POST /llm/free/chat` appears.
+- B-004: BYO OpenAI/Claude key path must be validated on installed app (still open)
+- B-007: `/llm/free/chat` returns 400 for some installed-app requests — ROOT CAUSE FOUND, FIX APPLIED. Needs new DMG validation.
+
+### Decisions made
+
+- Normalize `"agent"` → `"assistant"` at the Rust provider boundary, not in frontend or backend. Frontend uses "agent" for UI clarity; backend uses standard LLM roles. The provider is the right translation layer.
+- Safe 400 logging must never include message content, API keys, or tokens. Only metadata: roles, counts, paths, auth type.
+
+### Next recommended action
+
+- Human must build new DMG with this fix and reinstall
+- Test chat follow-up (multi-turn conversation) with GORKH Free
+- Verify no more 400s in Render logs
+- Check that `GET /llm/free/usage` appears after successful chat turns
+- Continue Phase 0 smoke tests: BYO key, TextEdit MVP
+
+---
+
 ## YYYY-MM-DD — Session title
 
 **Agent:** Kimi / Claude Code / Human  
@@ -949,10 +1012,11 @@ Kimi must keep this list current.
 | --- | --- | --- | --- | --- | --- | --- |
 | B-001 | Real macOS validation required | 0 | High | Human | Open | Codespace cannot validate screen capture/input injection |
 | B-002 | Stable DMG install smoke required | 0 | High | Human | Open | Must test installed app before stable tag |
-| B-003 | GORKH Free production behavior must be confirmed in Render logs | 0 | High | Human/Kimi | Open | Expect `POST /llm/free/chat`. Code fix applied; needs real Mac validation. |
+| B-003 | GORKH Free production behavior must be confirmed in Render logs | 0 | High | Human/Kimi | Closed | `POST /llm/free/chat` confirmed in Render logs for 0.0.42 |
 | B-004 | BYO OpenAI/Claude key path must be validated on installed app | 0 | Medium | Human | Open | Keychain-only storage required |
 | B-005 | App focus after `open_app` may be fragile | 1/2 | Medium | Kimi | Open | Needs eval/manual test |
 | B-006 | Multi-monitor real-device validation missing | 1/2 | Medium | Human/Kimi | Open | Not blocking single-monitor MVP |
+| B-007 | `/llm/free/chat` returns 400 for some installed-app requests | 0 | High | Kimi | Open | Root cause: frontend "agent" role rejected by backend schema. Fix applied in Rust `gorkh_free.rs`. Needs new DMG validation. |
 
 ---
 
@@ -970,6 +1034,8 @@ Kimi must append architectural/product decisions here.
 | 2026-04-30 | Remove `FREE_AI_ENABLED` build flag as runtime gate for GORKH Free | Production builds may omit the flag, silently breaking free tier | `gorkh_free` readiness now depends only on `sessionToken` |
 | 2026-04-30 | SettingsPanel tests `gorkh_free` via hosted fallback endpoint | Generic `test_provider` expects BYO keychain key and fails for free tier | Hosted fallback gives accurate connectivity + auth signal |
 | 2026-04-30 | Rust `resolve_llm_api_key` returns empty string for `gorkh_free` | Device token comes from frontend keychain/session, not static keychain entry | `apiKeyOverride` (device token) flows into `GorkhFreeProvider` auth header |
+| 2026-04-30 | Normalize `"agent"` → `"assistant"` in Rust `GorkhFreeProvider` | Frontend uses "agent" for UI; backend schema accepts standard LLM roles only | `build_conversation_body` translates roles at the provider boundary |
+| 2026-04-30 | Safe 400 logging for `/llm/free/chat` | Need to diagnose production 400s without exposing secrets or message content | Backend logs validation paths, roles, counts, auth type — never content or keys |
 
 ---
 

@@ -185,6 +185,23 @@ export async function registerFreeTierRoutes(fastify: FastifyInstance): Promise<
     // Validate body
     const parseResult = freeChatRequestSchema.safeParse(request.body);
     if (!parseResult.success) {
+      const rawBody = request.body as Record<string, unknown> | undefined;
+      const messages = Array.isArray(rawBody?.messages) ? rawBody.messages as Array<{ role?: unknown }> : [];
+      const roles = messages.map((m) => typeof m.role === 'string' ? m.role : 'unknown');
+      fastify.log.warn({
+        phase: 'free_tier_validation_failed',
+        correlationId,
+        userId: user.userId,
+        authType: user.authType,
+        requestId,
+        errorPaths: parseResult.error.issues.map((i) => i.path.join('.')),
+        errorMessages: parseResult.error.issues.map((i) => i.message),
+        messageCount: messages.length,
+        roles,
+        hasMaxTokens: typeof rawBody?.max_tokens === 'number',
+        hasTemperature: typeof rawBody?.temperature === 'number',
+      }, 'Free tier request validation failed');
+
       reply.status(400);
       return {
         error: 'invalid_request',
@@ -196,6 +213,17 @@ export async function registerFreeTierRoutes(fastify: FastifyInstance): Promise<
     // Input size check
     const estimatedInputTokens = estimateInputTokens(body.messages);
     if (estimatedInputTokens > FREE_TIER_MAX_INPUT_TOKENS_PER_TASK) {
+      fastify.log.warn({
+        phase: 'free_tier_input_too_large',
+        correlationId,
+        userId: user.userId,
+        authType: user.authType,
+        requestId,
+        estimatedInputTokens,
+        limit: FREE_TIER_MAX_INPUT_TOKENS_PER_TASK,
+        messageCount: body.messages.length,
+      }, 'Free tier input too large');
+
       reply.status(400);
       return {
         error: 'input_too_large',
@@ -334,6 +362,16 @@ export async function registerFreeTierRoutes(fastify: FastifyInstance): Promise<
       const inputTokens = deepseekJson?.usage?.prompt_tokens ?? estimatedInputTokens;
       const outputTokens = deepseekJson?.usage?.completion_tokens ?? 0;
       const cost = calculateDeepSeekCost(inputTokens, outputTokens);
+
+      fastify.log.warn({
+        phase: 'free_tier_upstream_bad_request',
+        correlationId,
+        userId: user.userId,
+        authType: user.authType,
+        requestId,
+        upstreamStatus: deepseekResponse.status,
+        messageCount: body.messages.length,
+      }, 'Free tier upstream returned 4xx');
 
       await recordCompletion(
         user.userId,
