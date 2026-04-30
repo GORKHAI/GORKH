@@ -41,6 +41,28 @@ test('launch-facing provider list contains only cloud and hosted providers', () 
   );
 });
 
+test('default new user provider is gorkh_free and does not require an API key', () => {
+  const llmConfigSource = readFileSync('apps/desktop/src/lib/llmConfig.ts', 'utf8');
+
+  assert.match(
+    llmConfigSource,
+    /export\s+const\s+DEFAULT_NEW_USER_PROVIDER:\s*LlmProvider\s*=\s*['"]gorkh_free['"]/,
+    'DEFAULT_NEW_USER_PROVIDER must be gorkh_free'
+  );
+
+  assert.match(
+    llmConfigSource,
+    /gorkh_free:[\s\S]{0,400}requiresApiKey:\s*false/,
+    'gorkh_free must not require a BYO API key'
+  );
+
+  assert.doesNotMatch(
+    llmConfigSource,
+    /providerRequiresApiKey\s*\(\s*['"]gorkh_free['"]\s*\)/,
+    'llmConfig.ts must not have any special-cased API key logic for gorkh_free outside the provider definition'
+  );
+});
+
 test('GORKH Free is correctly described as a hosted tier with no local setup', () => {
   const llmConfigSource = readFileSync('apps/desktop/src/lib/llmConfig.ts', 'utf8');
 

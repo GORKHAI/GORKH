@@ -311,7 +311,7 @@ function App() {
   const [aiState, setAiState] = useState<AssistantEngineState | null>(null);
   const [currentProposal, setCurrentProposal] = useState<AgentProposal | undefined>(undefined);
   const [llmSettings, setLlmSettings] = useState<LlmSettings>(() =>
-    getLlmDefaults(FREE_AI_ENABLED ? DEFAULT_NEW_USER_PROVIDER : 'openai')
+    getLlmDefaults(DEFAULT_NEW_USER_PROVIDER)
   );
   const [providerStatusState, setProviderStatusState] = useState(getProviderStatus);
   const [settingsOpen, setSettingsOpen] = useState(false);

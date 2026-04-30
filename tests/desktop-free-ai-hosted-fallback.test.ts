@@ -157,3 +157,19 @@ test('desktop app and local-compatible provider keep a hosted Free AI execution 
     'OpenAI-compatible Rust provider should use a shared HTTP client constructor for hosted backends'
   );
 });
+
+test('SettingsPanel tests gorkh_free through hosted fallback with device token auth', () => {
+  const settingsSource = readFileSync('apps/desktop/src/components/SettingsPanel.tsx', 'utf8');
+
+  assert.match(
+    settingsSource,
+    /if\s*\(\s*settings\.provider\s*===\s*['"]gorkh_free['"]\s*\)\s*\{[\s\S]{0,600}testHostedFreeAiFallback/,
+    'SettingsPanel must route gorkh_free test through testHostedFreeAiFallback'
+  );
+
+  assert.doesNotMatch(
+    settingsSource,
+    /settings\.provider\s*===\s*['"]gorkh_free['"][\s\S]{0,200}invoke\s*\(\s*['"]test_provider['"]/,
+    'SettingsPanel must not call test_provider for gorkh_free'
+  );
+});

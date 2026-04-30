@@ -1,7 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
   ALL_PROVIDER_ORDER,
-  FREE_AI_ENABLED,
   providerRequiresApiKey,
   type LlmProvider,
 } from '../lib/llmConfig.js';
@@ -111,7 +110,9 @@ export function setSessionToken(token: string | null): void {
 
 async function checkProviderConfigured(provider: LlmProvider): Promise<boolean> {
   if (provider === 'gorkh_free') {
-    return FREE_AI_ENABLED && Boolean(sessionToken);
+    // GORKH Free is a hosted tier that requires desktop sign-in (device token),
+    // not a BYO API key. Backend enforces quota and availability.
+    return Boolean(sessionToken);
   }
 
   if (!providerRequiresApiKey(provider)) {

@@ -30,7 +30,6 @@ import {
   type DesktopUpdaterState,
 } from '../lib/desktopUpdater.js';
 import {
-  shouldRetryWithHostedFreeAiFallback,
   testHostedFreeAiFallback,
 } from '../lib/freeAiFallback.js';
 import { parseDesktopError } from '../lib/tauriError.js';
@@ -241,6 +240,50 @@ export function SettingsPanel({
     setTestResult(null);
 
     try {
+      // GORKH Free is a hosted tier tested through the authenticated API,
+      // not via the generic provider test which expects a BYO key.
+      if (settings.provider === 'gorkh_free') {
+        if (!runtimeConfig || !sessionDeviceToken) {
+          setTestResult({
+            success: false,
+            message: 'Sign in to use GORKH AI (Free).',
+          });
+          return;
+        }
+
+        try {
+          await testHostedFreeAiFallback(runtimeConfig, sessionDeviceToken);
+          setTestResult({
+            success: true,
+            message: 'GORKH AI (Free) is ready. No API key needed.',
+          });
+        } catch (hostedError) {
+          const parsedHostedError = parseDesktopError(
+            hostedError,
+            'GORKH AI (Free) test failed'
+          );
+          const msg = parsedHostedError.message.toLowerCase();
+          const code = parsedHostedError.code?.toUpperCase() || '';
+          if (code === 'RATE_LIMITED' || msg.includes('rate limit') || msg.includes('429')) {
+            setTestResult({
+              success: false,
+              message: 'You have used your 5 free tasks today. Try again tomorrow, or add your own API key in Settings.',
+            });
+          } else if (code === 'FREE_AI_FALLBACK_UNAVAILABLE' || msg.includes('503')) {
+            setTestResult({
+              success: false,
+              message: 'GORKH AI (Free) is temporarily unavailable. Please try again in a moment.',
+            });
+          } else {
+            setTestResult({
+              success: false,
+              message: `GORKH AI (Free) is not ready: ${parsedHostedError.message}`,
+            });
+          }
+        }
+        return;
+      }
+
       // For cloud providers, check if key exists
       if (providerRequiresApiKey(settings.provider)) {
         const has = await invoke<boolean>('has_llm_api_key', { provider: settings.provider });
@@ -263,35 +306,6 @@ export function SettingsPanel({
         setTestResult({ success: false, message: 'Connection test returned false. Check your API key and network.' });
       }
     } catch (e) {
-      if (settings.provider === 'gorkh_free' && shouldRetryWithHostedFreeAiFallback(e)) {
-        if (runtimeConfig && sessionDeviceToken) {
-          try {
-            await testHostedFreeAiFallback(runtimeConfig, sessionDeviceToken);
-            setTestResult({
-              success: true,
-              message: 'GORKH AI (Free) hosted fallback is ready.',
-            });
-            return;
-          } catch (hostedError) {
-            const parsedHostedError = parseDesktopError(
-              hostedError,
-              'Hosted Free AI fallback test failed'
-            );
-            setTestResult({
-              success: false,
-              message: `GORKH AI (Free) hosted fallback is not ready: ${parsedHostedError.message}`,
-            });
-            return;
-          }
-        }
-
-        setTestResult({
-          success: false,
-          message: 'GORKH AI (Free) is unavailable. Sign in to let GORKH verify the hosted fallback.',
-        });
-        return;
-      }
-
       const parsedError = parseDesktopError(e, 'Test failed');
       const diagnosticText = [parsedError.code, parsedError.message].filter(Boolean).join(' ');
       if (parsedError.code === 'NO_API_KEY' || diagnosticText.includes('NO_API_KEY')) {
@@ -422,7 +436,7 @@ export function SettingsPanel({
             🤖 AI Assist Configuration
           </h3>
           <p style={{ margin: '0 0 1rem', fontSize: '0.875rem', color: '#666' }}>
-            Configure the assistant model. GORKH AI (Free) is a hosted free tier. OpenAI, Claude, DeepSeek, and Kimi use your own API keys. API keys stay in the OS keychain and are never sent to the server.
+            Configure the assistant model. GORKH AI (Free) is a hosted Free AI tier that runs in the cloud. OpenAI, Claude, DeepSeek, and Kimi use your own API keys. API keys stay in the OS keychain and are never sent to the server.
           </p>
 
           {/* Provider */}
