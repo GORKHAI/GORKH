@@ -1,4 +1,4 @@
-import type { ToolSummary } from '@ai-operator/shared';
+import type { ToolSummary } from '@gorkh/shared';
 
 // In-memory tool summary store
 // Stores only metadata about tool executions, not the actual content

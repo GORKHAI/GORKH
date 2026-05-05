@@ -130,8 +130,8 @@ fn write_workspace_root_to_file(state_file: &Path, root: &Path) -> Result<(), St
     let payload = PersistedWorkspaceState {
         root_path: root.to_string_lossy().to_string(),
     };
-    let encoded =
-        serde_json::to_string(&payload).map_err(|e| format!("Failed to encode workspace state: {}", e))?;
+    let encoded = serde_json::to_string(&payload)
+        .map_err(|e| format!("Failed to encode workspace state: {}", e))?;
 
     fs::write(state_file, encoded).map_err(|e| format!("Failed to persist workspace state: {}", e))
 }
@@ -265,9 +265,7 @@ impl ToolCall {
     pub fn is_destructive(&self) -> bool {
         match self {
             ToolCall::FsDelete { .. } => true,
-            ToolCall::TerminalExec { cmd, args, .. } => {
-                is_destructive_terminal_command(cmd, args)
-            }
+            ToolCall::TerminalExec { cmd, args, .. } => is_destructive_terminal_command(cmd, args),
             _ => false,
         }
     }
@@ -300,13 +298,15 @@ pub enum ToolRiskLevel {
 /// Detects obviously destructive terminal commands
 fn is_destructive_terminal_command(cmd: &str, args: &[String]) -> bool {
     let normalized = cmd.to_lowercase().trim().to_string();
-    
+
     // Known destructive base commands
-    const DESTRUCTIVE_COMMANDS: &[&str] = &["rm", "del", "rmdir", "format", "dd", "mkfs", "fdisk", "shred"];
+    const DESTRUCTIVE_COMMANDS: &[&str] = &[
+        "rm", "del", "rmdir", "format", "dd", "mkfs", "fdisk", "shred",
+    ];
     if DESTRUCTIVE_COMMANDS.contains(&normalized.as_str()) {
         return true;
     }
-    
+
     // Check for rm with recursive flag
     if normalized == "rm" {
         let full = args.join(" ").to_lowercase();
@@ -314,14 +314,17 @@ fn is_destructive_terminal_command(cmd: &str, args: &[String]) -> bool {
             return true;
         }
     }
-    
+
     // Check for del with wildcards
     if normalized == "del" || normalized == "erase" {
-        if args.iter().any(|arg| arg.contains('*') || arg.contains('?')) {
+        if args
+            .iter()
+            .any(|arg| arg.contains('*') || arg.contains('?'))
+        {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -816,9 +819,7 @@ fn execute_terminal_exec(cmd: &str, args: &[String], cwd: Option<&str>) -> ToolR
                 }
             }
         },
-        None => {
-            current_workspace_root()
-        }
+        None => current_workspace_root(),
     };
 
     // Build command

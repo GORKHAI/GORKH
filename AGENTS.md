@@ -55,10 +55,10 @@ docs/            # Architecture and runbook documentation
 ### Package Names
 
 - Root: `ai-operator` (legacy, being migrated to GORKH)
-- API: `@ai-operator/api`
-- Desktop: `@ai-operator/desktop`
-- Web: `@ai-operator/web`
-- Shared: `@ai-operator/shared`
+- API: `@gorkh/api`
+- Desktop: `@gorkh/desktop`
+- Web: `@gorkh/web`
+- Shared: `@gorkh/shared`
 
 ### Key Commands
 
@@ -89,36 +89,36 @@ pnpm smoke:final
 
 ```bash
 # Run desktop app
-pnpm --filter @ai-operator/desktop dev
+pnpm --filter @gorkh/desktop dev
 
 # Run with Tauri
-pnpm --filter @ai-operator/desktop tauri:dev
+pnpm --filter @gorkh/desktop tauri:dev
 
 # Build desktop app
-pnpm --filter @ai-operator/desktop tauri:build
+pnpm --filter @gorkh/desktop tauri:build
 
 # Rust checks
-pnpm --filter @ai-operator/desktop tauri:check
+pnpm --filter @gorkh/desktop tauri:check
 ```
 
 ### API Commands
 
 ```bash
 # Run API server
-pnpm --filter @ai-operator/api dev
+pnpm --filter @gorkh/api dev
 
 # Database migrations
-pnpm --filter @ai-operator/api db:migrate
+pnpm --filter @gorkh/api db:migrate
 
 # Prisma generate
-pnpm --filter @ai-operator/api prisma:generate
+pnpm --filter @gorkh/api prisma:generate
 ```
 
 ### Web Commands
 
 ```bash
 # Run web app
-pnpm --filter @ai-operator/web dev
+pnpm --filter @gorkh/web dev
 ```
 
 ## Coding Conventions

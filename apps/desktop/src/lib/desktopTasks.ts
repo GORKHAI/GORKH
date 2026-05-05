@@ -1,4 +1,4 @@
-import type { Device, RunMode, RunWithSteps } from '@ai-operator/shared';
+import type { Device, RunMode, RunWithSteps } from '@gorkh/shared';
 import type { DesktopApiRuntimeConfig } from './desktopRuntimeConfig.js';
 import { fetchDesktopApiJson } from './desktopApi.js';
 

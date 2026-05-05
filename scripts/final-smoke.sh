@@ -250,7 +250,7 @@ echo ""
 echo "STEP 3: Applying database migrations (migrate deploy)..."
 
 export DATABASE_URL="$DATABASE_URL_VALUE"
-if ! pnpm --filter @ai-operator/api exec prisma migrate deploy >/tmp/ai-operator-final-migrate.log 2>&1; then
+if ! pnpm --filter @gorkh/api exec prisma migrate deploy >/tmp/ai-operator-final-migrate.log 2>&1; then
   record_failure "prisma migrate deploy"
   echo "Migration log:" >&2
   tail -50 /tmp/ai-operator-final-migrate.log >&2
@@ -330,8 +330,8 @@ rm -rf "$ROOT_DIR/apps/web/.next"
   cd "$ROOT_DIR"
   export NEXT_PUBLIC_API_BASE=http://localhost:3001
   # Build first, then start in production mode for stability
-  pnpm --filter @ai-operator/web build >"$WEB_LOG" 2>&1
-  nohup pnpm --filter @ai-operator/web exec next start -p 3000 >>"$WEB_LOG" 2>&1 &
+  pnpm --filter @gorkh/web build >"$WEB_LOG" 2>&1
+  nohup pnpm --filter @gorkh/web exec next start -p 3000 >>"$WEB_LOG" 2>&1 &
   echo $! >"$WEB_PID_FILE"
 )
 
@@ -665,7 +665,7 @@ fi
 echo ""
 
 echo "STEP 10: Running unit tests..."
-if ! pnpm --filter @ai-operator/shared test >/tmp/ai-operator-final-unit-tests.log 2>&1; then
+if ! pnpm --filter @gorkh/shared test >/tmp/ai-operator-final-unit-tests.log 2>&1; then
   record_failure "Unit tests"
   echo "Unit test log:" >&2
   tail -50 /tmp/ai-operator-final-unit-tests.log >&2

@@ -57,7 +57,7 @@ import {
   type ActionRecord,
   type ScreenshotObservation,
 } from './computerUseVerifier.js';
-import { sanitizeRunLogLine } from '@ai-operator/shared';
+import { sanitizeRunLogLine } from '@gorkh/shared';
 import type {
   AgentProposal,
   InputAction,
@@ -66,7 +66,7 @@ import type {
   ToolCall,
   ToolName,
   ToolSummary,
-} from '@ai-operator/shared';
+} from '@gorkh/shared';
 
 export interface AiAssistOptions {
   wsClient: WsClient;

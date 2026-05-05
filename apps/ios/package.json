@@ -1,5 +1,5 @@
 {
-  "name": "@ai-operator/ios",
+  "name": "@gorkh/ios",
   "version": "0.0.1",
   "private": true,
   "description": "iOS Companion App (Swift/Xcode project - not built by pnpm)",

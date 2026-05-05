@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { RunWithSteps, AgentProposal, InputAction, ToolCall } from '@ai-operator/shared';
+import type { RunWithSteps, AgentProposal, InputAction, ToolCall } from '@gorkh/shared';
 import type { ApprovalItem } from '../lib/approvals.js';
 import type { LocalToolEvent } from '../lib/aiAssist.js';
 

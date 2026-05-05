@@ -1,4 +1,4 @@
-import type { Device } from '@ai-operator/shared';
+import type { Device } from '@gorkh/shared';
 import type { DesktopApiRuntimeConfig } from './desktopRuntimeConfig.js';
 import type { DesktopBillingSnapshot } from './desktopTasks.js';
 import { fetchDesktopApiJson } from './desktopApi.js';

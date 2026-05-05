@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { InputAction } from '@ai-operator/shared';
+import type { InputAction } from '@gorkh/shared';
 
 export interface ActionResult {
   ok: boolean;

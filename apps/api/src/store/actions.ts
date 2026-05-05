@@ -1,4 +1,4 @@
-import type { DeviceAction, InputAction, ActionStatus, ActionError } from '@ai-operator/shared';
+import type { DeviceAction, InputAction, ActionStatus, ActionError } from '@gorkh/shared';
 
 // In-memory action store
 const actions = new Map<string, DeviceAction>();

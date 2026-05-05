@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { sanitizeToolSummaryForPersistence, type ToolSummary } from '@ai-operator/shared';
+import { sanitizeToolSummaryForPersistence, type ToolSummary } from '@gorkh/shared';
 import { prisma } from '../db/prisma.js';
 
 function serializeTool(tool: ToolSummary) {

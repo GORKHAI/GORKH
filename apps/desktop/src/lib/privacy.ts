@@ -1,5 +1,5 @@
-import type { ToolCall, ToolSummary } from '@ai-operator/shared';
-import { redactToolCallForLog, sanitizeToolSummaryForPersistence } from '@ai-operator/shared';
+import type { ToolCall, ToolSummary } from '@gorkh/shared';
+import { redactToolCallForLog, sanitizeToolSummaryForPersistence } from '@gorkh/shared';
 
 interface ToolResultLike {
   ok: boolean;

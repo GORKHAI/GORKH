@@ -1,4 +1,4 @@
-import type { RunMode } from '@ai-operator/shared';
+import type { RunMode } from '@gorkh/shared';
 import type { LocalSettingsState } from './localSettings.js';
 import type { NativePermissionStatus, PermissionPlatform, PermissionTarget } from './permissions.js';
 

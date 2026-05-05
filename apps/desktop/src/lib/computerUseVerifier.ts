@@ -5,7 +5,7 @@
  * Does NOT call paid LLMs. Uses screenshot hash comparison and action-kind heuristics.
  */
 
-import type { InputAction } from '@ai-operator/shared';
+import type { InputAction } from '@gorkh/shared';
 
 export interface ScreenshotObservation {
   pngBase64: string;

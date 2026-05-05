@@ -1,6 +1,7 @@
 use super::{
-    AgentProposal, ClientConfig, ConversationTurnParams, ConversationTurnResult, LlmError,
-    LlmErrorCode, LlmProvider, LlmUsageMetadata, ProposalParams, classify_request_path, create_http_client, log_usage, Instant,
+    classify_request_path, create_http_client, log_usage, AgentProposal, ClientConfig,
+    ConversationTurnParams, ConversationTurnResult, Instant, LlmError, LlmErrorCode, LlmProvider,
+    LlmUsageMetadata, ProposalParams,
 };
 use serde::{Deserialize, Serialize};
 
@@ -135,12 +136,12 @@ impl LlmProvider for OpenAiProvider {
             .post(super::build_openai_chat_completions_url(&params.base_url))
             .header("Authorization", format!("Bearer {}", params.api_key))
             .header("Content-Type", "application/json");
-        
+
         // Propagate correlation ID for cross-system tracing
         if let Some(ref correlation_id) = params.correlation_id {
             request_builder = request_builder.header("x-request-id", correlation_id);
         }
-        
+
         let response = request_builder
             .json(&request_body)
             .send()
@@ -196,8 +197,14 @@ impl LlmProvider for OpenAiProvider {
             model: params.model.clone(),
             path: classify_request_path(&params.base_url),
             duration_ms,
-            input_tokens: usage.as_ref().map(|u| u.prompt_tokens as usize).unwrap_or(0),
-            output_tokens: usage.as_ref().map(|u| u.completion_tokens as usize).unwrap_or(0),
+            input_tokens: usage
+                .as_ref()
+                .map(|u| u.prompt_tokens as usize)
+                .unwrap_or(0),
+            output_tokens: usage
+                .as_ref()
+                .map(|u| u.completion_tokens as usize)
+                .unwrap_or(0),
             total_tokens: usage.as_ref().map(|u| u.total_tokens as usize).unwrap_or(0),
             tokens_available: usage.is_some(),
             correlation_id: params.correlation_id.clone(),
@@ -241,12 +248,12 @@ impl LlmProvider for OpenAiProvider {
             .post(super::build_openai_chat_completions_url(&params.base_url))
             .header("Authorization", format!("Bearer {}", params.api_key))
             .header("Content-Type", "application/json");
-        
+
         // Propagate correlation ID for cross-system tracing
         if let Some(ref correlation_id) = params.correlation_id {
             request_builder = request_builder.header("x-request-id", correlation_id);
         }
-        
+
         let response = request_builder
             .json(&request_body)
             .send()
@@ -299,8 +306,14 @@ impl LlmProvider for OpenAiProvider {
             model: params.model.clone(),
             path: classify_request_path(&params.base_url),
             duration_ms,
-            input_tokens: usage.as_ref().map(|u| u.prompt_tokens as usize).unwrap_or(0),
-            output_tokens: usage.as_ref().map(|u| u.completion_tokens as usize).unwrap_or(0),
+            input_tokens: usage
+                .as_ref()
+                .map(|u| u.prompt_tokens as usize)
+                .unwrap_or(0),
+            output_tokens: usage
+                .as_ref()
+                .map(|u| u.completion_tokens as usize)
+                .unwrap_or(0),
             total_tokens: usage.as_ref().map(|u| u.total_tokens as usize).unwrap_or(0),
             tokens_available: usage.is_some(),
             correlation_id: params.correlation_id.clone(),

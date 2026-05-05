@@ -203,7 +203,7 @@ This starts local:
 ### Run the API
 
 ```bash
-pnpm --filter @ai-operator/api dev
+pnpm --filter @gorkh/api dev
 ```
 
 Default local endpoints:
@@ -215,7 +215,7 @@ Default local endpoints:
 ### Run the web app
 
 ```bash
-pnpm --filter @ai-operator/web dev
+pnpm --filter @gorkh/web dev
 ```
 
 Default local web app:
@@ -227,13 +227,13 @@ Default local web app:
 The desktop app must run on your machine, not inside a Codespace or remote container, because it needs local OS permissions and local runtime access.
 
 ```bash
-pnpm --filter @ai-operator/desktop dev
+pnpm --filter @gorkh/desktop dev
 ```
 
 Or run Tauri directly:
 
 ```bash
-pnpm --filter @ai-operator/desktop tauri:dev
+pnpm --filter @gorkh/desktop tauri:dev
 ```
 
 ## Environment variables
@@ -354,7 +354,7 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --quiet
 For desktop Rust/Tauri validation:
 
 ```bash
-pnpm --filter @ai-operator/desktop tauri:check
+pnpm --filter @gorkh/desktop tauri:check
 ```
 
 This runs:

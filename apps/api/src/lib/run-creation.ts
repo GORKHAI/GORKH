@@ -1,5 +1,5 @@
-import { DEFAULT_RUN_CONSTRAINTS, type Device, type RunMode } from '@ai-operator/shared';
-import type { RunWithSteps } from '@ai-operator/shared';
+import { DEFAULT_RUN_CONSTRAINTS, type Device, type RunMode } from '@gorkh/shared';
+import type { RunWithSteps } from '@gorkh/shared';
 import type { runsRepo } from '../repos/runs.js';
 import type { runStore } from '../store/runs.js';
 import type { ownership } from './ownership.js';

@@ -1,5 +1,5 @@
-import type { RunWithSteps, RunStep, StepStatus, ApprovalRequest, LogLine, RunMode, RunConstraints, AgentProposal } from '@ai-operator/shared';
-import { RunStatus, ApprovalDecision, DEFAULT_RUN_CONSTRAINTS } from '@ai-operator/shared';
+import type { RunWithSteps, RunStep, StepStatus, ApprovalRequest, LogLine, RunMode, RunConstraints, AgentProposal } from '@gorkh/shared';
+import { RunStatus, ApprovalDecision, DEFAULT_RUN_CONSTRAINTS } from '@gorkh/shared';
 
 // In-memory run store
 const runs = new Map<string, RunWithSteps>();

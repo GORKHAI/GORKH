@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Effect, EffectState, getCurrentWindow } from '@tauri-apps/api/window';
 import type { Update as DesktopUpdate } from '@tauri-apps/plugin-updater';
-import type { ServerMessage, ServerChatMessage, RunWithSteps, ApprovalRequest, InputAction, AgentProposal } from '@ai-operator/shared';
+import type { ServerMessage, ServerChatMessage, RunWithSteps, ApprovalRequest, InputAction, AgentProposal } from '@gorkh/shared';
 import { WsClient, type ConnectionStatus } from './lib/wsClient.js';
 import { executeAction } from './lib/actionExecutor.js';
 import {
@@ -121,6 +121,7 @@ import { BrandWordmark } from './components/BrandWordmark.js';
 import { ActiveOverlayShell } from './components/ActiveOverlayShell.js';
 import { OverlayController } from './components/OverlayController.js';
 import { OverlayDetailsPanel } from './components/OverlayDetailsPanel.js';
+import { SolanaWorkstation } from './features/solana-workstation/index.js';
 
 // Get or create a stable device ID
 function getOrCreateDeviceId(): string {
@@ -321,6 +322,7 @@ function App() {
   );
   const [providerStatusState, setProviderStatusState] = useState(getProviderStatus);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showWorkstation, setShowWorkstation] = useState(false);
   const [primaryDisplayId, setPrimaryDisplayId] = useState<string>('display-0');
   const [workspaceState, setWorkspaceState] = useState<LocalWorkspaceState>({ configured: false });
   const [toolHistoryByRun, setToolHistoryByRun] = useState<Record<string, LocalToolEvent[]>>({});
@@ -2937,7 +2939,7 @@ function App() {
             }}
           >
               <div style={{ paddingLeft: platform === 'macos' ? '1rem' : 0, minHeight: platform === 'macos' ? '2.25rem' : undefined }}>
-                <BrandWordmark width={220} subtitle="Desktop intelligence layer" />
+                <BrandWordmark width={220} subtitle="AI-native Solana workstation" />
               </div>
               <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', pointerEvents: 'auto' }}>
               <button
@@ -2973,8 +2975,32 @@ function App() {
               >
                 Open Settings
               </button>
+              <button
+                onClick={() => setShowWorkstation((s) => !s)}
+                style={{
+                  padding: '0.6rem 1rem',
+                  background: showWorkstation ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.8)',
+                  border: showWorkstation ? '1px solid rgba(16,185,129,0.35)' : '1px solid rgba(148,163,184,0.24)',
+                  borderRadius: '9999px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: showWorkstation ? '#166534' : '#0f172a',
+                }}
+              >
+                {showWorkstation ? 'Back to Assistant' : 'Solana Workstation'}
+              </button>
               </div>
           </div>
+
+        {showWorkstation && (
+          <div style={{ marginTop: '1.5rem' }}>
+            <SolanaWorkstation />
+          </div>
+        )}
+
+        {!showWorkstation && (
+        <>
         {runtimeConfigError && (
           <div
             style={{
@@ -3497,6 +3523,8 @@ function App() {
           <p style={{ color: '#8b5cf6', maxWidth: '600px' }}>
             🤖 <strong>Assistant safety:</strong> The desktop observes what is on screen, proposes one step at a time, and waits for your explicit approval before privileged actions.
           </p>
+        )}
+        </>
         )}
         </div>
       </div>

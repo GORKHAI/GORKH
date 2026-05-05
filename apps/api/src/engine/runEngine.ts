@@ -1,5 +1,5 @@
-import type { RunWithSteps, RunStep, StepStatus, ApprovalDecision, LogLine, ToolSummary } from '@ai-operator/shared';
-import { RunStatus } from '@ai-operator/shared';
+import type { RunWithSteps, RunStep, StepStatus, ApprovalDecision, LogLine, ToolSummary } from '@gorkh/shared';
+import { RunStatus } from '@gorkh/shared';
 import { runStore, type RunEngine } from '../store/runs.js';
 import { sendToDevice } from '../lib/ws-handler.js';
 import type { FastifyInstance } from 'fastify';

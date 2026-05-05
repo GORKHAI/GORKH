@@ -132,9 +132,9 @@ echo "MIGRATING_DB=1"
   cd "$ROOT_DIR"
   export DATABASE_URL="$DATABASE_URL_VALUE"
   if [[ "$SMOKE_MIGRATE_DEPLOY" == "1" ]]; then
-    pnpm --filter @ai-operator/api exec prisma migrate deploy >/tmp/ai-operator-prisma-migrate.log
+    pnpm --filter @gorkh/api exec prisma migrate deploy >/tmp/ai-operator-prisma-migrate.log
   else
-    pnpm --filter @ai-operator/api exec prisma migrate dev >/tmp/ai-operator-prisma-migrate.log
+    pnpm --filter @gorkh/api exec prisma migrate dev >/tmp/ai-operator-prisma-migrate.log
   fi
 )
 
@@ -173,7 +173,7 @@ echo "STARTING_API=1"
   export DESKTOP_MAC_INTEL_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-x64.dmg
   export DESKTOP_MAC_ARM_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-aarch64.dmg
   export ADMIN_API_KEY="$ADMIN_API_KEY_VALUE"
-  pnpm --filter @ai-operator/api build >/tmp/ai-operator-api-build.log
+  pnpm --filter @gorkh/api build >/tmp/ai-operator-api-build.log
   nohup node apps/api/dist/index.js >"$API_LOG" 2>&1 &
   echo $! >"$API_PID_FILE"
 )
@@ -183,7 +183,7 @@ if [[ "$SMOKE_START_WEB" == "1" ]]; then
   (
     cd "$ROOT_DIR"
     export NEXT_PUBLIC_API_BASE=http://localhost:3001
-    nohup pnpm --filter @ai-operator/web exec next dev -p 3000 >"$WEB_LOG" 2>&1 &
+    nohup pnpm --filter @gorkh/web exec next dev -p 3000 >"$WEB_LOG" 2>&1 &
     echo $! >"$WEB_PID_FILE"
   )
 else

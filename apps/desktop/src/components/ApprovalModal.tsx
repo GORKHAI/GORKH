@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ApprovalRequest } from '@ai-operator/shared';
+import type { ApprovalRequest } from '@gorkh/shared';
 
 interface ApprovalModalProps {
   approval: ApprovalRequest;

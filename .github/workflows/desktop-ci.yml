@@ -50,13 +50,13 @@ jobs:
         run: pnpm -r install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm --filter @ai-operator/shared build
+        run: pnpm --filter @gorkh/shared build
 
       - name: Validate desktop security config
         run: pnpm check:desktop:security
 
       - name: Run desktop compile checks
-        run: pnpm --filter @ai-operator/desktop tauri:check
+        run: pnpm --filter @gorkh/desktop tauri:check
 
       - name: Audit Rust dependencies
         run: |
@@ -106,13 +106,13 @@ jobs:
         run: pnpm -r install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm --filter @ai-operator/shared build
+        run: pnpm --filter @gorkh/shared build
 
       - name: Validate desktop security config
         run: pnpm check:desktop:security
 
       - name: Run desktop compile checks
-        run: pnpm --filter @ai-operator/desktop tauri:check
+        run: pnpm --filter @gorkh/desktop tauri:check
 
       - name: Audit Rust dependencies
         shell: pwsh

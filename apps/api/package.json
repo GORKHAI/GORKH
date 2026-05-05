@@ -1,6 +1,6 @@
 {
-  "name": "@ai-operator/api",
-  "version": "0.0.47",
+  "name": "@gorkh/api",
+  "version": "0.0.48",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -15,7 +15,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-operator/shared": "workspace:*",
+    "@gorkh/shared": "workspace:*",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
     "@fastify/websocket": "^11.2.0",

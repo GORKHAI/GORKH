@@ -1,4 +1,4 @@
-import type { RunWithSteps } from '@ai-operator/shared';
+import type { RunWithSteps } from '@gorkh/shared';
 
 export type RunRecoveryPolicy = 'fail' | 'cancel';
 

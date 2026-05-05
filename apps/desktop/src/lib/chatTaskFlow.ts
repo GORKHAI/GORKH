@@ -1,4 +1,4 @@
-import type { RunWithSteps } from '@ai-operator/shared';
+import type { RunWithSteps } from '@gorkh/shared';
 import type { DesktopApiRuntimeConfig } from './desktopRuntimeConfig.js';
 import { createDesktopRun } from './desktopTasks.js';
 

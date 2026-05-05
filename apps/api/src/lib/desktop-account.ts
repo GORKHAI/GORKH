@@ -1,4 +1,4 @@
-import type { Device } from '@ai-operator/shared';
+import type { Device } from '@gorkh/shared';
 
 interface DesktopAccountUser {
   id: string;

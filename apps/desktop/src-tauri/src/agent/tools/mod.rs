@@ -115,8 +115,14 @@ pub fn set_clipboard(text: &str) -> ToolResult {
             use std::io::Write;
             let _ = c.stdin.take().unwrap().write_all(text.as_bytes());
         }
-        child.and_then(|mut c| c.wait().ok().map(|s| Ok(s)))
-            .unwrap_or_else(|| Err(std::io::Error::new(std::io::ErrorKind::Other, "pbcopy failed")))
+        child
+            .and_then(|mut c| c.wait().ok().map(|s| Ok(s)))
+            .unwrap_or_else(|| {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "pbcopy failed",
+                ))
+            })
             .map(|status| std::process::Output {
                 status,
                 stdout: vec![],
@@ -125,7 +131,10 @@ pub fn set_clipboard(text: &str) -> ToolResult {
     } else if cfg!(target_os = "windows") {
         Command::new("powershell")
             .arg("-Command")
-            .arg(format!("Set-Clipboard -Value '{}'", text.replace("'", "''")))
+            .arg(format!(
+                "Set-Clipboard -Value '{}'",
+                text.replace("'", "''")
+            ))
             .output()
     } else {
         let mut child = Command::new("sh")
@@ -138,8 +147,14 @@ pub fn set_clipboard(text: &str) -> ToolResult {
             use std::io::Write;
             let _ = c.stdin.take().unwrap().write_all(text.as_bytes());
         }
-        child.and_then(|mut c| c.wait().ok().map(|s| Ok(s)))
-            .unwrap_or_else(|| Err(std::io::Error::new(std::io::ErrorKind::Other, "xclip failed")))
+        child
+            .and_then(|mut c| c.wait().ok().map(|s| Ok(s)))
+            .unwrap_or_else(|| {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "xclip failed",
+                ))
+            })
             .map(|status| std::process::Output {
                 status,
                 stdout: vec![],
@@ -174,9 +189,14 @@ pub fn move_files(paths: &[String], destination: &str) -> ToolResult {
     let mut errors = Vec::new();
 
     for path in paths {
-        let dest = format!("{}/{}", destination, std::path::Path::new(path).file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(path));
+        let dest = format!(
+            "{}/{}",
+            destination,
+            std::path::Path::new(path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path)
+        );
         match fs::rename(path, &dest) {
             Ok(_) => moved += 1,
             Err(e) => errors.push(format!("{}: {}", path, e)),
@@ -259,7 +279,9 @@ mod tests {
 
     #[test]
     fn execute_gorkh_tool_rejects_unknown() {
-        let result = execute_gorkh_tool(&ToolCall::FsList { path: "/tmp".to_string() });
+        let result = execute_gorkh_tool(&ToolCall::FsList {
+            path: "/tmp".to_string(),
+        });
         assert!(!result.success);
         assert!(result.message.contains("not a GORKH system tool"));
     }

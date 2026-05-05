@@ -19,7 +19,7 @@ test('desktop-visible branding uses GORKH and includes the premium SVG wordmark'
   assert.match(chatOverlaySource, /BrandWordmark/, 'assistant chat shell should render the shared GORKH wordmark');
   assert.match(brandWordmarkSource, /\bGORKH\b/, 'shared wordmark component should expose the GORKH brand');
   assert.match(permissionsSource, /\bGORKH\b/, 'desktop permission guidance should use the GORKH brand');
-  assert.match(indexHtmlSource, /<title>\s*GORKH Desktop\s*<\/title>/, 'desktop HTML title should use the GORKH brand');
+  assert.match(indexHtmlSource, /<title>\s*GORKH Workstation\s*<\/title>/, 'desktop HTML title should use the GORKH brand');
   assert.match(tauriConfig, /"productName":\s*"GORKH"/, 'desktop product name should be GORKH');
   assert.match(tauriConfig, /"title":\s*"GORKH"/, 'desktop window title should be GORKH');
 

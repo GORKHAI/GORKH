@@ -39,19 +39,19 @@ export default function Home() {
               fontSize: 12,
             }}
           >
-            Desktop-Native AI Agent
+            AI-Native Solana Workstation
           </p>
         </div>
 
         <h1 className="hero__title">
-          AI That Controls
+          GORKH Workstation
           <br />
-          Your Mac
+          AI-Native Solana Desktop
         </h1>
         <p className="hero__subtitle">
-          GORKH is a desktop-native AI agent that sees your screen, understands your workflow, and
-          takes action — with your explicit approval every step of the way. Built for macOS.
-          Privacy-first. Investor-ready.
+          GORKH Workstation is an AI-native desktop workstation for Solana agents, builders,
+          private wallets, and power traders. Built for macOS with local approvals, keychain
+          security, and privacy-first architecture.
         </p>
 
         <div className="hero__actions">

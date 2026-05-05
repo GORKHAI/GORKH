@@ -4,7 +4,7 @@ import {
   type AgentProposal,
   type InputAction,
   type ToolCall,
-} from '@ai-operator/shared';
+} from '@gorkh/shared';
 
 export type ApprovalKind = 'control_action' | 'tool_call' | 'ai_proposal';
 export type ApprovalState =

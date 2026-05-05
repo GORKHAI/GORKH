@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { DeviceAction } from '@ai-operator/shared';
+import type { DeviceAction } from '@gorkh/shared';
 import { prisma } from '../db/prisma.js';
 
 function serializeAction(action: DeviceAction) {

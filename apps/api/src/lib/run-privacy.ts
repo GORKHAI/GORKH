@@ -1,5 +1,5 @@
-import type { RunWithSteps } from '@ai-operator/shared';
-import { sanitizeAgentProposalForPersistence, sanitizeRunLogLine } from '@ai-operator/shared';
+import type { RunWithSteps } from '@gorkh/shared';
+import { sanitizeAgentProposalForPersistence, sanitizeRunLogLine } from '@gorkh/shared';
 
 export function sanitizeRunForPersistence(run: RunWithSteps): RunWithSteps {
   return {

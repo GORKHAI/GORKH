@@ -1819,7 +1819,59 @@ export type ServerEventType =
 
 
 // ============================================================================
+// Solana Workstation (Phase 1 Foundation)
+// ============================================================================
+
+export * from './solana-workstation.js';
+
+// ============================================================================
+// GORKH Shield (Phase 2 — Offline Decode + Risk Explanation)
+// ============================================================================
+
+export * from './solana-shield.js';
+
+// ============================================================================
+// GORKH Shield RPC (Phase 3 — Read-Only RPC + Simulation Preview)
+// ============================================================================
+
+export * from './solana-rpc.js';
+
+// ============================================================================
+// GORKH Builder (Phase 4 — Anchor/Solana Workspace Inspector)
+// ============================================================================
+
+export * from './solana-builder.js';
+
+// ============================================================================
+// GORKH Agent (Phase 6 / 9A — Mainnet-Safe Solana Agent Control Center)
+// ============================================================================
+
+export * from './solana-agent.js';
+
+// ============================================================================
+// GORKH Workstation Context Bridge (Phase 7 — Agent/Shield/Builder/Assistant)
+// ============================================================================
+
+export * from './solana-workstation-context.js';
+export * from './solana-markets.js';
+export * from './solana-protocol-registry.js';
+export * from './solana-private.js';
+export * from './solana-wallet.js';
+
+// ============================================================================
+// GORKH Markets (Phase 8 — Read-Only Market Intelligence)
+// ============================================================================
+
+export * from './solana-markets.js';
+
+// ============================================================================
 // LLM Error Codes (Phase 3 Observability)
 // ============================================================================
 
 export * from './llm-error.js';
+
+// ============================================================================
+// Solana Signature Verification (Phase 15 — Ownership Proof)
+// ============================================================================
+
+export * from './verify-solana-signature.js';

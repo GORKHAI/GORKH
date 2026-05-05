@@ -5,9 +5,9 @@
 //! device's authentication token.
 
 use super::{
-    AgentProposal, ClientConfig, ConversationTurnParams, ConversationTurnResult, LlmError,
-    LlmErrorCode, LlmProvider, LlmUsageMetadata, ProposalParams, create_http_client,
-    classify_request_error, classify_request_path, log_usage, Instant,
+    classify_request_error, classify_request_path, create_http_client, log_usage, AgentProposal,
+    ClientConfig, ConversationTurnParams, ConversationTurnResult, Instant, LlmError, LlmErrorCode,
+    LlmProvider, LlmUsageMetadata, ProposalParams,
 };
 use serde::{Deserialize, Serialize};
 
@@ -153,10 +153,7 @@ impl GorkhFreeProvider {
 
         if status == 429 {
             if let Ok(err) = serde_json::from_str::<GorkhFreeErrorResponse>(&text) {
-                return Err(LlmError::new(
-                    LlmErrorCode::FreeTierExhausted,
-                    err.message,
-                ));
+                return Err(LlmError::new(LlmErrorCode::FreeTierExhausted, err.message));
             }
             return Err(LlmError::new(
                 LlmErrorCode::FreeTierExhausted,
@@ -264,7 +261,10 @@ impl LlmProvider for GorkhFreeProvider {
         let parsed: GorkhFreeResponse = serde_json::from_value(response).map_err(|e| {
             LlmError::new(
                 LlmErrorCode::InvalidJson,
-                format!("Failed to parse GORKH Free tier conversation response: {}", e),
+                format!(
+                    "Failed to parse GORKH Free tier conversation response: {}",
+                    e
+                ),
             )
         })?;
 
@@ -292,8 +292,8 @@ impl LlmProvider for GorkhFreeProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::ConversationTurnMessage;
+    use super::*;
 
     #[test]
     fn build_conversation_body_normalizes_agent_role_to_assistant() {
@@ -323,7 +323,10 @@ mod tests {
         let body = GorkhFreeProvider::build_conversation_body(&params);
         assert_eq!(body.messages.len(), 3);
         assert_eq!(body.messages[0].role, "user");
-        assert_eq!(body.messages[1].role, "assistant", "agent role should be normalized to assistant");
+        assert_eq!(
+            body.messages[1].role, "assistant",
+            "agent role should be normalized to assistant"
+        );
         assert_eq!(body.messages[2].role, "system");
     }
 
@@ -334,12 +337,10 @@ mod tests {
             base_url: "https://api.example.com".to_string(),
             model: "deepseek-chat".to_string(),
             api_key: "test-token".to_string(),
-            messages: vec![
-                ConversationTurnMessage {
-                    role: "assistant".to_string(),
-                    text: "Hello".to_string(),
-                },
-            ],
+            messages: vec![ConversationTurnMessage {
+                role: "assistant".to_string(),
+                text: "Hello".to_string(),
+            }],
             app_context: None,
             correlation_id: None,
         };

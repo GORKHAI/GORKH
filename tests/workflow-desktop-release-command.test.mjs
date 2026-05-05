@@ -9,19 +9,19 @@ test('desktop release workflow invokes Tauri through the desktop package script'
 
   assert.match(
     source,
-    /pnpm --filter @ai-operator\/desktop tauri:build --config "\$WINDOWS_TAURI_CONFIG" --bundles msi/,
+    /pnpm --filter @gorkh\/desktop tauri:build --config "\$WINDOWS_TAURI_CONFIG" --bundles msi/,
     'Windows release job must build via the desktop package script'
   );
 
   assert.match(
     source,
-    /pnpm --filter @ai-operator\/desktop tauri:build --config "\$MACOS_TAURI_CONFIG" --bundles app,dmg/,
+    /pnpm --filter @gorkh\/desktop tauri:build --config "\$MACOS_TAURI_CONFIG" --bundles app,dmg/,
     'macOS release jobs must build both the app bundle and the DMG via the desktop package script'
   );
 
   assert.doesNotMatch(
     source,
-    /pnpm --filter @ai-operator\/desktop exec tauri build/,
+    /pnpm --filter @gorkh\/desktop exec tauri build/,
     'Release workflow must not rely on recursive pnpm exec for the Tauri CLI'
   );
 });
@@ -37,7 +37,7 @@ test('desktop release workflow requests the macOS app bundle before verifying it
 
   assert.match(
     source,
-    /pnpm --filter @ai-operator\/desktop tauri:build --config "\$MACOS_TAURI_CONFIG" --bundles app,dmg/,
+    /pnpm --filter @gorkh\/desktop tauri:build --config "\$MACOS_TAURI_CONFIG" --bundles app,dmg/,
     'desktop release workflow must request the app bundle whenever it later verifies bundle\/macos\/\*.app'
   );
 });
@@ -193,7 +193,7 @@ test('desktop release workflow stores the macOS asset path as an absolute worksp
 
   assert.match(
     source,
-    /pnpm --filter @ai-operator\/desktop exec tauri signer sign "\$MACOS_ASSET_PATH"/,
+    /pnpm --filter @gorkh\/desktop exec tauri signer sign "\$MACOS_ASSET_PATH"/,
     'stable updater signing still runs through pnpm exec in the desktop package directory, so MACOS_ASSET_PATH must already be absolute'
   );
 });

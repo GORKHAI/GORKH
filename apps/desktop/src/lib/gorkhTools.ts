@@ -9,7 +9,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { GorkhToolCall, AppSettingsSetToolCall } from '@ai-operator/shared';
+import type { GorkhToolCall, AppSettingsSetToolCall } from '@gorkh/shared';
 
 // ---------------------------------------------------------------------------
 // Snapshot type returned by the Rust gorkh_app_snapshot command

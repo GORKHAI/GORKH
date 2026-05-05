@@ -4,7 +4,7 @@ import {
   sanitizeToolSummaryForPersistence,
   type ToolCall,
   type WorkspaceState as SharedWorkspaceState,
-} from '@ai-operator/shared';
+} from '@gorkh/shared';
 import type { WsClient } from './wsClient.js';
 
 // Re-export types

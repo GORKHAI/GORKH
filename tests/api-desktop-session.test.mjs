@@ -72,6 +72,7 @@ test('desktop session helper revokes only the addressed device token and leaves 
   const result = await revokeDesktopSession({
     deviceToken: 'token-desktop-a',
     devicesRepo: repo,
+    now: () => new Date('2026-03-17T00:00:00.000Z'),
   });
 
   assert.deepEqual(result, {

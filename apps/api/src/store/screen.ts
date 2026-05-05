@@ -1,4 +1,4 @@
-import type { ScreenFrameMeta } from '@ai-operator/shared';
+import type { ScreenFrameMeta } from '@gorkh/shared';
 
 interface ScreenFrame {
   meta: ScreenFrameMeta;

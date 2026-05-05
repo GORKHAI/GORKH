@@ -110,8 +110,8 @@ impl<'a> HierarchicalPlanner<'a> {
             .map_err(|e| e.message)?;
 
         // Parse the JSON response into a TaskPlan
-        let steps =
-            parse_plan_steps(&result.content).map_err(|e| format!("Failed to parse plan: {}", e))?;
+        let steps = parse_plan_steps(&result.content)
+            .map_err(|e| format!("Failed to parse plan: {}", e))?;
 
         // Ensure all steps have unique IDs
         let mut steps = steps;
@@ -209,7 +209,11 @@ enum RawStepType {
 fn parse_plan_steps(input: &str) -> Result<Vec<PlanStep>, String> {
     fn map_step(step: RawPlanStep) -> PlanStep {
         PlanStep {
-            id: if step.id.is_empty() { "1".to_string() } else { step.id },
+            id: if step.id.is_empty() {
+                "1".to_string()
+            } else {
+                step.id
+            },
             title: step.title,
             description: step.description,
             step_type: match step.step_type {
@@ -318,13 +322,9 @@ fn detect_required_apps(goal: &str, _steps: &[PlanStep]) -> Vec<String> {
 pub fn create_simple_plan(goal: &str) -> TaskPlan {
     TaskPlan {
         goal: goal.to_string(),
-        steps: vec![PlanStep::new(
-            "1",
-            "Complete the task",
-            goal,
-            StepType::UiAction,
-        )
-        .with_critical(true)],
+        steps: vec![
+            PlanStep::new("1", "Complete the task", goal, StepType::UiAction).with_critical(true),
+        ],
         estimated_duration_secs: 10,
         required_apps: vec![],
     }

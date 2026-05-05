@@ -18,7 +18,7 @@ import type {
   ToolEventStatus,
   ToolCall,
   InputAction,
-} from '@ai-operator/shared';
+} from '@gorkh/shared';
 import {
   PROTOCOL_VERSION,
   parseDeviceMessage,
@@ -29,7 +29,7 @@ import {
   redactToolCallForLog,
   sanitizeRunLogLine,
   sanitizeToolSummaryForPersistence,
-} from '@ai-operator/shared';
+} from '@gorkh/shared';
 import { deviceStore } from '../store/devices.js';
 import { runStore } from '../store/runs.js';
 import { screenStore } from '../store/screen.js';

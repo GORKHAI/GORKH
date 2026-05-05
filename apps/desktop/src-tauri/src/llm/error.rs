@@ -127,8 +127,14 @@ mod tests {
             (LlmErrorCode::ModelNotFound, "MODEL_NOT_FOUND"),
             (LlmErrorCode::AuthFailed, "AUTH_FAILED"),
             (LlmErrorCode::RateLimited, "RATE_LIMITED"),
-            (LlmErrorCode::FreeAiFallbackUnavailable, "FREE_AI_FALLBACK_UNAVAILABLE"),
-            (LlmErrorCode::FreeAiFallbackUpstreamError, "FREE_AI_FALLBACK_UPSTREAM_ERROR"),
+            (
+                LlmErrorCode::FreeAiFallbackUnavailable,
+                "FREE_AI_FALLBACK_UNAVAILABLE",
+            ),
+            (
+                LlmErrorCode::FreeAiFallbackUpstreamError,
+                "FREE_AI_FALLBACK_UPSTREAM_ERROR",
+            ),
             (LlmErrorCode::FreeTierExhausted, "FREE_TIER_EXHAUSTED"),
         ];
 

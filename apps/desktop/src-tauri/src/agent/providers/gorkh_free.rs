@@ -154,10 +154,7 @@ impl GorkhFreeProvider {
             input_tokens: parsed.usage.input_tokens,
             output_tokens: parsed.usage.output_tokens,
             model: "deepseek-chat".to_string(),
-            finish_reason: parsed
-                .message
-                .role
-                .clone(), // Not ideal but acceptable for stub
+            finish_reason: parsed.message.role.clone(), // Not ideal but acceptable for stub
         })
     }
 }
@@ -215,10 +212,7 @@ impl super::LlmProvider for GorkhFreeProvider {
         })
     }
 
-    async fn propose_next_step(
-        &self,
-        request: ActionRequest,
-    ) -> Result<LlmResult, ProviderError> {
+    async fn propose_next_step(&self, request: ActionRequest) -> Result<LlmResult, ProviderError> {
         let system = "You are an action proposer. Return a JSON action.";
         let user = format!(
             "Observation: {}\nGoal: {}\nStep: {}",

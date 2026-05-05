@@ -1,7 +1,7 @@
 use super::{
-    AgentProposal, ClientConfig, ConversationTurnParams, ConversationTurnResult, LlmError,
-    LlmErrorCode, LlmProvider, LlmUsageMetadata, ProposalParams, create_http_client, classify_request_error,
-    classify_request_path, log_usage, Instant,
+    classify_request_error, classify_request_path, create_http_client, log_usage, AgentProposal,
+    ClientConfig, ConversationTurnParams, ConversationTurnResult, Instant, LlmError, LlmErrorCode,
+    LlmProvider, LlmUsageMetadata, ProposalParams,
 };
 use serde::{Deserialize, Serialize};
 
@@ -80,7 +80,9 @@ fn is_localhost_url(url: &str) -> bool {
 }
 
 fn is_hosted_free_ai_fallback_endpoint(url: &str) -> bool {
-    url.trim_end_matches('/').to_lowercase().ends_with("/desktop/free-ai/v1")
+    url.trim_end_matches('/')
+        .to_lowercase()
+        .ends_with("/desktop/free-ai/v1")
 }
 
 #[async_trait::async_trait]
@@ -219,10 +221,7 @@ impl LlmProvider for OpenAiCompatProvider {
                 format!("{} error {}: {}", location, status, text)
             };
 
-            return Err(LlmError {
-                code,
-                message,
-            });
+            return Err(LlmError { code, message });
         }
 
         let compat_response: OpenAiCompatResponse =
@@ -252,8 +251,14 @@ impl LlmProvider for OpenAiCompatProvider {
             model: params.model.clone(),
             path: classify_request_path(&params.base_url),
             duration_ms,
-            input_tokens: usage.as_ref().map(|u| u.prompt_tokens as usize).unwrap_or(0),
-            output_tokens: usage.as_ref().map(|u| u.completion_tokens as usize).unwrap_or(0),
+            input_tokens: usage
+                .as_ref()
+                .map(|u| u.prompt_tokens as usize)
+                .unwrap_or(0),
+            output_tokens: usage
+                .as_ref()
+                .map(|u| u.completion_tokens as usize)
+                .unwrap_or(0),
             total_tokens: usage.as_ref().map(|u| u.total_tokens as usize).unwrap_or(0),
             tokens_available: usage.is_some(),
             correlation_id: params.correlation_id.clone(),
@@ -335,14 +340,15 @@ impl LlmProvider for OpenAiCompatProvider {
                     let is_retryable = is_remote && (e.is_connect() || e.is_timeout());
                     let code = classify_request_error(&e);
                     let message = match code {
-                        LlmErrorCode::Timeout => format!("{} timed out. The server may be overloaded.", location),
-                        LlmErrorCode::ConnectionFailed => format!("Cannot connect to {}.", location),
+                        LlmErrorCode::Timeout => {
+                            format!("{} timed out. The server may be overloaded.", location)
+                        }
+                        LlmErrorCode::ConnectionFailed => {
+                            format!("Cannot connect to {}.", location)
+                        }
                         _ => format!("Request to {} failed: {}", location, e),
                     };
-                    last_err = Some(LlmError {
-                        code,
-                        message,
-                    });
+                    last_err = Some(LlmError { code, message });
                     if !is_retryable {
                         break;
                     }
@@ -382,10 +388,7 @@ impl LlmProvider for OpenAiCompatProvider {
                 format!("{} error {}: {}", location, status, text)
             };
 
-            return Err(LlmError {
-                code,
-                message,
-            });
+            return Err(LlmError { code, message });
         }
 
         let compat_response: OpenAiCompatResponse =
@@ -412,8 +415,14 @@ impl LlmProvider for OpenAiCompatProvider {
             model: params.model.clone(),
             path: classify_request_path(&params.base_url),
             duration_ms,
-            input_tokens: usage.as_ref().map(|u| u.prompt_tokens as usize).unwrap_or(0),
-            output_tokens: usage.as_ref().map(|u| u.completion_tokens as usize).unwrap_or(0),
+            input_tokens: usage
+                .as_ref()
+                .map(|u| u.prompt_tokens as usize)
+                .unwrap_or(0),
+            output_tokens: usage
+                .as_ref()
+                .map(|u| u.completion_tokens as usize)
+                .unwrap_or(0),
             total_tokens: usage.as_ref().map(|u| u.total_tokens as usize).unwrap_or(0),
             tokens_available: usage.is_some(),
             correlation_id: params.correlation_id.clone(),

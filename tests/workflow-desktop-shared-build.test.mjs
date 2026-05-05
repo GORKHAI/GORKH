@@ -9,7 +9,7 @@ test('desktop release workflow builds the shared package before desktop bundles'
 
   assert.match(
     source,
-    /run:\s*pnpm --filter @ai-operator\/shared build/,
-    'desktop release workflow must build @ai-operator/shared before desktop packaging'
+    /run:\s*pnpm --filter @gorkh\/shared build/,
+    'desktop release workflow must build @gorkh/shared before desktop packaging'
   );
 });

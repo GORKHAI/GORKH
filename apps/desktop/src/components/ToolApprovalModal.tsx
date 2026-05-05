@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ToolCall } from '@ai-operator/shared';
+import type { ToolCall } from '@gorkh/shared';
 import type { ApprovalItem } from '../lib/approvals.js';
 
 interface ToolApprovalModalProps {

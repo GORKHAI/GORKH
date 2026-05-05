@@ -2,7 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type Event } from '@tauri-apps/api/event';
-import type { AgentProposal } from '@ai-operator/shared';
+import type { AgentProposal } from '@gorkh/shared';
 
 export type ProviderType = 'local_openai_compat' | 'openai' | 'claude' | 'deepseek' | 'kimi' | 'gorkh_free';
 

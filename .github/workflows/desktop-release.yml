@@ -360,7 +360,7 @@ jobs:
 
       - name: Build shared package
         if: needs.prepare.outputs.channel != 'stable'
-        run: pnpm --filter @ai-operator/shared build
+        run: pnpm --filter @gorkh/shared build
 
       - name: Write Windows Tauri release config
         if: needs.prepare.outputs.channel != 'stable'
@@ -394,7 +394,7 @@ jobs:
       - name: Build Windows bundle
         if: needs.prepare.outputs.channel != 'stable'
         shell: bash
-        run: pnpm --filter @ai-operator/desktop tauri:build --config "$WINDOWS_TAURI_CONFIG" --bundles msi
+        run: pnpm --filter @gorkh/desktop tauri:build --config "$WINDOWS_TAURI_CONFIG" --bundles msi
 
       - name: Normalize Windows asset names
         if: needs.prepare.outputs.channel != 'stable'
@@ -474,7 +474,7 @@ jobs:
         run: pnpm -r install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm --filter @ai-operator/shared build
+        run: pnpm --filter @gorkh/shared build
 
       - name: Import Developer ID certificate into temporary keychain
         shell: bash
@@ -541,7 +541,7 @@ jobs:
 
       - name: Build macOS bundle
         shell: bash
-        run: pnpm --filter @ai-operator/desktop tauri:build --config "$MACOS_TAURI_CONFIG" --bundles app,dmg
+        run: pnpm --filter @gorkh/desktop tauri:build --config "$MACOS_TAURI_CONFIG" --bundles app,dmg
 
       - name: Verify macOS app signature
         shell: bash
@@ -657,7 +657,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          pnpm --filter @ai-operator/desktop exec tauri signer sign "$MACOS_ASSET_PATH"
+          pnpm --filter @gorkh/desktop exec tauri signer sign "$MACOS_ASSET_PATH"
           test -f "$MACOS_ASSET_PATH.sig"
 
       - name: Assert beta artifacts do not contain updater signatures

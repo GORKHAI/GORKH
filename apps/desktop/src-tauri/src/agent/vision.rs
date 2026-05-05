@@ -122,8 +122,8 @@ impl VisionEngine {
             .map_err(|e| VisionError::AnalysisError(e.message))?;
 
         // 4. Parse response
-        let observation: ScreenObservation =
-            serde_json::from_str(&result.content).map_err(|e| VisionError::ParseError(e.to_string()))?;
+        let observation: ScreenObservation = serde_json::from_str(&result.content)
+            .map_err(|e| VisionError::ParseError(e.to_string()))?;
 
         Ok(observation)
     }
@@ -153,8 +153,8 @@ impl VisionEngine {
             .await
             .map_err(|e| VisionError::AnalysisError(e.message))?;
 
-        let observation: ScreenObservation =
-            serde_json::from_str(&result.content).map_err(|e| VisionError::ParseError(e.to_string()))?;
+        let observation: ScreenObservation = serde_json::from_str(&result.content)
+            .map_err(|e| VisionError::ParseError(e.to_string()))?;
 
         Ok(observation)
     }

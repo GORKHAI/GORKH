@@ -72,7 +72,11 @@ Rules:
         );
 
         let response = self.client.chat_completion(system, &user, None).await?;
-        Ok(LlmResult { content: response.content, input_tokens: response.input_tokens, output_tokens: response.output_tokens })
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
     async fn analyze_screen(
@@ -99,7 +103,11 @@ Available tools: fs.list, fs.read_text, fs.write_text, fs.apply_patch, fs.delete
         );
 
         let response = self.client.chat_completion(system, &user, None).await?;
-        Ok(LlmResult { content: response.content, input_tokens: response.input_tokens, output_tokens: response.output_tokens })
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
     async fn summarize_result(&self, result_text: &str) -> Result<LlmResult, ProviderError> {
@@ -107,7 +115,11 @@ Available tools: fs.list, fs.read_text, fs.write_text, fs.apply_patch, fs.delete
         let user = format!("Result:\n{}\n\nSummarize:", result_text);
 
         let response = self.client.chat_completion(system, &user, None).await?;
-        Ok(LlmResult { content: response.content, input_tokens: response.input_tokens, output_tokens: response.output_tokens })
+        Ok(LlmResult {
+            content: response.content,
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+        })
     }
 
     fn estimate_cost(&self, input_tokens: usize, output_tokens: usize) -> f64 {

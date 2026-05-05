@@ -1,6 +1,6 @@
 {
-  "name": "@ai-operator/desktop",
-  "version": "0.0.47",
+  "name": "@gorkh/desktop",
+  "version": "0.0.48",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,7 +18,7 @@
     "check:csp": "node ../../scripts/check-desktop-csp.mjs"
   },
   "dependencies": {
-    "@ai-operator/shared": "workspace:*",
+    "@gorkh/shared": "workspace:*",
     "@tauri-apps/api": "^2.2.0",
     "@tauri-apps/plugin-dialog": "^2.2.0",
     "@tauri-apps/plugin-opener": "^2.2.0",

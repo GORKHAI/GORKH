@@ -45,7 +45,7 @@ jobs:
         run: pnpm -r install --frozen-lockfile
 
       - name: Generate Prisma client
-        run: pnpm --filter @ai-operator/api prisma:generate
+        run: pnpm --filter @gorkh/api prisma:generate
 
       - name: Wait for Redis
         run: |

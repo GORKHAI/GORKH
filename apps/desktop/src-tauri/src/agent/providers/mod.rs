@@ -169,8 +169,10 @@ pub trait LlmProvider: Send + Sync {
     async fn plan_task(&self, request: PlanRequest) -> Result<LlmResult, ProviderError>;
 
     /// Analyze a screen
-    async fn analyze_screen(&self, request: ScreenAnalysisRequest)
-        -> Result<LlmResult, ProviderError>;
+    async fn analyze_screen(
+        &self,
+        request: ScreenAnalysisRequest,
+    ) -> Result<LlmResult, ProviderError>;
 
     /// Propose next action
     async fn propose_next_step(&self, request: ActionRequest) -> Result<LlmResult, ProviderError>;
@@ -374,7 +376,6 @@ pub struct ProviderInfo {
     pub capabilities: ProviderCapabilities,
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,25 +410,41 @@ mod tests {
         }
 
         async fn plan_task(&self, _request: PlanRequest) -> Result<LlmResult, ProviderError> {
-            Ok(LlmResult { content: "[]".to_string(), input_tokens: 0, output_tokens: 0 })
+            Ok(LlmResult {
+                content: "[]".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
+            })
         }
 
         async fn analyze_screen(
             &self,
             _request: ScreenAnalysisRequest,
         ) -> Result<LlmResult, ProviderError> {
-            Ok(LlmResult { content: "{}".to_string(), input_tokens: 0, output_tokens: 0 })
+            Ok(LlmResult {
+                content: "{}".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
+            })
         }
 
         async fn propose_next_step(
             &self,
             _request: ActionRequest,
         ) -> Result<LlmResult, ProviderError> {
-            Ok(LlmResult { content: "{}".to_string(), input_tokens: 0, output_tokens: 0 })
+            Ok(LlmResult {
+                content: "{}".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
+            })
         }
 
         async fn summarize_result(&self, _result_text: &str) -> Result<LlmResult, ProviderError> {
-            Ok(LlmResult { content: "done".to_string(), input_tokens: 0, output_tokens: 0 })
+            Ok(LlmResult {
+                content: "done".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
+            })
         }
 
         fn estimate_cost(&self, _input_tokens: usize, _output_tokens: usize) -> f64 {

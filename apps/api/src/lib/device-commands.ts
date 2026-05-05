@@ -4,7 +4,7 @@ import {
   isRetryableDeviceCommandAckErrorCode,
   type DeviceCommandAck,
   type ServerCommand,
-} from '@ai-operator/shared';
+} from '@gorkh/shared';
 import {
   redisClient,
   type RedisClientLike,

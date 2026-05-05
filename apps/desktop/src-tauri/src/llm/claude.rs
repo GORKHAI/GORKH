@@ -1,7 +1,7 @@
 use super::{
-    AgentProposal, ClientConfig, ConversationTurnParams, ConversationTurnResult, LlmError,
-    LlmErrorCode, LlmProvider, LlmUsageMetadata, ProposalParams, classify_request_error,
-    classify_request_path, log_usage, Instant,
+    classify_request_error, classify_request_path, log_usage, AgentProposal, ClientConfig,
+    ConversationTurnParams, ConversationTurnResult, Instant, LlmError, LlmErrorCode, LlmProvider,
+    LlmUsageMetadata, ProposalParams,
 };
 use serde_json::json;
 
@@ -78,18 +78,18 @@ impl LlmProvider for ClaudeProvider {
         });
 
         let client = super::create_http_client(ClientConfig::cloud())?;
-        
+
         let mut request_builder = client
             .post(super::build_anthropic_messages_url(&params.base_url))
             .header("x-api-key", &params.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json");
-        
+
         // Propagate correlation ID for cross-system tracing
         if let Some(ref correlation_id) = params.correlation_id {
             request_builder = request_builder.header("x-request-id", correlation_id);
         }
-        
+
         let response = request_builder
             .json(&request_body)
             .send()
@@ -188,18 +188,18 @@ impl LlmProvider for ClaudeProvider {
         });
 
         let client = super::create_http_client(ClientConfig::cloud())?;
-        
+
         let mut request_builder = client
             .post(super::build_anthropic_messages_url(&params.base_url))
             .header("x-api-key", &params.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json");
-        
+
         // Propagate correlation ID for cross-system tracing
         if let Some(ref correlation_id) = params.correlation_id {
             request_builder = request_builder.header("x-request-id", correlation_id);
         }
-        
+
         let response = request_builder
             .json(&request_body)
             .send()

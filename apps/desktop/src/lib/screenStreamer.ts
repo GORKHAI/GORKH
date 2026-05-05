@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { createDeviceMessage, createScreenFrameMeta, type ScreenStreamState } from '@ai-operator/shared';
+import { createDeviceMessage, createScreenFrameMeta, type ScreenStreamState } from '@gorkh/shared';
 import type { WsClient } from './wsClient.js';
 
 export interface DisplayInfo {

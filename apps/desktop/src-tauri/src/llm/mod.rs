@@ -173,7 +173,10 @@ pub enum ToolCall {
     #[serde(rename = "system.empty_trash")]
     EmptyTrash,
     #[serde(rename = "fs.move_files")]
-    MoveFiles { paths: Vec<String>, destination: String },
+    MoveFiles {
+        paths: Vec<String>,
+        destination: String,
+    },
     #[serde(rename = "system.get_clipboard")]
     GetClipboard,
     #[serde(rename = "system.set_clipboard")]
@@ -349,8 +352,8 @@ pub struct RunConstraints {
 mod tests {
     use super::{
         build_conversation_system_prompt, build_conversation_user_prompt, build_user_prompt,
-        parse_conversation_turn_result, repair_unescaped_quotes_in_json,
-        ConversationTurnMessage, ConversationTurnResult, RunConstraints,
+        parse_conversation_turn_result, repair_unescaped_quotes_in_json, ConversationTurnMessage,
+        ConversationTurnResult, RunConstraints,
     };
 
     #[test]
@@ -500,7 +503,8 @@ mod tests {
     #[test]
     fn parse_conversation_turn_falls_back_to_reply_for_plain_text() {
         let plain = "I'd love to help, but I need a bit more context to proceed.";
-        let result = parse_conversation_turn_result(plain).expect("plain text should fallback to reply");
+        let result =
+            parse_conversation_turn_result(plain).expect("plain text should fallback to reply");
         match result {
             ConversationTurnResult::Reply { message } => {
                 assert_eq!(message, plain);
@@ -512,7 +516,8 @@ mod tests {
     #[test]
     fn parse_conversation_turn_falls_back_to_reply_for_plain_text_with_leading_whitespace() {
         let plain = "  Sure, I can help with that. What would you like to do?  ";
-        let result = parse_conversation_turn_result(plain).expect("plain text with whitespace should fallback to reply");
+        let result = parse_conversation_turn_result(plain)
+            .expect("plain text with whitespace should fallback to reply");
         match result {
             ConversationTurnResult::Reply { message } => {
                 assert_eq!(message, plain.trim());
@@ -536,9 +541,14 @@ mod tests {
     #[test]
     fn parse_conversation_turn_accepts_valid_json_confirm_task() {
         let json = r#"{"kind":"confirm_task","goal":"Empty Trash","summary":"I will empty your Mac Trash.","prompt":"Empty the Trash? Confirm?"}"#;
-        let result = parse_conversation_turn_result(json).expect("valid confirm_task JSON should parse");
+        let result =
+            parse_conversation_turn_result(json).expect("valid confirm_task JSON should parse");
         match result {
-            ConversationTurnResult::ConfirmTask { goal, summary, prompt } => {
+            ConversationTurnResult::ConfirmTask {
+                goal,
+                summary,
+                prompt,
+            } => {
                 assert_eq!(goal, "Empty Trash");
                 assert_eq!(summary, "I will empty your Mac Trash.");
                 assert_eq!(prompt, "Empty the Trash? Confirm?");
@@ -595,7 +605,7 @@ impl LlmError {
 }
 
 /// Usage metadata for LLM requests
-/// 
+///
 /// Captures telemetry data for debugging, cost analysis, and provider comparison.
 /// No sensitive content (prompts, keys, user data) is included.
 #[derive(Debug, Clone, Serialize)]
@@ -649,12 +659,12 @@ pub fn classify_request_path(base_url: &str) -> LlmRequestPath {
     let lower = base_url.to_lowercase();
     if lower.contains("/desktop/free-ai/") || lower.contains("free-ai/v1") {
         LlmRequestPath::HostedFallback
-    } else if lower.starts_with("http://localhost") 
+    } else if lower.starts_with("http://localhost")
         || lower.starts_with("https://localhost")
         || lower.starts_with("http://127.")
         || lower.starts_with("https://127.")
         || lower.starts_with("http://[::1]")
-        || lower.starts_with("https://[::1]") 
+        || lower.starts_with("https://[::1]")
     {
         LlmRequestPath::Local
     } else {
@@ -663,7 +673,7 @@ pub fn classify_request_path(base_url: &str) -> LlmRequestPath {
 }
 
 /// Log usage metadata for observability
-/// 
+///
 /// This function logs structured usage data without sensitive content.
 /// Use this for debugging, cost tracking, and provider comparison.
 pub fn log_usage(metadata: &LlmUsageMetadata) {
@@ -680,7 +690,7 @@ pub fn log_usage(metadata: &LlmUsageMetadata) {
         "tokens_available": metadata.tokens_available,
         "correlation_id": metadata.correlation_id,
     });
-    
+
     // Log structured usage data (debug level)
     // In production, this can be captured by log aggregation
     println!("[LLM_USAGE] {}", log_entry);
@@ -1176,7 +1186,8 @@ pub fn build_conversation_user_prompt(messages: &[ConversationTurnMessage]) -> S
 /// instead of surfacing a parse error to the user.
 pub fn parse_conversation_turn_result(content: &str) -> Result<ConversationTurnResult, LlmError> {
     // Try standard parse first (handles correct format and ```json fences).
-    if let Ok(result) = parse_json_response::<ConversationTurnResult>(content, "conversation turn") {
+    if let Ok(result) = parse_json_response::<ConversationTurnResult>(content, "conversation turn")
+    {
         return Ok(result);
     }
 
@@ -1192,21 +1203,21 @@ pub fn parse_conversation_turn_result(content: &str) -> Result<ConversationTurnR
         .trim();
 
     // After stripping prefixes/fences, try standard parsing again on the cleaned text.
-    if let Ok(result) = parse_json_response::<ConversationTurnResult>(cleaned, "conversation turn") {
+    if let Ok(result) = parse_json_response::<ConversationTurnResult>(cleaned, "conversation turn")
+    {
         return Ok(result);
     }
 
     // Try parsing cleaned text, then repaired text (fixes unescaped quotes from small LLMs).
-    let json_attempts = [
-        cleaned,
-        &repair_unescaped_quotes_in_json(cleaned),
-    ];
+    let json_attempts = [cleaned, &repair_unescaped_quotes_in_json(cleaned)];
     for attempt in &json_attempts {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(attempt) {
             // Model returned {"message": "..."} without kind → treat as reply.
             if let Some(msg) = value.get("message").and_then(|v| v.as_str()) {
                 if !msg.is_empty() {
-                    return Ok(ConversationTurnResult::Reply { message: msg.to_string() });
+                    return Ok(ConversationTurnResult::Reply {
+                        message: msg.to_string(),
+                    });
                 }
             }
             // Model returned some other JSON object → extract any string value as reply.
@@ -1214,7 +1225,9 @@ pub fn parse_conversation_turn_result(content: &str) -> Result<ConversationTurnR
                 for v in map.values() {
                     if let Some(s) = v.as_str() {
                         if !s.is_empty() && s.len() > 3 {
-                            return Ok(ConversationTurnResult::Reply { message: s.to_string() });
+                            return Ok(ConversationTurnResult::Reply {
+                                message: s.to_string(),
+                            });
                         }
                     }
                 }
@@ -1226,7 +1239,9 @@ pub fn parse_conversation_turn_result(content: &str) -> Result<ConversationTurnR
     // Model returned plain text (not JSON at all) → use it as a reply.
     let trimmed = content.trim();
     if !trimmed.is_empty() && !trimmed.starts_with('{') && !trimmed.starts_with('[') {
-        return Ok(ConversationTurnResult::Reply { message: trimmed.to_string() });
+        return Ok(ConversationTurnResult::Reply {
+            message: trimmed.to_string(),
+        });
     }
 
     Err(LlmError {

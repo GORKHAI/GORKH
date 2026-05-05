@@ -12,11 +12,11 @@ pub mod tools;
 #[allow(dead_code)]
 pub mod vision;
 
+use crate::llm;
 use crate::llm::{
     AgentProposal as RetailAgentProposal, InputAction as RetailInputAction,
     ToolCall as RetailToolCall,
 };
-use crate::llm;
 use crate::workspace;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -535,11 +535,25 @@ async fn run_task_loop(
 
     let mut plan = match planner.create_plan(&goal).await {
         Ok((plan, input_tokens, output_tokens)) if !plan.steps.is_empty() => {
-            update_task_cost(&current_task, &callback, provider.as_ref(), input_tokens, output_tokens).await;
+            update_task_cost(
+                &current_task,
+                &callback,
+                provider.as_ref(),
+                input_tokens,
+                output_tokens,
+            )
+            .await;
             plan
         }
         Ok((_, input_tokens, output_tokens)) => {
-            update_task_cost(&current_task, &callback, provider.as_ref(), input_tokens, output_tokens).await;
+            update_task_cost(
+                &current_task,
+                &callback,
+                provider.as_ref(),
+                input_tokens,
+                output_tokens,
+            )
+            .await;
             planner::create_simple_plan(&goal)
         }
         Err(_) => planner::create_simple_plan(&goal),
@@ -728,7 +742,14 @@ async fn complete_task(
             input_tokens: 0,
             output_tokens: 0,
         });
-    update_task_cost(&current_task, &callback, provider, result.input_tokens, result.output_tokens).await;
+    update_task_cost(
+        &current_task,
+        &callback,
+        provider,
+        result.input_tokens,
+        result.output_tokens,
+    )
+    .await;
     let summary = result.content;
 
     {
@@ -787,7 +808,15 @@ async fn execute_step(
             ));
         }
 
-        let observation = observe_screen(provider, goal, previous_actions, config, &current_task, &callback).await?;
+        let observation = observe_screen(
+            provider,
+            goal,
+            previous_actions,
+            config,
+            &current_task,
+            &callback,
+        )
+        .await?;
         (callback)(AgentEvent::ScreenObserved {
             task_id: task_id.to_string(),
             observation: observation.clone(),
@@ -797,7 +826,16 @@ async fn execute_step(
         ScreenObservation::empty()
     };
 
-    let operation = propose_next_operation(provider, goal, step, &observation, &current_task, &callback, config).await?;
+    let operation = propose_next_operation(
+        provider,
+        goal,
+        step,
+        &observation,
+        &current_task,
+        &callback,
+        config,
+    )
+    .await?;
 
     match operation {
         NextOperation::AutoAction { action, summary } => {
@@ -1048,7 +1086,9 @@ async fn observe_screen(
     }
 
     Err(AgentError::Vision(
-        last_error.map(|e| e.message).unwrap_or_else(|| "Vision analysis failed".to_string()),
+        last_error
+            .map(|e| e.message)
+            .unwrap_or_else(|| "Vision analysis failed".to_string()),
     ))
 }
 
@@ -1120,7 +1160,9 @@ async fn propose_next_operation(
     }
 
     Err(AgentError::Provider(
-        last_error.map(|e| e.message).unwrap_or_else(|| "Propose next step failed".to_string()),
+        last_error
+            .map(|e| e.message)
+            .unwrap_or_else(|| "Propose next step failed".to_string()),
     ))
 }
 
@@ -1193,7 +1235,10 @@ fn build_provider(config: &AgentConfig) -> Result<Box<dyn providers::LlmProvider
             config.provider_model.clone(),
         ))),
         ProviderType::GorkhFree => Ok(Box::new(providers::GorkhFreeProvider::new(
-            config.provider_base_url.clone().unwrap_or_else(|| "http://localhost:3001".to_string()),
+            config
+                .provider_base_url
+                .clone()
+                .unwrap_or_else(|| "http://localhost:3001".to_string()),
             config.provider_api_key.clone().unwrap_or_default(),
         ))),
     }
@@ -1262,8 +1307,14 @@ fn parse_next_operation(input: &str) -> Result<NextOperation, AgentError> {
         Ok(p) => p,
         Err(_) => {
             // Fallback: small models sometimes confuse the step format with the system-prompt AgentProposal format
-            let agent_proposal = llm::parse_json_response::<llm::AgentProposal>(input, "proposed step fallback")
-                .map_err(|error| AgentError::Provider(format!("Failed to parse proposed step: {}", error.message)))?;
+            let agent_proposal =
+                llm::parse_json_response::<llm::AgentProposal>(input, "proposed step fallback")
+                    .map_err(|error| {
+                        AgentError::Provider(format!(
+                            "Failed to parse proposed step: {}",
+                            error.message
+                        ))
+                    })?;
             return agent_proposal_to_next_operation(&agent_proposal);
         }
     };
@@ -1345,7 +1396,9 @@ fn parse_next_operation(input: &str) -> Result<NextOperation, AgentError> {
         "open_app" => {
             let app_name = read_optional_string(&proposal.params, "app_name")
                 .or_else(|| read_optional_string(&proposal.params, "appName"))
-                .ok_or_else(|| AgentError::Provider("Missing string field 'app_name'".to_string()))?;
+                .ok_or_else(|| {
+                    AgentError::Provider("Missing string field 'app_name'".to_string())
+                })?;
             let action = RetailInputAction::OpenApp {
                 app_name: app_name.clone(),
             };
@@ -1399,21 +1452,31 @@ fn parse_next_operation(input: &str) -> Result<NextOperation, AgentError> {
     }
 }
 
-fn agent_proposal_to_next_operation(proposal: &llm::AgentProposal) -> Result<NextOperation, AgentError> {
+fn agent_proposal_to_next_operation(
+    proposal: &llm::AgentProposal,
+) -> Result<NextOperation, AgentError> {
     match proposal {
-        llm::AgentProposal::ProposeAction { action, rationale, confidence } => {
-            Ok(NextOperation::Approval {
-                execution: PendingExecution::Action(retail_action_to_executor(action)),
-                proposal: RetailAgentProposal::ProposeAction {
-                    action: action.clone(),
-                    rationale: rationale.clone(),
-                    confidence: *confidence,
-                },
-            })
-        }
-        llm::AgentProposal::ProposeTool { tool_call, rationale, confidence } => {
+        llm::AgentProposal::ProposeAction {
+            action,
+            rationale,
+            confidence,
+        } => Ok(NextOperation::Approval {
+            execution: PendingExecution::Action(retail_action_to_executor(action)),
+            proposal: RetailAgentProposal::ProposeAction {
+                action: action.clone(),
+                rationale: rationale.clone(),
+                confidence: *confidence,
+            },
+        }),
+        llm::AgentProposal::ProposeTool {
+            tool_call,
+            rationale,
+            confidence,
+        } => {
             let retail_tool = llm_tool_to_retail(tool_call).ok_or_else(|| {
-                AgentError::Provider("This tool is not supported by the advanced agent yet.".to_string())
+                AgentError::Provider(
+                    "This tool is not supported by the advanced agent yet.".to_string(),
+                )
             })?;
             Ok(NextOperation::Approval {
                 execution: PendingExecution::Tool(retail_tool.clone()),
@@ -1424,31 +1487,44 @@ fn agent_proposal_to_next_operation(proposal: &llm::AgentProposal) -> Result<Nex
                 },
             })
         }
-        llm::AgentProposal::AskUser { question } => {
-            Ok(NextOperation::AskUser {
-                question: question.clone(),
-            })
-        }
-        llm::AgentProposal::Done { summary } => {
-            Ok(NextOperation::Done {
-                summary: summary.clone(),
-            })
-        }
+        llm::AgentProposal::AskUser { question } => Ok(NextOperation::AskUser {
+            question: question.clone(),
+        }),
+        llm::AgentProposal::Done { summary } => Ok(NextOperation::Done {
+            summary: summary.clone(),
+        }),
     }
 }
 
 fn llm_tool_to_retail(tool_call: &llm::ToolCall) -> Option<RetailToolCall> {
     match tool_call {
         llm::ToolCall::FsList { path } => Some(RetailToolCall::FsList { path: path.clone() }),
-        llm::ToolCall::FsReadText { path } => Some(RetailToolCall::FsReadText { path: path.clone() }),
-        llm::ToolCall::FsWriteText { path, content } => Some(RetailToolCall::FsWriteText { path: path.clone(), content: content.clone() }),
-        llm::ToolCall::FsApplyPatch { path, patch } => Some(RetailToolCall::FsApplyPatch { path: path.clone(), patch: patch.clone() }),
+        llm::ToolCall::FsReadText { path } => {
+            Some(RetailToolCall::FsReadText { path: path.clone() })
+        }
+        llm::ToolCall::FsWriteText { path, content } => Some(RetailToolCall::FsWriteText {
+            path: path.clone(),
+            content: content.clone(),
+        }),
+        llm::ToolCall::FsApplyPatch { path, patch } => Some(RetailToolCall::FsApplyPatch {
+            path: path.clone(),
+            patch: patch.clone(),
+        }),
         llm::ToolCall::FsDelete { path } => Some(RetailToolCall::FsDelete { path: path.clone() }),
-        llm::ToolCall::TerminalExec { cmd, args, cwd } => Some(RetailToolCall::TerminalExec { cmd: cmd.clone(), args: args.clone(), cwd: cwd.clone() }),
+        llm::ToolCall::TerminalExec { cmd, args, cwd } => Some(RetailToolCall::TerminalExec {
+            cmd: cmd.clone(),
+            args: args.clone(),
+            cwd: cwd.clone(),
+        }),
         llm::ToolCall::EmptyTrash => Some(RetailToolCall::EmptyTrash),
         llm::ToolCall::GetClipboard => Some(RetailToolCall::GetClipboard),
-        llm::ToolCall::SetClipboard { text } => Some(RetailToolCall::SetClipboard { text: text.clone() }),
-        llm::ToolCall::MoveFiles { paths, destination } => Some(RetailToolCall::MoveFiles { paths: paths.clone(), destination: destination.clone() }),
+        llm::ToolCall::SetClipboard { text } => {
+            Some(RetailToolCall::SetClipboard { text: text.clone() })
+        }
+        llm::ToolCall::MoveFiles { paths, destination } => Some(RetailToolCall::MoveFiles {
+            paths: paths.clone(),
+            destination: destination.clone(),
+        }),
         llm::ToolCall::AppGetState => Some(RetailToolCall::AppGetState),
         _ => None,
     }
@@ -1536,9 +1612,7 @@ fn retail_tool_to_workspace(tool_call: &RetailToolCall) -> workspace::ToolCall {
             path: path.clone(),
             patch: patch.clone(),
         },
-        RetailToolCall::FsDelete { path } => workspace::ToolCall::FsDelete {
-            path: path.clone(),
-        },
+        RetailToolCall::FsDelete { path } => workspace::ToolCall::FsDelete { path: path.clone() },
         RetailToolCall::TerminalExec { cmd, args, cwd } => workspace::ToolCall::TerminalExec {
             cmd: cmd.clone(),
             args: args.clone(),
@@ -1643,12 +1717,10 @@ mod tests {
             panic!("parse failed: {}", e);
         }
         match result.unwrap() {
-            NextOperation::Approval { execution, .. } => {
-                match execution {
-                    PendingExecution::Tool(RetailToolCall::EmptyTrash) => {},
-                    _ => panic!("Expected EmptyTrash"),
-                }
-            }
+            NextOperation::Approval { execution, .. } => match execution {
+                PendingExecution::Tool(RetailToolCall::EmptyTrash) => {}
+                _ => panic!("Expected EmptyTrash"),
+            },
             _ => panic!("Expected Approval"),
         }
     }
@@ -1667,12 +1739,10 @@ mod tests {
             panic!("parse failed: {}", e);
         }
         match result.unwrap() {
-            NextOperation::Approval { execution, .. } => {
-                match execution {
-                    PendingExecution::Tool(RetailToolCall::AppGetState) => {},
-                    _ => panic!("Expected AppGetState"),
-                }
-            }
+            NextOperation::Approval { execution, .. } => match execution {
+                PendingExecution::Tool(RetailToolCall::AppGetState) => {}
+                _ => panic!("Expected AppGetState"),
+            },
             _ => panic!("Expected Approval"),
         }
     }

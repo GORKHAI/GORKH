@@ -1,4 +1,4 @@
-import type { AgentProposal, RunConstraints } from '@ai-operator/shared';
+import type { AgentProposal, RunConstraints } from '@gorkh/shared';
 import {
   approveAgentProposal,
   cancelAgentTask,

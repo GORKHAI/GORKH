@@ -1,4 +1,4 @@
-import type { Device, Platform, ScreenStreamState, ControlState, WorkspaceState } from '@ai-operator/shared';
+import type { Device, Platform, ScreenStreamState, ControlState, WorkspaceState } from '@gorkh/shared';
 
 // In-memory device store
 const devices = new Map<string, Device>();

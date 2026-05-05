@@ -22,7 +22,7 @@ import {
   type AgentProposal,
   type ToolCall,
   type WorkspaceState,
-} from '@ai-operator/shared';
+} from '@gorkh/shared';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 

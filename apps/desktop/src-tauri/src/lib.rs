@@ -199,7 +199,10 @@ fn detect_accessibility_status() -> PermissionState {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_display_point, validate_normalized_coordinates, ConversationTurnRequest, DisplayBounds, ProposalRequest};
+    use super::{
+        resolve_display_point, validate_normalized_coordinates, ConversationTurnRequest,
+        DisplayBounds, ProposalRequest,
+    };
 
     #[test]
     fn resolve_display_point_keeps_primary_display_coordinates_stable() {
@@ -1150,8 +1153,12 @@ fn overlay_mode_supported() -> bool {
 }
 
 fn capture_overlay_window_snapshot(window: &tauri::WebviewWindow) -> OverlayWindowSnapshot {
-    let size = window.inner_size().unwrap_or(tauri::PhysicalSize::new(1200, 800));
-    let pos = window.inner_position().unwrap_or(tauri::PhysicalPosition::new(0, 0));
+    let size = window
+        .inner_size()
+        .unwrap_or(tauri::PhysicalSize::new(1200, 800));
+    let pos = window
+        .inner_position()
+        .unwrap_or(tauri::PhysicalPosition::new(0, 0));
     OverlayWindowSnapshot {
         fullscreen: window.is_fullscreen().unwrap_or(false),
         maximized: window.is_maximized().unwrap_or(false),
@@ -1182,7 +1189,8 @@ fn restore_overlay_window_snapshot(
         .map_err(|e| format!("Failed to restore window resize state: {}", e))?;
     window
         .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
-            snapshot.width, snapshot.height,
+            snapshot.width,
+            snapshot.height,
         )))
         .map_err(|e| format!("Failed to restore window size: {}", e))?;
     window
@@ -1196,7 +1204,7 @@ fn restore_overlay_window_snapshot(
             .map_err(|e| format!("Failed to restore maximized state: {}", e))?;
     } else {
         window
-        .unmaximize()
+            .unmaximize()
             .map_err(|e| format!("Failed to restore maximized state: {}", e))?;
     }
     Ok(())
@@ -1517,7 +1525,10 @@ fn launch_app_by_name(app_name: &str) -> Result<(), String> {
             return Ok(());
         }
 
-        return Err(format!("Application launcher exited with status {}", status));
+        return Err(format!(
+            "Application launcher exited with status {}",
+            status
+        ));
     }
 
     #[cfg(target_os = "windows")]
@@ -1531,7 +1542,10 @@ fn launch_app_by_name(app_name: &str) -> Result<(), String> {
             return Ok(());
         }
 
-        return Err(format!("Application launcher exited with status {}", status));
+        return Err(format!(
+            "Application launcher exited with status {}",
+            status
+        ));
     }
 
     #[cfg(target_os = "linux")]
@@ -1871,18 +1885,16 @@ fn resolve_llm_api_key(provider: &str) -> Result<String, ProposalError> {
 }
 
 #[tauri::command]
-async fn llm_propose_next_action(
-    params: ProposalRequest,
-) -> Result<ProposalResult, ProposalError> {
+async fn llm_propose_next_action(params: ProposalRequest) -> Result<ProposalResult, ProposalError> {
     let api_key = params
         .api_key_override
         .clone()
         .unwrap_or(resolve_llm_api_key(&params.provider)?);
 
     // Get workspace configuration status
-    let workspace_configured = params.workspace_configured.or_else(|| {
-        Some(workspace::current_workspace_root().is_some())
-    });
+    let workspace_configured = params
+        .workspace_configured
+        .or_else(|| Some(workspace::current_workspace_root().is_some()));
 
     let proposal_params = llm::ProposalParams {
         provider: params.provider,
@@ -1901,7 +1913,8 @@ async fn llm_propose_next_action(
         correlation_id: params.correlation_id,
     };
 
-    let provider = llm::create_provider(&proposal_params.provider).map_err(proposal_error_from_llm)?;
+    let provider =
+        llm::create_provider(&proposal_params.provider).map_err(proposal_error_from_llm)?;
 
     let proposal = provider
         .propose_next_action(&proposal_params)
@@ -1951,7 +1964,8 @@ async fn assistant_conversation_turn(
         correlation_id: params.correlation_id,
     };
 
-    let provider = llm::create_provider(&conversation_params.provider).map_err(proposal_error_from_llm)?;
+    let provider =
+        llm::create_provider(&conversation_params.provider).map_err(proposal_error_from_llm)?;
 
     let result = provider
         .conversation_turn(&conversation_params)
@@ -2105,7 +2119,10 @@ fn agent_provider_kind(provider_type: &str) -> Result<ProviderType, String> {
 
 async fn is_agent_provider_available(provider_type: &str) -> Result<bool, String> {
     match agent_provider_kind(provider_type)? {
-        ProviderType::OpenAi | ProviderType::Claude | ProviderType::DeepSeek | ProviderType::Moonshot => {
+        ProviderType::OpenAi
+        | ProviderType::Claude
+        | ProviderType::DeepSeek
+        | ProviderType::Moonshot => {
             Ok(keyring_get_secret(&format!("llm_api_key:{}", provider_type)).is_some())
         }
         ProviderType::GorkhFree => {
@@ -2212,9 +2229,10 @@ async fn start_agent_task(
     let primary_provider = agent_provider_kind(&provider_name)?;
     let key_provider = credential_provider.unwrap_or_else(|| provider_name.clone());
     let resolved_provider_api_key = provider_api_key.or_else(|| match primary_provider {
-        ProviderType::OpenAi | ProviderType::Claude | ProviderType::DeepSeek | ProviderType::Moonshot => {
-            keyring_get_secret(&format!("llm_api_key:{}", key_provider))
-        }
+        ProviderType::OpenAi
+        | ProviderType::Claude
+        | ProviderType::DeepSeek
+        | ProviderType::Moonshot => keyring_get_secret(&format!("llm_api_key:{}", key_provider)),
         _ => None,
     });
 
@@ -2241,7 +2259,10 @@ async fn start_agent_task(
         Some(ctx) if !ctx.trim().is_empty() => format!("{}\n\n{}", ctx, goal),
         _ => goal,
     };
-    let task_id = agent.start_task(grounded_goal).await.map_err(|e| e.to_string())?;
+    let task_id = agent
+        .start_task(grounded_goal)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Store agent
     let mut guard = state.agent.write().await;
@@ -2340,8 +2361,8 @@ async fn gorkh_app_snapshot() -> Result<GorkhAppSnapshot, String> {
     };
     let workspace_root = workspace::WORKSPACE_ROOT.lock().unwrap().clone();
     let workspace_configured = workspace_root.is_some();
-    let workspace_root_name = workspace_root
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()));
+    let workspace_root_name =
+        workspace_root.and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()));
     let autostart_enabled = autostart_is_enabled().unwrap_or(false);
 
     Ok(GorkhAppSnapshot {
@@ -2359,7 +2380,10 @@ fn gorkh_settings_set(key: String, value: bool) -> KeyResult {
         "autostart" => autostart_set_enabled(value),
         _ => KeyResult {
             ok: false,
-            error: Some(format!("Unknown setting key '{}'. Settable: autostart", key)),
+            error: Some(format!(
+                "Unknown setting key '{}'. Settable: autostart",
+                key
+            )),
         },
     }
 }

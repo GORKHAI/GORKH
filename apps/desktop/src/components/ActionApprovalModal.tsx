@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { InputAction } from '@ai-operator/shared';
+import type { InputAction } from '@gorkh/shared';
 import type { ApprovalItem } from '../lib/approvals.js';
 
 // Use actionId in the component to satisfy lint

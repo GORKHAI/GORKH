@@ -1,4 +1,4 @@
-import type { ControlState, Device, Platform, ScreenStreamState, WorkspaceState } from '@ai-operator/shared';
+import type { ControlState, Device, Platform, ScreenStreamState, WorkspaceState } from '@gorkh/shared';
 import { prisma } from '../db/prisma.js';
 import {
   getDesktopDeviceSessionExpiryDate,

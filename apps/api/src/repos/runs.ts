@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { RunWithSteps } from '@ai-operator/shared';
+import type { RunWithSteps } from '@gorkh/shared';
 import { prisma } from '../db/prisma.js';
 import { sanitizeRunForPersistence } from '../lib/run-privacy.js';
 
