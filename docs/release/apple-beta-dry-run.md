@@ -1,6 +1,6 @@
 # GORKH Apple Beta Dry-Run Guide
 
-> Version: 0.0.48  
+> Version: 0.0.49  
 > Last updated: 2026-05-06 (Phase 21 pre-stable cleanup)
 
 ## 1. Purpose
