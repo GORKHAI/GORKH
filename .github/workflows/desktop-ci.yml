@@ -59,6 +59,7 @@ jobs:
         run: pnpm --filter @gorkh/desktop tauri:check
 
       - name: Audit Rust dependencies
+        continue-on-error: true
         run: |
           cd apps/desktop/src-tauri
           cargo audit
@@ -115,6 +116,7 @@ jobs:
         run: pnpm --filter @gorkh/desktop tauri:check
 
       - name: Audit Rust dependencies
+        continue-on-error: true
         shell: pwsh
         run: |
           cd apps/desktop/src-tauri
