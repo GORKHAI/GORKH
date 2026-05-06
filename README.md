@@ -1,154 +1,106 @@
 # GORKH
 
-GORKH is a desktop-first AI assistant that can understand natural-language tasks, operate on your machine with local approvals, and coordinate optional cloud providers through a secure local runtime.
+GORKH is an Apple-first Solana workstation for read-only wallet intelligence, market context, transaction safety, Solana/Anchor development workflows, and policy-bound agent planning.
 
-The product is built around four surfaces:
+## What GORKH Is
 
-- **Desktop app** — the primary product experience, built with Tauri + React
-- **Web app** — sign-in, billing, downloads, account, and admin/debug surfaces
-- **API** — auth, device/session coordination, downloads, updater feed, billing, and real-time backend services
-- **iOS companion app** — read-only monitoring and account access (companion to the desktop experience)
+GORKH is a desktop-first Solana workstation. The Tauri desktop app is the primary product surface, with the web app, API, and iOS project supporting account, handoff, coordination, and companion workflows.
 
----
+The current workstation is safety-first. It is read-only, draft-only, and planner-only where blockchain actions are involved. GORKH does not currently sign transactions, submit transactions, custody assets, or execute Solana actions.
 
-## What GORKH does
+The product direction is non-custodial: wallet profiles are address-first, browser wallet interactions are limited to handoff and optional ownership proof, and private key material is intentionally outside the app.
 
-GORKH is designed to feel like a consumer desktop assistant, not an ops console.
+## Workstation Modules
 
-Users should be able to:
+### Wallet
 
-- sign in from the desktop app
-- use **GORKH Free** (5 hosted jobs/day, no setup required)
-- optionally connect **OpenAI**, **Claude**, or a **custom OpenAI-compatible** endpoint
-- approve sensitive actions locally
-- let GORKH help with desktop work, file operations, coding workflows, and guided automation
+Wallet supports local address-only wallet profiles, browser wallet handoff, and optional wallet ownership proof through browser `signMessage`. Ownership proof is verified locally with Ed25519 and is only used to prove control of a public address.
 
-Key product principles:
+Wallet snapshots are manual and read-only. The module can show SOL balance, token account previews, a portfolio tab, and bridges for adding wallet or token holdings to the Markets watchlist. Private send and receive flows are planner-only drafts. There is no private key import, seed phrase entry, wallet JSON import, custody, transaction signing, or transaction execution.
 
-- **desktop-first**
-- **local approvals for privileged actions**
-- **no server-side LLM keys**
-- **screen data is not persisted**
-- **retail-friendly Free AI setup**
-- **web app is secondary after sign-in**
+### Markets
 
----
+Markets provides local watchlists, read-only wallet and token intelligence, RPC-based token mint analysis, wallet snapshots, and risk signals. It includes a market data provider shell, deterministic sample offline market data, and a manual Birdeye read-only token market fetch.
 
-## Repository structure
+Birdeye requires a user-provided API key for manual fetches. The key is memory-only and is never persisted by GORKH. Markets does not provide swaps, routes, trades, orders, auto-buy, auto-sell, MEV, sniper, leverage, perps, or Drift integration.
+
+### Shield
+
+Shield provides offline Solana transaction decode, read-only RPC lookup, transaction simulation preview, lookup table resolution, and risk findings. It is an inspection and explanation surface only. It does not sign, submit, or execute transactions.
+
+### Builder
+
+Builder is a read-only Solana/Anchor workspace inspector. It can inspect local project structure, parse `Anchor.toml`, parse IDLs, analyze logs, preview safe files, and run diagnostic command allowlist checks.
+
+Build, test, deploy, install, validator, and custom command workflows remain blocked or draft-only. GORKH does not execute Anchor builds, tests, or deployments.
+
+### Agent
+
+Agent is a mainnet-safe Solana Agent Control Center foundation. It supports local agent profiles, policies, protocol permissions, action drafts, local audit events, and accountability or attestation previews.
+
+Agent actions are drafts and previews. There is no autonomous execution, on-chain write, wallet signing, or transaction submission.
+
+### Context
+
+Context exports sanitized workstation context across Wallet, Markets, Shield, Builder, and Agent surfaces. Exports are local and manual copy-paste oriented. GORKH does not auto-send workstation context to an LLM.
+
+## Safety Model
+
+GORKH currently enforces these product boundaries:
+
+- No private key import.
+- No seed phrase entry.
+- No wallet JSON import.
+- No custody.
+- No transaction signing.
+- No transaction execution.
+- `signMessage` is used only for optional wallet ownership proof.
+- No swaps, trades, routes, orders, auto-trading, sniping, MEV, leverage, or perps.
+- No automatic polling or monitoring for wallet or markets data.
+- Birdeye API keys are memory-only and never persisted.
+- Drift is excluded.
+- HumanRail and White Protocol are not production dependencies.
+
+Older development or research references may mention removed protocols or legacy names, but the production-facing workstation registry excludes Drift, HumanRail, and White Protocol.
+
+## Architecture
 
 ```text
 apps/
-  api/        Fastify API, WebSocket gateway, SSE, billing, downloads, updater feed
-  desktop/    Tauri + React desktop app
-  web/        Next.js web portal
-  ios/        iOS companion app (read-only)
+  desktop/   Tauri 2 + React desktop workstation
+  web/       Next.js portal and browser wallet handoff surface
+  api/       Fastify backend for auth, devices, billing, updater/feed, and coordination
+  ios/       SwiftUI companion project, built separately in Xcode
+
 packages/
-  shared/     Shared TypeScript types and protocol definitions
-infra/        Local Docker infrastructure and deployment support files
-docs/         Architecture, deployment, release, and runbook documentation
+  shared/    Shared Zod schemas, protocol definitions, and Solana workstation types
+
+docs/
+  release/   Apple/macOS release readiness, beta dry-run, and stable sign-off docs
+  qa/        Workstation QA checklist and known issues
+
+scripts/
+  check-release-readiness.mjs and supporting validation scripts
 ```
 
-## Architecture overview
+Current workspace package identity:
 
-### Desktop app
+- `@gorkh/shared`
+- `@gorkh/api`
+- `@gorkh/desktop`
+- `@gorkh/web`
+- `@gorkh/ios`
 
-The desktop app is the main product surface.
+The root package is still named `ai-operator` and some legacy identifiers remain for bundle and updater continuity, including `com.ai-operator.desktop` in the Tauri config. User-facing documentation and product copy should present the product as GORKH.
 
-It is responsible for:
+## Development
 
-- desktop sign-in handoff
-- provider settings and keychain-backed credential storage
-- local approvals
-- task/chat UX
-- screen capture and input-control permissions
-- keychain-backed credential storage
-- workspace access
-- local tool execution
+Prerequisites:
 
-### Web app
-
-The web app is used for:
-
-- registration and login
-- billing and subscription management
-- desktop download page
-- account/device information
-- admin/debug views
-
-### API
-
-The API provides:
-
-- browser auth and sessions
-- desktop auth handoff
-- device/session coordination
-- run/task persistence
-- WebSocket and SSE real-time flows
-- Stripe billing integration
-- desktop installer metadata
-- updater manifest feed
-- health/readiness/metrics surfaces
-
-## Core capabilities
-
-### Free AI
-
-GORKH Free is a hosted fallback tier for users without a BYO API key.
-
-- 5 free tasks per day, powered by DeepSeek
-- No local installation or model management required
-- Device-token auth; no API keys sent to the server
-- Upgrade anytime by adding your own OpenAI, Claude, DeepSeek, Kimi, MiniMax, or compatible key
-
-### Paid providers
-
-GORKH supports optional paid providers in the desktop app.
-
-Current launch-facing provider model:
-
-- GORKH Free (hosted, 5 tasks/day)
-- OpenAI
-- Claude
-- DeepSeek
-- Kimi
-- MiniMax
-- Custom OpenAI-compatible (advanced use)
-
-API keys stay in the local OS keychain and are never sent to the server.
-
-### Local approvals
-
-Sensitive actions remain approval-gated locally.
-
-Examples include:
-
-- control actions
-- tool execution
-- AI-generated proposals
-
-### Real-time backend coordination
-
-The platform uses:
-
-- WebSocket for desktop coordination
-- SSE for browser updates
-- Redis-backed device command queue for at-least-once command delivery when configured
-
-## Prerequisites
-
-- Node.js 20+
-- pnpm (via Corepack recommended)
-- Rust stable for the desktop app
-- Docker for local Postgres/Redis if running the full stack locally
-
-Enable pnpm with Corepack:
-
-```bash
-corepack enable
-corepack prepare pnpm@latest --activate
-```
-
-## Quick start
+- Node.js 20 or newer.
+- pnpm 9.15.0, as declared by the root `packageManager`.
+- Rust stable for Tauri desktop checks and builds.
+- Xcode for the iOS companion project.
 
 Install dependencies:
 
@@ -156,277 +108,110 @@ Install dependencies:
 pnpm install
 ```
 
-Run all apps in development mode:
+Run all JavaScript/TypeScript apps in development mode:
 
 ```bash
 pnpm dev
 ```
 
-Build everything:
+Run the desktop app:
 
 ```bash
-pnpm -w build
+pnpm --filter @gorkh/desktop dev
+pnpm --filter @gorkh/desktop tauri:dev
 ```
 
-Typecheck everything:
-
-```bash
-pnpm -w typecheck
-```
-
-Run tests:
-
-```bash
-pnpm -w test
-```
-
-Desktop security checks:
-
-```bash
-pnpm check:desktop:security
-```
-
-## Local development
-
-### Start infrastructure
-
-```bash
-cd infra
-docker-compose up -d
-```
-
-This starts local:
-
-- Postgres on 5432
-- Redis on 6379
-
-### Run the API
+Run the API:
 
 ```bash
 pnpm --filter @gorkh/api dev
 ```
 
-Default local endpoints:
-
-- API: http://localhost:3001
-- WebSocket: ws://localhost:3001/ws
-- SSE: http://localhost:3001/events
-
-### Run the web app
+Run the web app:
 
 ```bash
 pnpm --filter @gorkh/web dev
 ```
 
-Default local web app:
-
-- http://localhost:3000
-
-### Run the desktop app
-
-The desktop app must run on your machine, not inside a Codespace or remote container, because it needs local OS permissions and local runtime access.
-
-```bash
-pnpm --filter @gorkh/desktop dev
-```
-
-Or run Tauri directly:
-
-```bash
-pnpm --filter @gorkh/desktop tauri:dev
-```
-
-## Environment variables
-
-### API
-
-Example local values:
-
-```
-PORT=3001
-NODE_ENV=development
-LOG_LEVEL=info
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_operator
-JWT_SECRET=dev_secret_change_me
-ACCESS_TOKEN_EXPIRES_IN=30m
-REFRESH_TOKEN_TTL_DAYS=14
-WEB_ORIGIN=http://localhost:3000
-APP_BASE_URL=http://localhost:3000
-API_PUBLIC_BASE_URL=http://localhost:3001
-BILLING_ENABLED=false
-RATE_LIMIT_BACKEND=memory
-REDIS_URL=redis://localhost:6379
-```
-
-### Web
-
-```
-NEXT_PUBLIC_API_BASE=http://localhost:3001
-```
-
-### Desktop
-
-```
-VITE_API_WS_URL=ws://localhost:3001/ws
-VITE_API_HTTP_BASE=http://localhost:3001
-VITE_DESKTOP_UPDATER_ENABLED=false
-VITE_DESKTOP_ALLOW_INSECURE_LOCALHOST=true
-```
-
-## Key routes
-
-### Auth and account
-
-- `POST /auth/register`
-- `POST /auth/login`
-- `POST /auth/refresh`
-- `POST /auth/logout`
-- `POST /auth/logout_all`
-- `GET /auth/me`
-- `GET /auth/sessions`
-
-### Billing
-
-- `GET /billing/status`
-- `POST /billing/checkout`
-- `POST /billing/portal`
-- `POST /billing/webhook`
-
-### Desktop downloads and updates
-
-- `GET /downloads/desktop`
-- `GET /updates/desktop/:platform/:arch/:currentVersion.json`
-
-### Operational endpoints
-
-- `GET /`
-- `GET /health`
-- `GET /ready`
-- `GET /admin/health`
-- `GET /metrics`
-
-### Real-time and orchestration
-
-- `GET /events`
-- `GET /devices`
-- `GET /devices/:deviceId`
-- `GET /runs`
-- `GET /runs/:runId`
-- `POST /runs`
-- `POST /runs/:runId/cancel`
-
-## Desktop behavior
-
-### Sign-in
-
-Desktop sign-in uses browser-based auth handoff. After sign-in, the desktop stores its device session locally and reconnects automatically.
-
-### Tray behavior
-
-The desktop app behaves like a tray agent. Closing the window hides it instead of exiting. Use the tray to reopen or quit.
-
-### Permissions
-
-On macOS, GORKH may require:
-
-- Screen Recording
-- Accessibility
-
-The app includes permission status guidance and shortcuts to the relevant system settings.
-
-### Free AI setup
-
-GORKH Free provides 5 hosted tasks per day at no cost. Users can also bring their own API keys for OpenAI, Claude, DeepSeek, Kimi, MiniMax, or compatible providers. API keys are stored in the local OS keychain.
-
-## Testing and validation
-
-Recommended validation commands:
+Common validation commands:
 
 ```bash
 pnpm -w typecheck
 pnpm -w build
 pnpm -w test
+pnpm --filter @gorkh/shared typecheck
+pnpm --filter @gorkh/shared test
+pnpm --filter @gorkh/desktop typecheck
+pnpm --filter @gorkh/desktop build
+pnpm --filter @gorkh/api typecheck
+pnpm --filter @gorkh/api test
+pnpm --filter @gorkh/web typecheck
+pnpm --filter @gorkh/web build
 pnpm check:desktop:security
-pnpm smoke:final
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --quiet
+pnpm check:release:readiness
 ```
 
-For desktop Rust/Tauri validation:
+Desktop Rust checks:
 
 ```bash
+pnpm --filter @gorkh/desktop check:rust:fmt
+pnpm --filter @gorkh/desktop check:rust:clippy
 pnpm --filter @gorkh/desktop tauri:check
 ```
 
-This runs:
+The iOS package is present as `@gorkh/ios`, but its pnpm scripts only print guidance. Build and type checking happen separately in Xcode.
 
-- `cargo fmt --check`
-- `cargo clippy --all-targets --all-features -- -D warnings`
-- debug Tauri build validation
+## Desktop / Apple Release Readiness
 
-## Deployment
+macOS is the stable target. The desktop app uses Tauri 2 with product name `GORKH`, a configured macOS icon, updater configuration, hardened CSP checks, and Apple/macOS release documentation.
 
-Primary deployment topology:
+Relevant release and QA docs:
 
-- Backend/API → Render
-- Frontend/Web → Vercel
-- Database → Postgres
-- Redis → shared Redis for rate limits, presence, and device command delivery
+- `docs/release/apple-macos-readiness.md`
+- `docs/release/apple-beta-dry-run.md`
+- `docs/release/stable-release-signoff.md`
+- `docs/qa/workstation-qa-checklist.md`
+- `docs/qa/known-issues.md`
 
-Key docs:
+Stable release work should only proceed after the release gates pass, manual macOS artifact validation is complete, and the release owner explicitly approves the release. Do not create tags, publish release artifacts, run release workflows, or change Apple signing/notarization configuration as part of normal development.
 
-- [docs/deploying.md](docs/deploying.md)
-- [docs/deploy-render-vercel.md](docs/deploy-render-vercel.md)
-- [docs/security.md](docs/security.md)
-- [docs/releasing.md](docs/releasing.md)
+## Current Status
 
-## Desktop downloads and updater modes
+The workstation shell is present in the desktop app with Wallet, Markets, Shield, Builder, Agent, and Context modules.
 
-GORKH supports two download/update modes:
+Current implemented foundations include:
 
-### File mode
+- Wallet address-only profiles, browser handoff, optional local ownership proof verification, manual RPC snapshots, token previews, and portfolio/watchlist bridge.
+- Markets read-only watchlists, RPC-based wallet/token analysis, risk signals, sample market data, provider registry shell, and manual Birdeye read-only fetch.
+- Shield offline decode, read-only RPC lookup, simulation preview, and risk findings.
+- Builder workspace inspection, Anchor/IDL parsing, log analysis, safe file preview, and diagnostic command guardrails.
+- Agent local profiles, policies, protocol permissions, action drafts, audit events, and attestation previews.
+- Context sanitized local export with manual assistant copy-paste.
 
-Best for direct website downloads and early beta distribution.
+All blockchain execution paths remain disabled. A stable-looking git tag `v0.0.48` exists, and `v0.1.0-beta.1` also exists, but production release status still depends on the release docs, signed artifact validation, and explicit sign-off.
 
-The API serves installer metadata using configured public URLs.
+## Roadmap
 
-### GitHub mode
+Near-term work should stay aligned with the safety model:
 
-Best for release-driven distribution once GitHub Releases are the source of truth.
+- Validate macOS artifacts on real Apple hardware.
+- Harden the real browser wallet handoff and ownership proof flow.
+- Expand read-only RPC and market data providers.
+- Design optional external wallet signing only after the explicit safety architecture is complete.
+- Research private and confidential route integrations as planner-only or read-only flows first.
+- Add transaction execution only after a reviewed architecture for signing, approvals, simulation, accountability, and failure handling.
 
-The API resolves installer metadata from GitHub Release assets. Stable updater feeds require signed artifacts and `.sig` files.
+## Non-Goals / Disabled Features
 
-## Security model
+- No custody.
+- No private key import.
+- No local generated wallet yet.
+- No transaction signing or execution.
+- No swaps, trading, routes, or orders.
+- No auto-trading, sniping, MEV, leverage, or perps.
+- No Drift integration.
+- No HumanRail or White Protocol production dependency.
 
-GORKH is built around local trust boundaries:
+## License
 
-- LLM API keys remain local
-- screen frames are not persisted
-- desktop approvals gate privileged actions
-- diagnostics are redacted
-- typed text, file contents, terminal args, tokens, and raw LLM keys are excluded from support exports where intended
-
-See:
-
-- [docs/security.md](docs/security.md)
-
-## Current product truth
-
-GORKH is evolving toward a more retail-friendly desktop assistant experience. The desktop app is the main product surface, while the web app remains the account/billing/download companion.
-
-At launch, the most stable user path is:
-
-1. desktop sign-in
-2. Free AI setup or paid-provider setup
-3. local approvals for sensitive actions
-4. website downloads through the public /download flow
-
-## Release notes
-
-For release and signing/notarization flows, see:
-
-- [docs/releasing.md](docs/releasing.md)
-
-For production operations and rollout guidance, see:
-
-- [docs/runbook.md](docs/runbook.md)
-- [docs/release-rehearsal.md](docs/release-rehearsal.md)
+License: not specified.
