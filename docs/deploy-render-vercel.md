@@ -10,8 +10,8 @@ This guide describes the recommended production topology for this repository:
 
 Provider-specific details are split across:
 
-- [docs/render-backend.md](/workspaces/GM7/docs/render-backend.md)
-- [docs/vercel-frontend.md](/workspaces/GM7/docs/vercel-frontend.md)
+- [docs/render-backend.md](render-backend.md)
+- [docs/vercel-frontend.md](vercel-frontend.md)
 
 ## Recommended Architecture
 
@@ -85,7 +85,7 @@ WEB_ORIGIN=https://app.<your-domain>
 APP_BASE_URL=https://app.<your-domain>
 ```
 
-For provider-default bring-up URLs, use the exact deployed frontend hostname, for example `WEB_ORIGIN=https://gm7-tau.vercel.app`.
+For provider-default bring-up URLs, use the exact deployed frontend hostname, for example `WEB_ORIGIN=https://your-project.vercel.app`.
 
 ## First Smoke Checks
 

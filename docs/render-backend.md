@@ -15,7 +15,7 @@ Do not deploy the frontend on Render in this setup. `apps/web` stays on Vercel.
 
 ## Render Blueprint
 
-The repo includes a root [render.yaml](/workspaces/GM7/render.yaml) that defines the Docker web service for the API.
+The repo includes a root [`render.yaml`](../../render.yaml) that defines the Docker web service for the API.
 
 It keeps the Render topology simple:
 
@@ -43,7 +43,7 @@ pnpm render:api:migrate
 Expanded command:
 
 ```bash
-pnpm --filter @ai-operator/api prisma:generate && pnpm --filter @ai-operator/api migrate:deploy
+pnpm --filter @gorkh/api prisma:generate && pnpm --filter @gorkh/api migrate:deploy
 ```
 
 5. After the deploy is healthy, verify:
@@ -132,7 +132,7 @@ For the initial production bring-up:
 - `GET /downloads/desktop` is public and only needs installer assets for the configured release.
 - `GET /updates/desktop/:platform/:arch/:currentVersion.json` still requires signed desktop release assets with matching `.sig` files.
 - Only pin `DESKTOP_RELEASE_TAG` when that tag really exists in GitHub Releases. A stale tag will make `/downloads/desktop` return `503 Downloads are not configured`.
-- If you deploy the frontend on a provider hostname such as `https://gm7-tau.vercel.app`, add that exact origin to `WEB_ORIGIN` on Render or browser requests will fail with `Origin not allowed`.
+- If you deploy the frontend on a provider hostname such as `https://your-project.vercel.app`, add that exact origin to `WEB_ORIGIN` on Render or browser requests will fail with `Origin not allowed`.
 
 ## Startup Validation Notes
 

@@ -67,7 +67,7 @@ The current auth model stays unchanged:
 
 If you rely on a split provider-default topology such as `*.vercel.app` + `*.onrender.com`, initial testing can still work, but cookie and CSRF debugging tends to be more awkward than with a shared parent domain.
 
-For that bring-up shape, make sure Render `WEB_ORIGIN` includes the exact deployed Vercel hostname, for example `https://gm7-tau.vercel.app`.
+For that bring-up shape, make sure Render `WEB_ORIGIN` includes the exact deployed Vercel hostname, for example `https://your-project.vercel.app`.
 
 ## Build and Deployment Notes
 

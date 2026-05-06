@@ -12,9 +12,9 @@ RUN pnpm -r install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
-RUN pnpm --filter @ai-operator/shared build
-RUN pnpm --filter @ai-operator/api exec prisma generate --schema prisma/schema.prisma
-RUN pnpm --filter @ai-operator/api build
+RUN pnpm --filter @gorkh/shared build
+RUN pnpm --filter @gorkh/api exec prisma generate --schema prisma/schema.prisma
+RUN pnpm --filter @gorkh/api build
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -28,4 +28,4 @@ COPY --from=build /app/apps/api ./apps/api
 COPY --from=build /app/packages/shared ./packages/shared
 RUN ln -s /app/node_modules /app/apps/api/node_modules
 EXPOSE 3001
-CMD ["pnpm", "--filter", "@ai-operator/api", "start"]
+CMD ["pnpm", "--filter", "@gorkh/api", "start"]
