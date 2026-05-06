@@ -1525,10 +1525,10 @@ fn launch_app_by_name(app_name: &str) -> Result<(), String> {
             return Ok(());
         }
 
-        return Err(format!(
+        Err(format!(
             "Application launcher exited with status {}",
             status
-        ));
+        ))
     }
 
     #[cfg(target_os = "windows")]
@@ -1542,10 +1542,10 @@ fn launch_app_by_name(app_name: &str) -> Result<(), String> {
             return Ok(());
         }
 
-        return Err(format!(
+        Err(format!(
             "Application launcher exited with status {}",
             status
-        ));
+        ))
     }
 
     #[cfg(target_os = "linux")]

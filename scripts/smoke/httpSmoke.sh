@@ -163,6 +163,7 @@ echo "STARTING_API=1"
   export STRIPE_SECRET_KEY=sk_test_smoke
   export STRIPE_WEBHOOK_SECRET=whsec_smoke
   export STRIPE_PRICE_ID=price_smoke
+  export BILLING_ENABLED=false
   export APP_BASE_URL=http://localhost:3000
   export API_PUBLIC_BASE_URL=http://localhost:3001
   export DESKTOP_UPDATE_FEED_DIR=./apps/api/updates
@@ -173,7 +174,12 @@ echo "STARTING_API=1"
   export DESKTOP_MAC_INTEL_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-x64.dmg
   export DESKTOP_MAC_ARM_URL=http://localhost:3001/downloads/desktop/artifacts/ai-operator-0.1.0-aarch64.dmg
   export ADMIN_API_KEY="$ADMIN_API_KEY_VALUE"
-  pnpm --filter @gorkh/api build >/tmp/ai-operator-api-build.log
+  pnpm --filter @gorkh/shared build >/tmp/ai-operator-shared-build.log 2>&1 || true
+  if ! pnpm --filter @gorkh/api build >/tmp/ai-operator-api-build.log 2>&1; then
+    echo "API build failed. Build log:" >&2
+    cat /tmp/ai-operator-api-build.log >&2
+    exit 1
+  fi
   nohup node apps/api/dist/index.js >"$API_LOG" 2>&1 &
   echo $! >"$API_PID_FILE"
 )
