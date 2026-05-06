@@ -33,7 +33,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Validate checked-in version sync
         run: node scripts/version-check.mjs
@@ -348,7 +348,7 @@ jobs:
         if: needs.prepare.outputs.channel != 'stable'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Rust
         if: needs.prepare.outputs.channel != 'stable'
@@ -462,7 +462,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

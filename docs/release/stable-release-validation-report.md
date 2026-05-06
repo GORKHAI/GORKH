@@ -11,8 +11,8 @@
 ## Status
 
 - Release gates: Passed locally.
-- Release-prep commit status: Pending at the time this report was written.
-- Branch push status: Pending at the time this report was written.
+- Release-prep commit status: Committed as `934f3c0` and pushed to `origin/main`; follow-up CI runtime alignment is pending in the report update commit.
+- Branch push status: `origin/main` updated to include the release-prep cleanup.
 - Tag creation status: Not created by this pass because `v0.0.48` already exists locally and remotely.
 - Tag push status: Not pushed by this pass because `v0.0.48` already exists on `origin`.
 - Expected GitHub Actions workflow: `.github/workflows/desktop-release.yml` runs on a new `v*` tag push, but no new tag push occurred during this validation pass.
@@ -36,6 +36,24 @@
 | `cargo clippy --all-targets --all-features -- -D warnings` from `apps/desktop/src-tauri` | PASS | Warning only: dependency `screenshots v0.8.10` has future-incompatibility notice. |
 | `pnpm -w typecheck` | PASS | Turbo reported 6/6 successful tasks. |
 | `pnpm -w build` | PASS | Turbo reported 5/5 successful tasks; desktop repeated non-fatal chunk warning. |
+| `pnpm -w test` | PASS | 108/108 workspace tests passed. |
+
+## GitHub Actions Follow-Up
+
+After `934f3c0` was pushed, GitHub Actions `CI` failed on the Node 20 runner while local gates on Node 24 passed. The failure was isolated to `tests/e2e-device-commands-redis.test.mjs`: five Redis WebSocket E2E subtests failed with `ReferenceError: WebSocket is not defined`.
+
+The workflow Node runtime was aligned from Node 20 to Node 22 in:
+
+- `.github/workflows/ci.yml`
+- `.github/workflows/desktop-ci.yml`
+- `.github/workflows/desktop-release.yml`
+
+Affected local verification after the workflow alignment:
+
+| Gate | Result | Notes |
+|---|---|---|
+| `node --import tsx --test tests/workflow-*.test.mjs tests/e2e-device-commands-redis.test.mjs` | PASS | 8/8 focused workflow and Redis E2E tests passed. |
+| `pnpm check:release:readiness` | PASS | 17/17 checks passed. |
 | `pnpm -w test` | PASS | 108/108 workspace tests passed. |
 
 ## Cleanup Verification
