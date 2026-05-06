@@ -13,7 +13,7 @@ RUN pnpm -r install --frozen-lockfile
 FROM deps AS build
 ENV NEXT_DISABLE_ESLINT=1
 COPY . .
-RUN pnpm --filter @ai-operator/web build
+RUN pnpm --filter @gorkh/web build
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -25,4 +25,4 @@ COPY --from=build /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/web ./apps/web
 EXPOSE 3000
-CMD ["pnpm", "--filter", "@ai-operator/web", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["pnpm", "--filter", "@gorkh/web", "start", "--", "-H", "0.0.0.0", "-p", "3000"]

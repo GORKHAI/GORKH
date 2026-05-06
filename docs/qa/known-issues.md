@@ -1,6 +1,6 @@
 # GORKH Known Issues
 
-> Last updated: 2026-05-05 (Phase 20 RC prep)
+> Last updated: 2026-05-06 (Phase 21 pre-stable cleanup)
 
 ## 1. API Session Test — Fixed in Phase 19
 

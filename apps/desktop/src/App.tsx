@@ -213,6 +213,8 @@ type PendingProposalPayload =
       proposal: Extract<AgentProposal, { kind: 'propose_tool' }>;
     };
 
+type DesktopPrimaryView = 'workstation' | 'assistant';
+
 const DEFAULT_PERMISSION_STATUS: NativePermissionStatus = {
   screenRecording: 'unknown',
   accessibility: 'unknown',
@@ -322,7 +324,7 @@ function App() {
   );
   const [providerStatusState, setProviderStatusState] = useState(getProviderStatus);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showWorkstation, setShowWorkstation] = useState(false);
+  const [primaryView, setPrimaryView] = useState<DesktopPrimaryView>('workstation');
   const [primaryDisplayId, setPrimaryDisplayId] = useState<string>('display-0');
   const [workspaceState, setWorkspaceState] = useState<LocalWorkspaceState>({ configured: false });
   const [toolHistoryByRun, setToolHistoryByRun] = useState<Record<string, LocalToolEvent[]>>({});
@@ -2223,7 +2225,7 @@ function App() {
         setOverlayModeStatus(next);
       })
       .catch((err) => {
-        console.error('[App] Failed to exit overlay mode after Stop All:', err);
+        console.error('[App] Failed to exit overlay mode after stopping assistant tasks:', err);
       });
   }, []);
 
@@ -2429,7 +2431,7 @@ function App() {
           <div>
             <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#111827' }}>Desktop overview</h3>
             <p style={{ margin: '0.35rem 0 0', color: '#475569', fontSize: '0.875rem', maxWidth: '64ch' }}>
-              Readiness, signed-in desktops, and recent activity live here so the home screen can stay focused on chat and approvals.
+              Readiness, signed-in desktops, and recent assistant activity live here while the Workstation remains the primary desktop surface.
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -2862,6 +2864,9 @@ function App() {
     </>
   ) : null;
 
+  const hasActiveAssistantTasks =
+    approvalItems.some((item) => item.state === 'pending') || Boolean(aiState?.isRunning);
+
   return (
     <div
       style={{
@@ -2939,27 +2944,29 @@ function App() {
             }}
           >
               <div style={{ paddingLeft: platform === 'macos' ? '1rem' : 0, minHeight: platform === 'macos' ? '2.25rem' : undefined }}>
-                <BrandWordmark width={220} subtitle="AI-native Solana workstation" />
+                <BrandWordmark width={220} subtitle="Workstation-first Solana desktop" />
               </div>
               <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', pointerEvents: 'auto' }}>
-              <button
-                onClick={handleStopAll}
-                disabled={approvalItems.every((item) => item.state !== 'pending') && !aiState?.isRunning}
-                style={{
-                  padding: '0.6rem 1rem',
-                  background: '#ef4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '9999px',
-                  cursor: 'pointer',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
-                  opacity: approvalItems.every((item) => item.state !== 'pending') && !aiState?.isRunning ? 0.5 : 1,
-                  boxShadow: '0 14px 32px rgba(239,68,68,0.24)',
-                }}
-              >
-                Stop All
-              </button>
+              {(primaryView === 'assistant' || hasActiveAssistantTasks) && (
+                <button
+                  onClick={handleStopAll}
+                  disabled={!hasActiveAssistantTasks}
+                  style={{
+                    padding: '0.6rem 1rem',
+                    background: '#ef4444',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '9999px',
+                    cursor: hasActiveAssistantTasks ? 'pointer' : 'not-allowed',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    opacity: hasActiveAssistantTasks ? 1 : 0.5,
+                    boxShadow: '0 14px 32px rgba(239,68,68,0.24)',
+                  }}
+                >
+                  {hasActiveAssistantTasks ? 'Stop Active Assistant Tasks' : 'Stop Assistant Tasks'}
+                </button>
+              )}
               <button
                 onClick={() => setSettingsOpen(true)}
                 style={{
@@ -2976,30 +2983,32 @@ function App() {
                 Open Settings
               </button>
               <button
-                onClick={() => setShowWorkstation((s) => !s)}
+                onClick={() =>
+                  setPrimaryView((view) => (view === 'workstation' ? 'assistant' : 'workstation'))
+                }
                 style={{
                   padding: '0.6rem 1rem',
-                  background: showWorkstation ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.8)',
-                  border: showWorkstation ? '1px solid rgba(16,185,129,0.35)' : '1px solid rgba(148,163,184,0.24)',
+                  background: primaryView === 'assistant' ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.8)',
+                  border: primaryView === 'assistant' ? '1px solid rgba(16,185,129,0.35)' : '1px solid rgba(148,163,184,0.24)',
                   borderRadius: '9999px',
                   cursor: 'pointer',
                   fontSize: '0.875rem',
                   fontWeight: 600,
-                  color: showWorkstation ? '#166534' : '#0f172a',
+                  color: primaryView === 'assistant' ? '#166534' : '#0f172a',
                 }}
               >
-                {showWorkstation ? 'Back to Assistant' : 'Solana Workstation'}
+                {primaryView === 'workstation' ? 'Open Assistant' : 'Back to Workstation'}
               </button>
               </div>
           </div>
 
-        {showWorkstation && (
+        {primaryView === 'workstation' && (
           <div style={{ marginTop: '1.5rem' }}>
             <SolanaWorkstation />
           </div>
         )}
 
-        {!showWorkstation && (
+        {primaryView === 'assistant' && (
         <>
         {runtimeConfigError && (
           <div
@@ -3375,9 +3384,9 @@ function App() {
               }}
             >
               <div>
-                <div style={{ fontWeight: 600, color: '#0f172a' }}>The home screen now stays focused on the assistant.</div>
+                <div style={{ fontWeight: 600, color: '#0f172a' }}>Assistant is a secondary workspace for chat, planning, and approved desktop tasks.</div>
                 <div style={{ marginTop: '0.35rem', fontSize: '0.875rem', color: '#475569', maxWidth: '58ch' }}>
-                  Screen preview, remote control, connected desktops, diagnostics, and update checks live inside Settings.
+                  Return to GORKH Workstation for Wallet, Markets, Shield, Builder, Agent, and Context modules. Sensitive desktop actions remain approval-gated.
                 </div>
               </div>
               <button

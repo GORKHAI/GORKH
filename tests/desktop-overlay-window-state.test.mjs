@@ -34,7 +34,7 @@ test('desktop chrome should expose a broader draggable shell than the current wo
 
   assert.match(
     appSource,
-    /data-tauri-drag-region[\s\S]{0,1600}BrandWordmark[\s\S]{0,1600}Stop All[\s\S]{0,1600}Settings/,
+    /data-tauri-drag-region[\s\S]{0,2000}BrandWordmark[\s\S]{0,2000}Stop Active Assistant Tasks[\s\S]{0,2000}Open Settings/,
     'chrome should expose a larger draggable shell that spans beyond the wordmark-only handle'
   );
   assert.doesNotMatch(

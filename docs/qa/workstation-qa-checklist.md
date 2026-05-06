@@ -1,11 +1,25 @@
 # GORKH Workstation QA Checklist
 
-> Version: 0.0.47  
-> Last updated: 2026-05-05 (Phase 19)
+> Version: 0.0.48  
+> Last updated: 2026-05-06 (Phase 21 pre-stable cleanup)
 
 ## How to use this checklist
 
 Perform each step manually in the GORKH desktop app. Mark `[x]` only when verified. If a step fails, file a bug with the module name and step number.
+
+---
+
+## Fresh Launch / Primary Surface
+
+- [ ] Launch the desktop app from a clean start.
+- [ ] Verify the app opens directly into the GORKH Workstation shell, not the assistant/chat screen.
+- [ ] Verify the Workstation shell shows left sidebar navigation, top command/search bar, main workspace, right inspector/safety panel, and bottom status bar.
+- [ ] Verify the sidebar includes Wallet, Markets, Agent, Builder, Shield, and Context.
+- [ ] Verify the assistant is reachable only through a secondary control labeled "Open Assistant".
+- [ ] From Assistant, click "Back to Workstation" and verify the Workstation shell returns.
+- [ ] Verify the fresh Workstation header does not show a generic old assistant-first "Stop All" control.
+- [ ] If Assistant is opened, verify desktop-control features remain secondary and approval-gated.
+- [ ] Verify no screen-recording or accessibility prompt appears before opening Assistant or Settings, unless the OS prompts for an unrelated external reason.
 
 ---
 

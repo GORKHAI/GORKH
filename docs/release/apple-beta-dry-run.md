@@ -1,7 +1,7 @@
 # GORKH Apple Beta Dry-Run Guide
 
-> Version: 0.0.47  
-> Last updated: 2026-05-05 (Phase 20)
+> Version: 0.0.48  
+> Last updated: 2026-05-06 (Phase 21 pre-stable cleanup)
 
 ## 1. Purpose
 
@@ -69,9 +69,11 @@ After the workflow completes, download artifacts from GitHub Actions:
 
 | Artifact | Expected |
 |----------|----------|
-| `desktop-release-macos-x86_64` | DMG file: `ai-operator-desktop_{VERSION}_macos_x86_64.dmg` |
-| `desktop-release-macos-aarch64` | DMG file: `ai-operator-desktop_{VERSION}_macos_aarch64.dmg` |
+| `desktop-release-macos-x86_64` | DMG file using the workflow-normalized legacy continuity name: `ai-operator-desktop_{VERSION}_macos_x86_64.dmg` |
+| `desktop-release-macos-aarch64` | DMG file using the workflow-normalized legacy continuity name: `ai-operator-desktop_{VERSION}_macos_aarch64.dmg` |
 | `packaged-desktop-validation-beta` | JSON template for manual sign-off |
+
+The product name inside the signed app is **GORKH**. The `ai-operator-desktop` artifact filename prefix is currently retained by the release workflow for updater and asset-resolution continuity; do not treat it as active product branding.
 
 ### Manual verification steps
 

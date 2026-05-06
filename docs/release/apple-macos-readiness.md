@@ -1,7 +1,7 @@
 # GORKH Apple/macOS Release Readiness
 
-> Version: 0.0.47  
-> Last updated: 2026-05-05 (Phase 20 RC prep)
+> Version: 0.0.48  
+> Last updated: 2026-05-06 (Phase 21 pre-stable cleanup)
 
 ## 1. Current Apple/macOS Target Status
 
@@ -20,7 +20,7 @@
 |----------|-------|
 | `$schema` | Tauri 2 config schema |
 | `productName` | GORKH |
-| `version` | 0.0.47 (synced with `VERSION` file and `package.json`) |
+| `version` | 0.0.48 (synced with `VERSION`, desktop package metadata, and Tauri config) |
 | `identifier` | `com.ai-operator.desktop` (legacy; see Known Issues) |
 | `macOSPrivateApi` | `true` (required for overlay window, tray, transparency) |
 | `transparent` | `true` (glass window support) |

@@ -67,7 +67,7 @@ export const GORKH_FEATURES: Record<string, GorkhFeatureDoc> = {
       'to you before it happens. You approve or deny each one. Nothing runs without your confirmation.',
     howToUse:
       'Approvals appear automatically when the assistant proposes an action. You have 60 seconds to ' +
-      'decide. "Stop All" immediately cancels everything.',
+      'decide. "Stop Assistant Tasks" immediately cancels pending assistant work.',
     requirements: 'Always on — cannot be disabled.',
   },
 };
