@@ -1,11 +1,28 @@
-# GORKH Agent Station — v0.2 Smoke Plan
+# GORKH Agent Station — v0.4 Smoke Plan
 
 This is the manual smoke checklist for the desktop GORKH Agent Station.
 
 ## Pre-flight
 
 - Open the desktop app on macOS. Workstation defaults to the dashboard.
-- Navigate to **Agent → GORKH Agent**. The Station should be the first tab.
+- Navigate to **Agent → GORKH Agent**. The Station should open on **Chat**.
+
+## Chat
+
+- [ ] Confirm the first/default inner tab is **Chat**.
+- [ ] Confirm the safety banner says GORKH Agent can draft and hand off actions, but cannot sign or execute transactions from chat.
+- [ ] Confirm the status badge shows deterministic planning, LLM disabled, and redacted context.
+- [ ] Confirm quick prompts include: Check my wallet, Summarize my portfolio, Prepare Cloak private send, Prepare Zerion DCA proposal, Explain last Shield result, Summarize Builder context, Create context bundle.
+- [ ] Send `What can you do safely?` and verify the reply explains safe read/draft/handoff capabilities and blocked signing/execution.
+- [ ] Send `Check my wallet.` and verify a **Wallet Summary** tool card appears. No RPC refresh starts from chat.
+- [ ] Send `Prepare a Cloak private send for 0.02 SOL.` and verify a **Cloak Draft Handoff** card appears.
+- [ ] Click **Open Wallet → Cloak Private** and verify Wallet opens with prefill only. No Cloak proof, signer bridge, approval, or transaction starts automatically.
+- [ ] Reload the app, reopen the same chat thread, click the old Cloak handoff card, and verify it still resolves from local handoff history as prefill only.
+- [ ] Return to Agent and send `Prepare Zerion DCA SOL to USDC.` Verify a **Zerion Proposal Handoff** card appears.
+- [ ] Click **Open Agent → Zerion Executor** and verify proposal prefill only. No Zerion CLI execution starts automatically.
+- [ ] Reload the app, reopen the same chat thread, click the old Zerion handoff card, and verify it still resolves from local handoff history as proposal prefill only.
+- [ ] Send `Create context bundle.` and verify the reply says secrets are excluded and the context card is local/redacted.
+- [ ] Engage the kill switch and confirm the composer blocks normal action requests while still allowing status/help/safety questions.
 
 ## Runtime
 
@@ -25,7 +42,7 @@ This is the manual smoke checklist for the desktop GORKH Agent Station.
 - [ ] Closing the app stops ticks (verified by reopening: `lastTickAt`
       does not advance while the app is closed).
 
-## Manual Run / natural language
+## Tools / advanced manual run
 
 - [ ] **Ask GORKH Agent…** input rejects empty intent with an error message.
 - [ ] Submitting `check my wallet` creates a `portfolio_analysis` task
@@ -45,8 +62,7 @@ This is the manual smoke checklist for the desktop GORKH Agent Station.
 - [ ] Submitting `summarize my current workstation context` creates a **Context Bundle** result with redactions listed.
 - [ ] After manually analyzing in Shield, return to Agent and submit `summarize my current workstation context`. Verify the bundle includes **Last Shield Context** without rerunning RPC or simulation.
 - [ ] After manually inspecting a Builder workspace, return to Agent and submit `review my builder workspace`. Verify the bundle includes **Last Builder Context** without running tool checks, diagnostics, builds, tests, or deploys.
-- [ ] Submitting an intent while the kill switch is on raises an inline
-      error and creates no task.
+- [ ] Submitting an action intent while the kill switch is on is blocked and creates no executable task.
 
 ## Approval queue
 
@@ -104,14 +120,15 @@ This is the manual smoke checklist for the desktop GORKH Agent Station.
 - [ ] `pnpm check:release:readiness` passes.
 - [ ] No Telegram, WhatsApp, or Discord copy anywhere in the panel.
 
-## Required v0.2 happy path
+## Required v0.4 happy path
 
-1. Open **Agent -> GORKH Agent**.
-2. Ask `check my wallet`.
-3. Verify the Wallet Summary card is shown and no RPC refresh starts.
-4. Ask `prepare a Cloak private send`.
-5. Verify the Cloak handoff card is shown and no execution happens.
-6. Ask `prepare a tiny Zerion DCA`.
-7. Verify the Zerion proposal handoff is shown and no CLI execution happens.
-8. Ask `summarize my current workstation context`.
-9. Verify the context bundle lists redactions and excludes sensitive memory entries.
+1. Open **Agent → GORKH Agent**.
+2. Confirm **Chat** opens first.
+3. Send `What can you do safely?`.
+4. Send `Check my wallet.`
+5. Send `Prepare a Cloak private send for 0.02 SOL.`
+6. Click **Open Wallet → Cloak Private**; verify prefill only.
+7. Return Agent; send `Prepare Zerion DCA SOL to USDC.`
+8. Click **Open Agent → Zerion Executor**; verify proposal only.
+9. Send `Create context bundle.`
+10. Confirm no signing or execution happens from chat.

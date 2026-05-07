@@ -1,4 +1,5 @@
 export { GorkhAgentStationPanel } from './components/GorkhAgentStationPanel.js';
+export * from './chat/index.js';
 export {
   startAgent,
   pauseAgent,

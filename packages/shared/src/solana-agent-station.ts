@@ -144,6 +144,7 @@ export const GorkhAgentBlockedToolIdSchema = z.enum([
   'cloak.export_note_secret',
   'cloak.export_viewing_key',
   'zerion.execute_without_approval',
+  'zerion_cli_swap_execute',
   'markets.execute_trade_autonomous',
   'dao.vote_autonomous',
   'yield.move_funds_autonomous',
@@ -637,6 +638,204 @@ export const GORKH_AGENT_STATION_SAFETY_NOTES: string[] = [
   'Kill switch instantly halts all proposals, ticks, and tool calls.',
   'No Telegram, WhatsApp, or Discord control surfaces.',
   'No cloud background agents.',
+];
+
+// ============================================================================
+// v0.3 — Conversational GORKH Agent Chat Schemas
+// ============================================================================
+// In-app chat metadata only. Chat is local-first, deterministic by default, and
+// never receives or stores private keys, seed phrases, Cloak note secrets,
+// viewing keys, Zerion API keys, agent tokens, or raw signing payloads.
+// ============================================================================
+
+export const GorkhAgentChatRoleSchema = z.enum(['user', 'agent', 'system', 'tool']);
+export type GorkhAgentChatRole = z.infer<typeof GorkhAgentChatRoleSchema>;
+
+export const GorkhAgentChatMessageStatusSchema = z.enum([
+  'pending',
+  'thinking',
+  'completed',
+  'failed',
+  'blocked',
+]);
+export type GorkhAgentChatMessageStatus = z.infer<
+  typeof GorkhAgentChatMessageStatusSchema
+>;
+
+export const GorkhAgentChatMessageSchema = z.object({
+  id: z.string().min(1),
+  threadId: z.string().min(1),
+  role: GorkhAgentChatRoleSchema,
+  content: z.string().max(8000),
+  createdAt: z.number().int(),
+  status: GorkhAgentChatMessageStatusSchema,
+  intentKind: GorkhAgentTaskKindSchema.optional(),
+  relatedTaskId: z.string().optional(),
+  relatedProposalId: z.string().optional(),
+  relatedToolCallIds: z.array(z.string()).default([]),
+  safetyNotes: z.array(z.string().max(280)).default([]),
+  redactionsApplied: z.array(z.string().max(64)).default([]),
+  localOnly: z.literal(true),
+});
+export type GorkhAgentChatMessage = z.infer<typeof GorkhAgentChatMessageSchema>;
+
+export const GorkhAgentChatThreadSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1).max(140),
+  createdAt: z.number().int(),
+  updatedAt: z.number().int(),
+  status: z.enum(['active', 'archived']),
+  messages: z.array(GorkhAgentChatMessageSchema).max(200),
+  localOnly: z.literal(true),
+});
+export type GorkhAgentChatThread = z.infer<typeof GorkhAgentChatThreadSchema>;
+
+export const GorkhAgentChatRunSchema = z.object({
+  id: z.string().min(1),
+  threadId: z.string().min(1),
+  userMessageId: z.string().min(1),
+  status: z.enum([
+    'queued',
+    'planning',
+    'tool_running',
+    'waiting_for_handoff',
+    'completed',
+    'failed',
+    'blocked',
+  ]),
+  intentKind: GorkhAgentTaskKindSchema,
+  toolCallIds: z.array(z.string()).default([]),
+  proposalIds: z.array(z.string()).default([]),
+  auditEventIds: z.array(z.string()).default([]),
+  createdAt: z.number().int(),
+  completedAt: z.number().int().optional(),
+});
+export type GorkhAgentChatRun = z.infer<typeof GorkhAgentChatRunSchema>;
+
+export const GorkhAgentChatToolCardKindSchema = z.enum([
+  'wallet_summary',
+  'markets_summary',
+  'shield_handoff',
+  'cloak_handoff',
+  'zerion_handoff',
+  'builder_summary',
+  'context_bundle',
+  'policy_block',
+  'safety_note',
+]);
+export type GorkhAgentChatToolCardKind = z.infer<
+  typeof GorkhAgentChatToolCardKindSchema
+>;
+
+export const GorkhAgentChatToolCardSchema = z.object({
+  id: z.string().min(1),
+  kind: GorkhAgentChatToolCardKindSchema,
+  title: z.string().min(1).max(140),
+  summary: z.string().max(2000),
+  status: z.enum(['ready', 'blocked', 'requires_review', 'completed', 'failed']),
+  targetModule: z.string().max(64).optional(),
+  actionLabel: z.string().max(80).optional(),
+  relatedHandoffEntryId: z.string().optional(),
+  localOnly: z.literal(true),
+});
+export type GorkhAgentChatToolCard = z.infer<typeof GorkhAgentChatToolCardSchema>;
+
+export const GorkhAgentPlannerModeSchema = z.enum([
+  'deterministic',
+  'llm_redacted_context',
+  'llm_disabled',
+]);
+export type GorkhAgentPlannerMode = z.infer<typeof GorkhAgentPlannerModeSchema>;
+
+export const GorkhAgentChatSettingsSchema = z.object({
+  plannerMode: GorkhAgentPlannerModeSchema,
+  allowLlmPlanning: z.boolean(),
+  requireRedactedContext: z.literal(true),
+  maxContextChars: z.number().int().min(1000).max(64000),
+  includeWalletContext: z.boolean(),
+  includeMarketsContext: z.boolean(),
+  includeShieldContext: z.boolean(),
+  includeBuilderContext: z.boolean(),
+  includeMemoryContext: z.boolean(),
+});
+export type GorkhAgentChatSettings = z.infer<typeof GorkhAgentChatSettingsSchema>;
+
+export const DEFAULT_GORKH_AGENT_CHAT_SETTINGS: GorkhAgentChatSettings = {
+  plannerMode: 'deterministic',
+  allowLlmPlanning: false,
+  requireRedactedContext: true,
+  maxContextChars: 12000,
+  includeWalletContext: true,
+  includeMarketsContext: true,
+  includeShieldContext: true,
+  includeBuilderContext: true,
+  includeMemoryContext: true,
+};
+
+export const GorkhAgentChatRedactedContextSchema = z.object({
+  markdown: z.string().max(64000),
+  sources: z.array(z.string().max(64)),
+  redactionsApplied: z.array(z.string().max(64)),
+  excludedSources: z.array(z.string().max(64)),
+  warnings: z.array(z.string().max(280)),
+  localOnly: z.literal(true),
+});
+export type GorkhAgentChatRedactedContext = z.infer<
+  typeof GorkhAgentChatRedactedContextSchema
+>;
+
+export const GORKH_AGENT_CHAT_SAFETY_NOTES: readonly string[] = [
+  'GORKH Agent Chat can draft and hand off actions. It cannot sign or execute transactions from chat.',
+  'Deterministic planning is the default. LLM planning is disabled unless explicitly enabled later with redacted context.',
+  'Cloak execution stays inside Wallet → Cloak Private.',
+  'Zerion execution stays inside Agent → Zerion Executor.',
+  'Main wallet autonomous execution remains blocked.',
+];
+
+export const GORKH_AGENT_CHAT_FORBIDDEN_CONTENT_KEYS: readonly string[] = [
+  'privateKey',
+  'private_key',
+  'seedPhrase',
+  'seed_phrase',
+  'mnemonic',
+  'walletJson',
+  'wallet_json',
+  'keypair',
+  'cloakNoteSecret',
+  'cloak_note_secret',
+  'viewingKey',
+  'viewing_key',
+  'apiKey',
+  'api_key',
+  'zerionToken',
+  'zerion_token',
+  'agentToken',
+  'agent_token',
+  'signaturePayload',
+  'rawNote',
+  'rawUtxo',
+];
+
+export const GORKH_AGENT_CHAT_ALLOWED_LLM_CONTEXT_SOURCES: readonly string[] = [
+  'agent_station',
+  'wallet_workspace',
+  'markets_workspace',
+  'shield_context',
+  'builder_context',
+  'context_bundle',
+  'memory_non_sensitive',
+];
+
+export const GORKH_AGENT_CHAT_BLOCKED_EXECUTION_PHRASES: readonly string[] = [
+  'sign without approval',
+  'send without approval',
+  'execute cloak private send',
+  'execute cloak deposit',
+  'execute zerion swap',
+  'run arbitrary shell',
+  'terminal exec',
+  'export private key',
+  'seed phrase',
 ];
 
 // ----------------------------------------------------------------------------

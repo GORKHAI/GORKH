@@ -124,6 +124,7 @@ export function evaluateAgentToolRequest(
     request.toolId === 'cloak.execute_private_send_autonomous' ||
     request.toolId === 'cloak.execute_deposit_autonomous' ||
     request.toolId === 'zerion.execute_without_approval' ||
+    request.toolId === 'zerion_cli_swap_execute' ||
     request.toolId === 'wallet.sign_without_approval' ||
     request.toolId === 'wallet.send_without_approval'
   ) {

@@ -207,9 +207,22 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 
 ## Agent Module
 
-### GORKH Agent Station (v0.2)
+### GORKH Agent Station (v0.4)
 - [ ] Open Agent. Confirm the first tab is **GORKH Agent**.
-- [ ] Confirm the header reads `GORKH Agent Station — v0.2` and the status pill shows `Idle` initially.
+- [ ] Confirm the header reads `GORKH Agent Station — v0.4` and the status pill shows `Idle` initially.
+- [ ] Confirm the first/default Agent Station tab is **Chat**.
+- [ ] Confirm the Chat safety banner says GORKH Agent can draft and hand off actions, but cannot sign or execute transactions from chat.
+- [ ] Confirm Chat shows deterministic planning, LLM disabled, and redacted context status.
+- [ ] Send `What can you do safely?` and verify the reply explains safe read/draft/handoff capabilities and blocked signing/execution.
+- [ ] Send `Check my wallet.` and verify a **Wallet Summary** tool card appears with no RPC refresh from chat.
+- [ ] Send `Prepare a Cloak private send for 0.02 SOL.` and verify a **Cloak Draft Handoff** tool card appears.
+- [ ] Click **Open Wallet -> Cloak Private** and verify safe fields prefill only; no Cloak proof, signer bridge, approval, or transaction starts automatically.
+- [ ] Reload the app and verify the old Cloak chat card still resolves from local handoff history as prefill only.
+- [ ] Return Agent; send `Prepare Zerion DCA SOL to USDC.` and verify a **Zerion Proposal Handoff** tool card appears.
+- [ ] Click **Open Agent -> Zerion Executor** and verify proposal prefill only; no Zerion CLI swap executes automatically.
+- [ ] Reload the app and verify the old Zerion chat card still resolves from local handoff history as proposal prefill only.
+- [ ] Send `Create context bundle.` and verify the reply says private keys, seed phrases, Cloak notes, viewing keys, API keys, Zerion tokens, and raw signing payloads are excluded.
+- [ ] Verify `localStorage` key `gorkh.solana.agentStation.chat.v1` contains no `privateKey`, `seedPhrase`, `walletJson`, `cloakNoteSecret`, `viewingKey`, `apiKey`, `zerionToken`, `agentToken`, `signaturePayload`, `rawNote`, or `rawUtxo`.
 - [ ] Confirm the background-runtime copy mentions: runs while desktop app is open, does not run after the app is fully quit.
 - [ ] Click **Start Agent** → status flips to `Running` and `agent_started` audit event appears.
 - [ ] Click **Pause** → ticks halt, status `Paused`.

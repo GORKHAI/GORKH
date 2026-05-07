@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GORKH_AGENT_BACKGROUND_COPY,
-  GORKH_AGENT_STATION_SAFETY_NOTES,
-  GORKH_AGENT_TEMPLATES,
   GorkhAgentRuntimeMode,
   GorkhAgentTemplateStatus,
   getGorkhAgentStatusLabel,
@@ -39,6 +37,7 @@ import { summarizeMarketsResult } from '../agentMarketsTools.js';
 import { summarizeShieldResult } from '../agentShieldTools.js';
 import { summarizeCloakHandoff } from '../agentCloakHandoff.js';
 import { summarizeZerionHandoff } from '../agentZerionHandoff.js';
+import { GorkhAgentChatPanel } from '../chat/index.js';
 
 export interface GorkhAgentStationPanelProps {
   walletWorkspace?: SolanaWalletWorkspaceState | null;
@@ -51,24 +50,22 @@ export interface GorkhAgentStationPanelProps {
 }
 
 type StationTab =
-  | 'run'
+  | 'chat'
   | 'tools'
   | 'handoffs'
   | 'policy'
   | 'memory'
   | 'audit'
-  | 'templates'
-  | 'safety';
+  | 'templates';
 
 const TABS: { id: StationTab; label: string }[] = [
-  { id: 'run', label: 'Run' },
+  { id: 'chat', label: 'Chat' },
   { id: 'tools', label: 'Tools' },
   { id: 'handoffs', label: 'Handoffs' },
   { id: 'policy', label: 'Policy' },
   { id: 'memory', label: 'Memory' },
   { id: 'audit', label: 'Audit' },
   { id: 'templates', label: 'Templates' },
-  { id: 'safety', label: 'Safety' },
 ];
 
 export function GorkhAgentStationPanel(props: GorkhAgentStationPanelProps = {}) {
@@ -76,7 +73,7 @@ export function GorkhAgentStationPanel(props: GorkhAgentStationPanelProps = {}) 
   const [handoffEntries, setHandoffEntries] = useState<GorkhAgentHandoffEntry[]>(() =>
     loadHandoffEntries()
   );
-  const [activeTab, setActiveTab] = useState<StationTab>('run');
+  const [activeTab, setActiveTab] = useState<StationTab>('chat');
   const [intent, setIntent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [lastRunSummary, setLastRunSummary] = useState<{
@@ -168,7 +165,7 @@ export function GorkhAgentStationPanel(props: GorkhAgentStationPanelProps = {}) 
       });
       setHandoffEntries(loadHandoffEntries());
       setIntent('');
-      setActiveTab('run');
+      setActiveTab('tools');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -263,7 +260,7 @@ export function GorkhAgentStationPanel(props: GorkhAgentStationPanelProps = {}) 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#0ea5e9' }} />
           <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-            GORKH Agent Station — v0.2
+            GORKH Agent Station — v0.4
           </h3>
           <span style={statusChipStyle}>{getGorkhAgentStatusLabel(state.profile.status)}</span>
         </div>
@@ -301,9 +298,29 @@ export function GorkhAgentStationPanel(props: GorkhAgentStationPanelProps = {}) 
         ))}
       </div>
 
-      {activeTab === 'run' && (
-        <section style={cardStyle} data-testid="station-run-card">
-          <h4 style={cardTitleStyle}>Manual Run</h4>
+      {activeTab === 'chat' && (
+        <section style={cardStyle} data-testid="station-chat-card">
+          <GorkhAgentChatPanel
+            stationState={state}
+            moduleContext={moduleContext}
+            onStationStateChange={(next) => {
+              setState(next);
+              setHandoffEntries(loadHandoffEntries());
+            }}
+            onOpenWalletCloak={props.onOpenWalletCloak}
+            onOpenZerionExecutor={props.onOpenZerionExecutor}
+            onOpenShield={props.onOpenShield}
+          />
+        </section>
+      )}
+
+      {activeTab === 'tools' && (
+        <section style={cardStyle} data-testid="station-tools">
+          <h4 style={cardTitleStyle}>Advanced Manual Run</h4>
+
+          <p style={mutedStyle}>
+            Chat is the primary interface. Manual Run remains available for deterministic tool-router checks.
+          </p>
 
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
             <button
@@ -462,11 +479,7 @@ export function GorkhAgentStationPanel(props: GorkhAgentStationPanelProps = {}) 
               )}
             </div>
           )}
-        </section>
-      )}
-
-      {activeTab === 'tools' && (
-        <section style={cardStyle} data-testid="station-tools">
+          <div style={{ borderTop: '1px solid rgba(148,163,184,0.18)', marginTop: '0.75rem', paddingTop: '0.75rem' }} />
           <h4 style={cardTitleStyle}>Recent Tool Results</h4>
 
           <h5 style={subTitleStyle}>Wallet</h5>
@@ -745,30 +758,6 @@ export function GorkhAgentStationPanel(props: GorkhAgentStationPanelProps = {}) 
               </article>
             ))}
           </div>
-        </section>
-      )}
-
-      {activeTab === 'safety' && (
-        <section style={cardStyle}>
-          <h4 style={cardTitleStyle}>Safety</h4>
-          <ul style={{ ...listStyle, fontSize: '0.78rem' }}>
-            {GORKH_AGENT_STATION_SAFETY_NOTES.map((note) => (
-              <li key={note} style={{ color: '#475569' }}>
-                {note}
-              </li>
-            ))}
-            {GORKH_AGENT_TEMPLATES.find((t) => t.id === 'main_wallet_without_approval')?.unavailableReason && (
-              <li style={{ color: '#991b1b', fontWeight: 600 }}>
-                {
-                  GORKH_AGENT_TEMPLATES.find((t) => t.id === 'main_wallet_without_approval')!
-                    .unavailableReason
-                }
-              </li>
-            )}
-          </ul>
-          <p style={{ fontSize: '0.75rem', color: '#475569' }}>
-            All Cloak private sends require explicit Wallet → Cloak approval. All Zerion swaps require explicit Zerion Executor approval.
-          </p>
         </section>
       )}
 

@@ -57,6 +57,7 @@ const TOOL_DEFAULT_OUTPUTS: Record<GorkhAgentToolId, string> = {
   'cloak.export_note_secret': 'Refused: blocked tool.',
   'cloak.export_viewing_key': 'Refused: blocked tool.',
   'zerion.execute_without_approval': 'Refused: blocked tool.',
+  'zerion_cli_swap_execute': 'Refused: blocked tool.',
   'markets.execute_trade_autonomous': 'Refused: blocked tool.',
   'dao.vote_autonomous': 'Refused: blocked tool.',
   'yield.move_funds_autonomous': 'Refused: blocked tool.',

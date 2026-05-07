@@ -1,12 +1,17 @@
-# GORKH Agent Station — v0.2 Architecture
+# GORKH Agent Station — v0.4 Architecture
 
 GORKH Agent Station is the first persistent local Solana agent runtime inside
-the GORKH desktop app. v0.2 still ships exactly **one active agent** — `GORKH Agent`
+the GORKH desktop app. v0.4 still ships exactly **one active agent** — `GORKH Agent`
 — and renders a roadmap of locked / blocked templates for everything else.
 
-## What is in v0.2
+## What is in v0.4
 
 - One persistent local agent: **GORKH Agent**.
+- In-app conversational chat at **Agent → GORKH Agent → Chat**.
+- Deterministic chat planning by default.
+- Redacted context builder for safe Wallet, Markets, Shield, Builder, Memory, and Agent Station summaries.
+- Inline chat tool cards for Wallet, Markets, Shield, Cloak, Zerion, Builder, Context, and policy blocks.
+- Durable chat-card action references that resolve Cloak, Zerion, Shield, and Context payloads from local handoff history after reload.
 - Manual and `background_while_app_open` runtime modes.
 - Kill switch that blocks proposals, ticks, and approvals.
 - Policy engine that gates every tool call.
@@ -19,7 +24,7 @@ the GORKH desktop app. v0.2 still ships exactly **one active agent** — `GORKH 
 - Local memory v0.1 (non-sensitive observations) backed by `localStorage`.
 - Coming-Soon and Blocked roadmap templates rendered as locked cards.
 
-## What is NOT in v0.2
+## What is NOT in v0.4
 
 - No autonomous main-wallet signing (templates marked **Blocked**).
 - No autonomous Cloak private sends.
@@ -30,10 +35,47 @@ the GORKH desktop app. v0.2 still ships exactly **one active agent** — `GORKH 
 - No private key, seed phrase, wallet JSON, Cloak note secret, viewing key,
   Zerion API key, or agent token in `localStorage`.
 - No arbitrary shell / terminal execution. No new wildcard Tauri commands.
+- No LLM tool execution. LLM planning remains disabled by default and may only use redacted context if enabled in a later phase.
+- No chat runtime after the desktop app is fully quit.
+
+## v0.4 chat flow
+
+```
+User message
+  -> storage/redaction guard
+  -> redacted context builder
+  -> deterministic intent classifier
+  -> optional LLM planning scaffold (disabled by default)
+  -> Agent Station tool router
+  -> evaluateAgentToolRequest()
+  -> tool result / proposal / handoff
+  -> natural-language reply + inline tool cards
+  -> local audit event + chat thread persistence
+```
+
+Chat lives under `apps/desktop/src/features/solana-workstation/agent/station/chat/`.
+It is not the old secondary Assistant workspace and it is not a cloud bot
+control surface.
+
+The default tab order inside **Agent → GORKH Agent** is:
+
+1. Chat
+2. Tools
+3. Handoffs
+4. Policy
+5. Memory
+6. Audit
+7. Templates
+
+Actionable chat cards store `relatedHandoffEntryId` and resolve payloads from
+`gorkh.solana.agentStation.handoffs.v1` before navigating or copying. If the
+local handoff entry is unavailable, the card does not reconstruct payloads from
+chat text and does not execute anything.
 
 ## v0.2 tool enrichment
 
-The deterministic intent classifier routes user requests to safe tools:
+The deterministic intent classifier routes user requests to safe tools. v0.4
+uses the same safe runtime from chat:
 
 | Intent | Tool | Output |
 |---|---|---|
@@ -45,6 +87,16 @@ The deterministic intent classifier routes user requests to safe tools:
 | "bundle", "summary", "export context" | `context.create_bundle` | Sanitized local context bundle with redaction labels. |
 
 The agent never fetches RPC, Birdeye, Cloak, or Zerion data automatically in v0.2. It reads existing local state and creates proposal/handoff records only.
+
+Chat replies are natural-language summaries around those same deterministic
+results. Examples:
+
+- Wallet: local selected profile, SOL balance, token account count, and no RPC refresh from chat.
+- Markets: local watchlist summary and no Birdeye/API fetch from chat.
+- Shield: handoff only; decode/simulation happens after the user opens Shield.
+- Cloak: draft handoff only; execution stays in Wallet → Cloak Private.
+- Zerion: proposal handoff only; execution stays in Zerion Executor.
+- Context: redacted context bundle excluding private keys, seed phrases, Cloak notes, viewing keys, API keys, Zerion tokens, and raw signing payloads.
 
 ## Last Module Context Store
 
@@ -100,6 +152,7 @@ Implementation lives at:
 
 - `packages/shared/src/solana-agent-station.ts` — domain types, schemas, defaults, templates.
 - `apps/desktop/src/features/solana-workstation/agent/station/`
+  - `chat/` — v0.4 in-app conversational Agent Chat.
   - `agentStationStorage.ts` — localStorage persistence + redaction guard.
   - `agentRuntime.ts` — start/pause/resume/kill/tick + manual run.
   - `agentPolicyEngine.ts` — `evaluateAgentToolRequest()`.
@@ -118,6 +171,46 @@ Implementation lives at:
   - `agentRoadmapTemplates.ts` — active / coming-soon / blocked partitions.
   - `createAgentContextSummary.ts` — sanitized context export.
   - `components/GorkhAgentStationPanel.tsx` — UI panel mounted as the **GORKH Agent** tab in `AgentWorkbench`.
+
+## Chat storage and redaction
+
+Chat metadata is stored in `localStorage` key
+`gorkh.solana.agentStation.chat.v1`.
+
+Stored:
+
+- thread metadata;
+- chat messages;
+- tool card metadata;
+- redacted context summaries;
+- chat settings;
+- run status.
+
+Not stored:
+
+- private keys, seed phrases, wallet JSON, keypairs;
+- raw Cloak notes, note secrets, viewing keys, raw UTXOs;
+- Zerion API keys, Zerion tokens, agent tokens;
+- raw signing payloads or LLM provider API keys.
+
+The chat storage guard rejects forbidden JSON keys and obvious secret-like
+values such as `zk_…`, `sk_…`, `BEGIN PRIVATE KEY`, and 64-number keypair
+arrays. Threads are capped at 20 and messages are capped at 200 per thread,
+with message content capped at 8000 characters.
+
+## LLM planning
+
+v0.4 includes the LLM bridge scaffold but leaves it disabled:
+
+- `plannerMode = deterministic`
+- `allowLlmPlanning = false`
+- `requireRedactedContext = true`
+
+When a future phase enables LLM planning, the model may only receive the
+redacted context bundle and may only suggest an intent/tool plan. The
+deterministic tool router and `evaluateAgentToolRequest()` still make the
+final decision. The LLM cannot call Tauri commands, execute tools, sign, or
+receive secrets.
 
 ## Policy engine — `evaluateAgentToolRequest(policy, runtime, request)`
 
@@ -215,11 +308,13 @@ and the roadmap templates. Sensitive memory entries are excluded; the
 - `tests/desktop-agent-station-policy.test.mjs` — `evaluateAgentToolRequest`.
 - `tests/desktop-agent-station-runtime.test.mjs` — start/pause/resume/kill, manual run, tick heartbeat.
 - `tests/desktop-agent-station-storage.test.mjs` — redaction, memory rejection, context export.
+- `packages/shared/test/solana-agent-station-chat.test.mjs` — chat schemas and defaults.
+- `tests/desktop-agent-chat*.test.mjs` — chat classifier, redaction/storage, handoffs, LLM-disabled behavior, and UI source guards.
 
 ## Known limits
 
 - Background runtime is JS-side `setInterval` while the desktop app process is
   alive. There is **no OS-level launchd / systemd integration**.
 - Memory persistence is `localStorage` only.
-- LLM integration is intentionally not wired into the deterministic intent
-  classifier in v0.1; the existing assistant path remains separate.
+- LLM planning is intentionally disabled by default in v0.4; the existing
+  secondary Assistant workspace remains separate.
