@@ -1847,6 +1847,8 @@ export * from './solana-builder.js';
 // ============================================================================
 
 export * from './solana-agent.js';
+export * from './solana-zerion-agent.js';
+export * from './solana-agent-station.js';
 
 // ============================================================================
 // GORKH Workstation Context Bridge (Phase 7 — Agent/Shield/Builder/Assistant)

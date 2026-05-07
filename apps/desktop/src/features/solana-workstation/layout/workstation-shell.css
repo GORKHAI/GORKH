@@ -1,4 +1,37 @@
-/* GORKH Workstation Shell — Phase 11 Desktop-Grade Layout */
+:root {
+  --gorkh-bg-0: #030304;
+  --gorkh-bg-1: #07080a;
+  --gorkh-bg-2: #0b0d10;
+  --gorkh-panel: rgba(255, 255, 255, 0.035);
+  --gorkh-panel-strong: rgba(255, 255, 255, 0.06);
+  --gorkh-border: rgba(255, 255, 255, 0.11);
+  --gorkh-border-strong: rgba(255, 255, 255, 0.18);
+  --gorkh-text: rgba(255, 255, 255, 0.92);
+  --gorkh-text-secondary: rgba(255, 255, 255, 0.64);
+  --gorkh-text-muted: rgba(255, 255, 255, 0.38);
+  --gorkh-focus: rgba(255, 255, 255, 0.32);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--gorkh-bg-0);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
 
 .gorkh-workstation-shell {
   display: flex;
@@ -6,133 +39,185 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: #0f1117;
-  color: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background:
+    radial-gradient(circle at 50% -12%, rgba(255, 255, 255, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 26%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 4px),
+    var(--gorkh-bg-0);
+  color: var(--gorkh-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 .gorkh-workstation-main-row {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
 }
 
 .gorkh-workstation-sidebar {
-  width: 256px;
-  min-width: 256px;
-  background: #111318;
-  border-right: 1px solid #1e293b;
+  width: 218px;
+  min-width: 218px;
+  background: rgba(7, 8, 10, 0.92);
+  border-right: 1px solid var(--gorkh-border);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .gorkh-workstation-content-area {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   flex-direction: column;
   overflow: hidden;
 }
 
 .gorkh-workstation-topbar {
-  height: 56px;
-  min-height: 56px;
-  background: #111318;
-  border-bottom: 1px solid #1e293b;
+  height: 52px;
+  min-height: 52px;
+  background: rgba(7, 8, 10, 0.86);
+  border-bottom: 1px solid var(--gorkh-border);
   display: flex;
   align-items: center;
-  padding: 0 1rem;
-  gap: 0.75rem;
+  padding: 0 0.85rem;
+  gap: 0.65rem;
 }
 
 .gorkh-workstation-workspace {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
-  padding: 1rem;
-  background: #0f1117;
+  padding: 0.85rem;
 }
 
 .gorkh-workstation-inspector {
-  width: 320px;
-  min-width: 320px;
-  background: #111318;
-  border-left: 1px solid #1e293b;
+  width: clamp(260px, 23vw, 330px);
+  min-width: 260px;
+  background: rgba(7, 8, 10, 0.88);
+  border-left: 1px solid var(--gorkh-border);
   overflow-y: auto;
-  padding: 1rem;
+  padding: 0.85rem;
 }
 
 .gorkh-workstation-statusbar {
-  height: 32px;
-  min-height: 32px;
-  background: #0b0d12;
-  border-top: 1px solid #1e293b;
+  height: 30px;
+  min-height: 30px;
+  background: rgba(3, 3, 4, 0.96);
+  border-top: 1px solid var(--gorkh-border);
   display: flex;
   align-items: center;
-  padding: 0 1rem;
-  gap: 1rem;
-  font-size: 0.75rem;
-  color: #64748b;
+  padding: 0 0.85rem;
+  gap: 0.85rem;
+  font-size: 0.72rem;
+  color: var(--gorkh-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.gorkh-wordmark-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 25px;
+  padding: 0 0.58rem;
+  border-radius: 6px;
+  background: #020203;
+  border: 1px solid var(--gorkh-border-strong);
+  color: var(--gorkh-text);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.05);
+}
+
+.gorkh-topbar-active-area {
+  color: var(--gorkh-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .gorkh-workstation-nav-item {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.55rem 0.85rem;
-  margin: 0.15rem 0.5rem;
+  gap: 0.55rem;
+  padding: 0.48rem 0.7rem;
+  margin: 0.1rem 0.45rem;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 500;
-  color: #94a3b8;
-  transition: background 0.12s ease, color 0.12s ease;
+  color: var(--gorkh-text-secondary);
+  background: transparent;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   user-select: none;
 }
 
-.gorkh-workstation-nav-item:hover {
-  background: #1e293b;
-  color: #e2e8f0;
-}
-
+.gorkh-workstation-nav-item:hover,
 .gorkh-workstation-nav-item.active {
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--gorkh-panel-strong);
+  color: var(--gorkh-text);
 }
 
-.gorkh-workstation-nav-item:focus-visible {
-  outline: 2px solid #3b82f6;
-  outline-offset: -2px;
+.gorkh-workstation-nav-item:focus-visible,
+.gorkh-workstation-icon-button:focus-visible,
+.gorkh-workstation-command-input:focus-visible {
+  outline: 2px solid var(--gorkh-focus);
+  outline-offset: 2px;
+}
+
+.gorkh-workstation-sidebar-separator {
+  height: 1px;
+  margin: 0.55rem 0.75rem;
+  background: var(--gorkh-border);
 }
 
 .gorkh-workstation-nav-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.gorkh-workstation-nav-badge {
-  margin-left: auto;
-  font-size: 0.65rem;
+.gorkh-workstation-nav-badge,
+.gorkh-workstation-mini-badge {
+  font-size: 0.62rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 0.1rem 0.35rem;
+  padding: 0.12rem 0.36rem;
   border-radius: 4px;
-  background: #1e293b;
-  color: #64748b;
+  background: var(--gorkh-panel);
+  border: 1px solid var(--gorkh-border);
+  color: var(--gorkh-text-muted);
 }
 
-.gorkh-workstation-safety-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+.gorkh-workstation-icon-button {
+  width: 30px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--gorkh-border);
+  background: var(--gorkh-panel);
+  color: var(--gorkh-text-secondary);
+  cursor: pointer;
   font-size: 0.72rem;
-  font-weight: 600;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  white-space: nowrap;
+  font-weight: 800;
+}
+
+.gorkh-workstation-icon-button:hover,
+.gorkh-workstation-icon-button.active {
+  background: var(--gorkh-panel-strong);
+  color: var(--gorkh-text);
+  border-color: var(--gorkh-border-strong);
+}
+
+.gorkh-workstation-module-header,
+.gorkh-inspector-card,
+.gorkh-workstation-dashboard-card {
+  background: var(--gorkh-panel);
+  border: 1px solid var(--gorkh-border);
+  border-radius: 8px;
 }
 
 .gorkh-workstation-module-header {
@@ -140,76 +225,82 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.75rem 1rem;
-  margin-bottom: 0.75rem;
-  background: #111318;
-  border: 1px solid #1e293b;
-  border-radius: 8px;
-}
-
-.gorkh-workstation-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 3rem 1rem;
-  color: #64748b;
-  text-align: center;
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.7rem;
 }
 
 .gorkh-workstation-dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(188px, 1fr));
+  gap: 0.65rem;
 }
 
 .gorkh-workstation-dashboard-card {
-  padding: 1rem;
-  background: #111318;
-  border: 1px solid #1e293b;
-  border-radius: 8px;
+  padding: 0.78rem;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.gorkh-workstation-dashboard-card:hover {
-  border-color: #334155;
-  background: #161b26;
-}
-
-.gorkh-workstation-command-input {
-  flex: 1;
-  max-width: 480px;
-  background: #0b0d12;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
-  padding: 0.4rem 0.75rem;
-  color: #e2e8f0;
-  font-size: 0.85rem;
+.gorkh-workstation-command-input,
+.gorkh-assistant-workspace input,
+.gorkh-assistant-workspace textarea,
+.gorkh-assistant-workspace select,
+.gorkh-workstation-shell input,
+.gorkh-workstation-shell textarea,
+.gorkh-workstation-shell select {
+  background: rgba(255, 255, 255, 0.045) !important;
+  border: 1px solid var(--gorkh-border) !important;
+  border-radius: 6px !important;
+  color: var(--gorkh-text) !important;
+  min-height: 30px;
   outline: none;
 }
 
-.gorkh-workstation-command-input::placeholder {
-  color: #475569;
+.gorkh-workstation-command-input::placeholder,
+.gorkh-workstation-shell input::placeholder,
+.gorkh-workstation-shell textarea::placeholder {
+  color: var(--gorkh-text-muted) !important;
 }
 
-.gorkh-workstation-command-input:focus {
-  border-color: #3b82f6;
+.gorkh-workstation-command-input:focus,
+.gorkh-workstation-shell input:focus,
+.gorkh-workstation-shell textarea:focus,
+.gorkh-workstation-shell select:focus {
+  border-color: var(--gorkh-border-strong) !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.055);
 }
 
-@media (max-width: 1024px) {
+.gorkh-assistant-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 0.75rem;
+}
+
+.gorkh-assistant-panel {
+  background: var(--gorkh-panel);
+  border: 1px solid var(--gorkh-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+@media (max-width: 1120px) {
   .gorkh-workstation-inspector {
     display: none;
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .gorkh-workstation-sidebar {
-    width: 56px;
-    min-width: 56px;
+    width: 58px;
+    min-width: 58px;
   }
+
   .gorkh-workstation-nav-item span:not(.gorkh-workstation-nav-dot) {
+    display: none;
+  }
+
+  .gorkh-workstation-mini-badge {
     display: none;
   }
 }

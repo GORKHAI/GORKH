@@ -1,11 +1,11 @@
-import { WORKSTATION_NAV_ITEMS, type WorkstationModuleId } from './workstationNavigation.js';
+import { WORKSTATION_NAV_ITEMS, type WorkstationViewId } from './workstationNavigation.js';
 
 export function WorkstationSidebar({
   activeModule,
   onSelect,
 }: {
-  activeModule: WorkstationModuleId | null;
-  onSelect: (id: WorkstationModuleId) => void;
+  activeModule: WorkstationViewId | null;
+  onSelect: (id: WorkstationViewId | null) => void;
 }) {
   return (
     <nav
@@ -63,6 +63,20 @@ export function WorkstationSidebar({
       </div>
 
       <div style={{ padding: '0.5rem 0', flex: 1 }}>
+        <button
+          onClick={() => onSelect(null)}
+          aria-label="Dashboard"
+          aria-current={activeModule === null ? 'page' : undefined}
+          className={activeModule === null ? 'gorkh-workstation-nav-item active' : 'gorkh-workstation-nav-item'}
+          style={{
+            width: 'calc(100% - 1rem)',
+            textAlign: 'left',
+            border: 'none',
+          }}
+        >
+          <div className="gorkh-workstation-nav-dot" style={{ background: '#f8fafc' }} />
+          <span style={{ flex: 1 }}>Dashboard</span>
+        </button>
         {WORKSTATION_NAV_ITEMS.map((item) => (
           <button
             key={item.id}
@@ -118,6 +132,22 @@ export function WorkstationSidebar({
             )}
           </button>
         ))}
+        <div className="gorkh-workstation-sidebar-separator" />
+        <button
+          onClick={() => onSelect('assistant')}
+          aria-label="Assistant"
+          aria-current={activeModule === 'assistant' ? 'page' : undefined}
+          className={activeModule === 'assistant' ? 'gorkh-workstation-nav-item active' : 'gorkh-workstation-nav-item'}
+          style={{
+            width: 'calc(100% - 1rem)',
+            textAlign: 'left',
+            border: 'none',
+          }}
+        >
+          <div className="gorkh-workstation-nav-dot" style={{ background: '#64748b' }} />
+          <span style={{ flex: 1 }}>Assistant</span>
+          <span className="gorkh-workstation-nav-badge">utility</span>
+        </button>
       </div>
 
       <div

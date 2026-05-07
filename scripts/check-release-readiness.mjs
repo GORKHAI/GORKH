@@ -162,7 +162,7 @@ for (const root of workstationRoots) {
           basename.includes('constant') ||
           basename.includes('denied') ||
           basename.includes('schema');
-        if (!isGuardOrTest) {
+        if (!isGuardOrTest && !isApprovedCloakSignerBridge(f, content, method)) {
           fail(`Forbidden call ${method}() found in ${f}`);
           forbiddenFound = true;
         }
@@ -197,7 +197,7 @@ for (const root of signMessageRoots) {
         basename.includes('ownership') ||
         basename.includes('proof') ||
         basename.includes('verify');
-      if (!isOwnershipProof) {
+      if (!isOwnershipProof && !isApprovedCloakSignerBridge(f, content, 'signMessage')) {
         fail(`signMessage() found outside ownership-proof context: ${f}`);
         signMessageOutsideProof = true;
       }
@@ -205,7 +205,7 @@ for (const root of signMessageRoots) {
   }
 }
 if (!signMessageOutsideProof) {
-  ok('signMessage is only used in ownership-proof contexts');
+  ok('signMessage is only used in ownership-proof contexts or scoped Cloak viewing-key registration');
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +279,18 @@ if (!excludedProtocolFound) {
 // ---------------------------------------------------------------------------
 function listTsJsFiles(dir) {
   return listFiles(dir, (n) => n.endsWith('.ts') || n.endsWith('.tsx') || n.endsWith('.js') || n.endsWith('.jsx'));
+}
+
+function isApprovedCloakSignerBridge(filePath, content, method) {
+  return (
+    filePath.endsWith('/wallet/cloak/cloakDeposit.ts') &&
+    content.includes('wallet_cloak_begin_signing_session') &&
+    content.includes('wallet_cloak_sign_transaction') &&
+    content.includes('wallet_cloak_sign_message') &&
+    content.includes("purpose: 'cloak_deposit'") &&
+    content.includes("purpose: 'cloak_viewing_key_registration'") &&
+    (method === 'signTransaction' || method === 'signMessage')
+  );
 }
 
 function listFiles(dir, predicate) {

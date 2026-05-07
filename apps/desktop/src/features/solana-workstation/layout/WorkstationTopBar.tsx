@@ -1,18 +1,27 @@
 import { useState, useCallback } from 'react';
 import { classifySolanaInput } from '../shield/classifySolanaInput.js';
 import { SolanaShieldInputKind } from '@gorkh/shared';
-import { getNavItemById, type WorkstationModuleId } from './workstationNavigation.js';
+import { getNavItemById, type WorkstationModuleId, type WorkstationViewId } from './workstationNavigation.js';
 
 export function WorkstationTopBar({
   activeModule,
   onShieldPrefill,
+  onOpenSettings,
+  onOpenAssistant,
+  assistantActive,
 }: {
-  activeModule: WorkstationModuleId | null;
+  activeModule: WorkstationViewId | null;
   onShieldPrefill?: (input: string) => void;
+  onOpenSettings?: () => void;
+  onOpenAssistant?: () => void;
+  assistantActive?: boolean;
 }) {
   const [command, setCommand] = useState('');
 
-  const activeItem = activeModule ? getNavItemById(activeModule) : undefined;
+  const activeItem =
+    activeModule && activeModule !== 'assistant'
+      ? getNavItemById(activeModule as WorkstationModuleId)
+      : undefined;
 
   const handleSubmit = useCallback(() => {
     const trimmed = command.trim();
@@ -26,6 +35,7 @@ export function WorkstationTopBar({
 
   return (
     <header
+      className="gorkh-workstation-topbar"
       style={{
         height: '56px',
         minHeight: '56px',
@@ -38,14 +48,9 @@ export function WorkstationTopBar({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '140px' }}>
-        <span
-          style={{
-            fontSize: '0.95rem',
-            fontWeight: 700,
-            color: '#f8fafc',
-          }}
-        >
-          {activeItem?.label ?? 'Dashboard'}
+        <span className="gorkh-wordmark-badge">GORKH</span>
+        <span className="gorkh-topbar-active-area">
+          {activeModule === 'assistant' ? 'Assistant — Secondary Workspace' : activeItem?.label ?? 'Solana Workstation'}
         </span>
         {activeItem && (
           <span
@@ -67,6 +72,7 @@ export function WorkstationTopBar({
 
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
         <input
+          className="gorkh-workstation-command-input"
           type="text"
           value={command}
           onChange={(e) => setCommand(e.target.value)}
@@ -117,6 +123,19 @@ export function WorkstationTopBar({
         >
           Read-Only
         </span>
+        <span className="gorkh-workstation-mini-badge">No signing</span>
+        <span className="gorkh-workstation-mini-badge">Execution disabled</span>
+        <button className="gorkh-workstation-icon-button" onClick={onOpenSettings} aria-label="Settings" title="Settings">
+          S
+        </button>
+        <button
+          className={assistantActive ? 'gorkh-workstation-icon-button active' : 'gorkh-workstation-icon-button'}
+          onClick={onOpenAssistant}
+          aria-label="Assistant"
+          title="Assistant"
+        >
+          AI
+        </button>
       </div>
     </header>
   );

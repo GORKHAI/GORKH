@@ -6,6 +6,7 @@
 // ============================================================================
 
 export type WorkstationModuleId = 'wallet' | 'markets' | 'agent' | 'builder' | 'shield' | 'context';
+export type WorkstationViewId = WorkstationModuleId | 'assistant';
 
 export type WorkstationModuleStatus =
   | 'live_local'

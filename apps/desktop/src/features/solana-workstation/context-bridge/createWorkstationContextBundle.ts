@@ -14,6 +14,7 @@ export interface WorkstationContextBundleInput {
   builderMarkdown?: string;
   shieldMarkdown?: string;
   privateMarkdown?: string;
+  zerionMarkdown?: string;
   references: SolanaWorkstationContextReference[];
 }
 
@@ -50,6 +51,13 @@ export function createWorkstationContextBundle(
     const sanitized = sanitizeContextForExport(input.privateMarkdown);
     parts.push(sanitized.text);
     sources.push(SolanaWorkstationContextSource.PRIVATE);
+    redactions.push(...sanitized.redactionsApplied);
+  }
+
+  if (input.zerionMarkdown) {
+    const sanitized = sanitizeContextForExport(input.zerionMarkdown);
+    parts.push(sanitized.text);
+    sources.push(SolanaWorkstationContextSource.ZERION_AGENT);
     redactions.push(...sanitized.redactionsApplied);
   }
 

@@ -13,17 +13,52 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 
 - [ ] Launch the desktop app from a clean start.
 - [ ] Verify the app opens directly into the GORKH Workstation shell, not the assistant/chat screen.
+- [ ] Verify no macOS Screen Recording, audio recording, Accessibility, or Automation prompt appears on launch.
 - [ ] Verify the Workstation shell shows left sidebar navigation, top command/search bar, main workspace, right inspector/safety panel, and bottom status bar.
 - [ ] Verify the sidebar includes Wallet, Markets, Agent, Builder, Shield, and Context.
-- [ ] Verify the assistant is reachable only through a secondary control labeled "Open Assistant".
-- [ ] From Assistant, click "Back to Workstation" and verify the Workstation shell returns.
+- [ ] Verify the app does not page-scroll as a website; only internal tables, logs, previews, inspector content, and chat history may scroll.
+- [ ] Verify the assistant is reachable only as a secondary utility from compact chrome/sidebar controls.
+- [ ] From Assistant, click any Workstation module in the sidebar and verify the Workstation shell returns.
 - [ ] Verify the fresh Workstation header does not show a generic old assistant-first "Stop All" control.
 - [ ] If Assistant is opened, verify desktop-control features remain secondary and approval-gated.
-- [ ] Verify no screen-recording or accessibility prompt appears before opening Assistant or Settings, unless the OS prompts for an unrelated external reason.
+- [ ] Verify opening Assistant does not request Screen Recording.
+- [ ] Verify Assistant copy says screen context is optional and disabled until explicitly enabled.
+- [ ] Verify Desktop Vision shows explanatory copy before any Screen Recording request.
+- [ ] Verify the visual style matches the GORKH dark Apple-level branding: graphite background, compact density, subtle borders/glow, no generic SaaS hero or large CTA header.
+
+## Desktop UI QA
+
+- [ ] App launches Workstation-first.
+- [ ] No macOS Screen Recording prompt appears on launch.
+- [ ] No page-level scroll exists in the app shell.
+- [ ] Sidebar, topbar, inspector, and bottom status remain visible while moving between modules.
+- [ ] Assistant cannot trap the user; sidebar module navigation exits Assistant.
+- [ ] Assistant does not request screen recording unless the user explicitly enables Desktop Vision.
+- [ ] Each module fits the fixed desktop shell.
+- [ ] Internal lists/logs may scroll inside panels only.
+- [ ] Visual style matches GORKH dark Apple-level branding.
+- [ ] No old assistant-first surface dominates startup.
 
 ---
 
 ## Wallet Module
+
+### Local Wallet Vault
+- [ ] Create a local wallet and verify only wallet id, label, public address, source, network, and lock/security metadata appear in browser storage.
+- [ ] Verify the generated private key never appears in UI, logs, Context export, or Assistant chat.
+- [ ] Import a test Solana CLI wallet JSON array and verify the paste field clears after success or failure.
+- [ ] Import a test base58 secret and verify the public address is derived locally by the desktop app.
+- [ ] Forget a local wallet and verify the wallet metadata is removed and the keychain entry is deleted.
+- [ ] Confirm GORKH warns that it cannot recover local wallets.
+
+### Cloak Private
+- [ ] Open Wallet > Private / Cloak.
+- [ ] Verify Cloak Program ID is `zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW`.
+- [ ] Verify default relay is `https://api.cloak.ag`.
+- [ ] Verify supported assets are SOL, USDC, and USDT.
+- [ ] Verify invalid recipients and zero/negative/non-integer base-unit amounts are blocked.
+- [ ] Verify submit is disabled until a secure signer path is implemented.
+- [ ] Verify no fake success appears for deposit/send/withdraw.
 
 ### Address-Only Profiles
 - [ ] Create a new wallet profile with only a label (no private key).
@@ -172,6 +207,33 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 
 ## Agent Module
 
+### GORKH Agent Station (v0.2)
+- [ ] Open Agent. Confirm the first tab is **GORKH Agent**.
+- [ ] Confirm the header reads `GORKH Agent Station — v0.2` and the status pill shows `Idle` initially.
+- [ ] Confirm the background-runtime copy mentions: runs while desktop app is open, does not run after the app is fully quit.
+- [ ] Click **Start Agent** → status flips to `Running` and `agent_started` audit event appears.
+- [ ] Click **Pause** → ticks halt, status `Paused`.
+- [ ] Click **Resume** → status `Running`.
+- [ ] Click **Kill Switch** → status `Kill Switch Engaged`, Start/Resume disabled, pending approvals flip to `blocked`, `agent_killed` event appears.
+- [ ] In `Manual` mode confirm `lastTickAt` does not advance.
+- [ ] Switch to `Background (app open)` and confirm `lastTickAt` advances roughly every minute while the app is open.
+- [ ] Submit `check my wallet` via the natural language input → portfolio_analysis task auto-completes (no approval required) and shows a **Wallet Summary** card.
+- [ ] If no wallet snapshot exists, verify the card says to open **Wallet -> Snapshot** and refresh manually.
+- [ ] Submit `review this token` → a **Markets Summary** card appears from local watchlist/analysis only. Verify no Birdeye/API fetch starts.
+- [ ] Submit `explain this transaction <signature>` → a **Shield Review Handoff** appears. Click **Open Shield** and verify the input is prefilled; no simulation starts automatically.
+- [ ] Submit `prepare a Cloak private send` → a **Cloak Draft Handoff** appears. Click **Open Wallet -> Cloak Private** and verify safe fields prefill; no Cloak proof, signer bridge, or transaction starts automatically.
+- [ ] Submit `prepare a tiny Zerion DCA` → a **Zerion Proposal Handoff** appears. Click **Open Agent -> Zerion Executor** and verify safe fields prefill; no Zerion CLI swap executes automatically.
+- [ ] Submit `summarize my current workstation context` → a **Context Bundle** card appears with redactions listed.
+- [ ] Submit `cloak send privately` → cloak_draft proposal queued with `executionBlocked=true` and a pending approval card.
+- [ ] Submit `DCA tiny SOL via Zerion` → zerion_proposal queued with `executionBlocked=true`.
+- [ ] Confirm submitting an empty intent surfaces an error.
+- [ ] Confirm submitting any intent with kill switch engaged surfaces an error.
+- [ ] Verify Approvals tab shows pending entries; Reject transitions them to `rejected`.
+- [ ] Verify Templates tab lists Active = GORKH Agent only; Coming Soon = Copy Trader, Momentum Bot, Yield Optimizer, DAO Auto-Voting Agent, LP Manager, Health Factor Auto-Repay Agent, Autonomous Cloak Private Send; Blocked = Main-Wallet Autonomous Execution.
+- [ ] Verify the Blocked card copy includes “No god-mode wallet access”.
+- [ ] Verify Audit timeline grows on every transition.
+- [ ] Verify `localStorage` key `gorkh.solana.agentStation.v1` exists and contains no `privateKey`, `seedPhrase`, `mnemonic`, `cloakNoteSecret`, `viewingKey`, `apiKey`, or `agentToken` keys.
+
 ### Local Agent Creation
 - [ ] Create a new local agent with a name and policy.
 - [ ] Verify the policy defaults to:
@@ -195,6 +257,19 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 - [ ] Confirm there is NO "Auto-run" toggle.
 - [ ] Confirm attestation previews are marked `preview_only` / `not_written`.
 
+### Zerion Executor
+- [ ] Open Agent -> Zerion Executor.
+- [ ] Confirm the panel is inside Agent, not a top-level Workstation module.
+- [ ] Confirm the UI warns: "Use a fresh Zerion agent wallet with tiny funds. Do not use your main GORKH wallet."
+- [ ] Confirm API keys are hidden and stored only through OS keychain when entered.
+- [ ] Confirm wallet setup points to manual Zerion CLI wallet creation/import.
+- [ ] Confirm the policy is Solana only, SOL -> USDC only, max `0.001` SOL by default, bridge disabled, send disabled, and max executions `1`.
+- [ ] Confirm the command preview is shown before execution.
+- [ ] Confirm execution requires the explicit real-onchain-transaction checkbox.
+- [ ] Confirm Assistant, Markets, Context, Wallet, and Cloak cannot invoke `zerion_cli_swap_execute`.
+- [ ] Confirm no Zerion API key, agent token, private key, seed phrase, wallet backup, or Cloak note appears in localStorage or exported context.
+- [ ] Do not execute a real Zerion swap unless the run owner explicitly approves the tiny-funded mainnet smoke.
+
 ---
 
 ## Context Module
@@ -214,14 +289,36 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 
 ---
 
+## Cloak Deposit QA
+
+- [ ] Open Wallet -> Cloak Private.
+- [ ] Confirm Cloak deposit is inside Wallet, not a top-level app surface.
+- [ ] Confirm the UI says Cloak currently uses mainnet defaults and tiny test amounts should be used first.
+- [ ] Confirm SOL deposit amount is entered as lamports.
+- [ ] Confirm minimum deposit guard rejects values below `10_000_000` lamports.
+- [ ] Confirm the fee preview uses integer math: fixed `5_000_000` plus `floor(amount * 3 / 1000)`.
+- [ ] Confirm a selected unlocked local wallet is required.
+- [ ] Confirm `Prepare Deposit` returns public draft metadata only.
+- [ ] Confirm `Approve & Deposit` requires the approval checkbox.
+- [ ] Confirm progress shows viewing-key registration signing when required, proof generation, transaction signing, submission, and confirmation/failure.
+- [ ] Confirm the Tauri signer bridge is used and no raw keypair bytes are exposed to the webview.
+- [ ] Confirm Agent, Assistant, and Markets cannot execute Cloak deposit.
+- [ ] Confirm raw notes, viewing keys, private keys, keypair bytes, wallet JSON, and seed phrases are not shown in UI, logs, Context, Assistant, backend calls, or `localStorage`.
+- [ ] Confirm Private Send remains deferred until secure note spending is implemented.
+- [ ] Confirm secure note metadata is visible after success and raw serialized UTXO/note material is not shown.
+
+---
+
 ## Global Safety Regression Checks
 
-- [ ] No `sendTransaction` call exists in active workstation code (only in denied-method constants/tests).
-- [ ] No `sendRawTransaction` call exists in active workstation code.
+- [ ] No `sendTransaction` call exists outside explicitly approved future Wallet/Cloak execution code.
+- [ ] No `sendRawTransaction` call exists outside explicitly approved future Wallet/Cloak execution code.
 - [ ] No `requestAirdrop` call exists in active workstation code.
-- [ ] No `signTransaction` call exists in active workstation code.
-- [ ] No `signAllTransactions` call exists in active workstation code.
-- [ ] `signMessage` appears only in wallet ownership proof and web wallet-connect contexts.
+- [ ] No `signTransaction` call exists outside explicitly approved future Wallet/Cloak execution code.
+- [ ] No `signAllTransactions` call exists outside explicitly approved future Wallet/Cloak execution code.
+- [ ] `signMessage` appears only in wallet ownership proof, web wallet-connect contexts, and the scoped Cloak viewing-key registration signer bridge.
+- [ ] Zerion CLI execution uses explicit Tauri commands and never a shell string or arbitrary terminal command.
+- [ ] Zerion API keys and agent token secrets are not persisted to `localStorage`.
 - [ ] No Birdeye API key is persisted to `localStorage`.
 - [ ] No Drift protocol appears in allowed integrations (only in denied constants/tests).
 - [ ] No HumanRail references exist in workstation code.

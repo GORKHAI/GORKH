@@ -1,5 +1,10 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import type { SolanaWalletWorkspaceState, SolanaWalletReadOnlySnapshot, SolanaWalletProfile } from '@gorkh/shared';
+import type {
+  GorkhAgentCloakDraftHandoff,
+  SolanaWalletWorkspaceState,
+  SolanaWalletReadOnlySnapshot,
+  SolanaWalletProfile,
+} from '@gorkh/shared';
 import {
   SolanaWalletRouteKind,
   SolanaWalletAssetKind,
@@ -31,36 +36,74 @@ import {
 import { ExternalWalletPanel } from '../connection/index.js';
 import { WalletHandoffPanel } from '../handoff/components/WalletHandoffPanel.js';
 import { WalletPortfolioPanel } from '../portfolio/components/WalletPortfolioPanel.js';
+import { LocalWalletVaultPanel } from '../local-vault/components/LocalWalletVaultPanel.js';
+import {
+  loadLocalWalletProfiles,
+  loadSelectedLocalWalletId,
+  saveLocalWalletProfiles,
+  saveSelectedLocalWalletId,
+} from '../local-vault/localWalletVaultStorage.js';
+import { CloakWalletPanel } from '../cloak/components/CloakWalletPanel.js';
 
-type WalletTab = 'wallet' | 'connect' | 'portfolio' | 'snapshot' | 'receive' | 'send' | 'routes' | 'markets' | 'context' | 'safety';
+type WalletTab = 'overview' | 'local' | 'cloak' | 'portfolio' | 'snapshot' | 'send' | 'receive' | 'history' | 'security' | 'connect' | 'markets' | 'context';
 
 const TABS: { id: WalletTab; label: string }[] = [
-  { id: 'wallet', label: 'Wallet' },
-  { id: 'connect', label: 'Connect' },
-  { id: 'portfolio', label: 'Portfolio' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'local', label: 'Local Wallet' },
+  { id: 'cloak', label: 'Private / Cloak' },
+  { id: 'portfolio', label: 'Balances' },
   { id: 'snapshot', label: 'Snapshot' },
-  { id: 'receive', label: 'Receive' },
   { id: 'send', label: 'Send' },
-  { id: 'routes', label: 'Routes' },
-  { id: 'markets', label: 'Markets Access' },
+  { id: 'receive', label: 'Receive' },
+  { id: 'history', label: 'History / Audit' },
+  { id: 'security', label: 'Security' },
+  { id: 'connect', label: 'Browser' },
+  { id: 'markets', label: 'Markets' },
   { id: 'context', label: 'Context' },
-  { id: 'safety', label: 'Safety' },
 ];
 
-export function WalletWorkbench() {
+export function WalletWorkbench({
+  pendingCloakHandoff,
+}: {
+  pendingCloakHandoff?: GorkhAgentCloakDraftHandoff | null;
+}) {
   const [workspace, setWorkspace] = useState<SolanaWalletWorkspaceState>(() =>
     loadWalletWorkspaceState() ?? createEmptyWalletWorkspaceState()
   );
+  const [localWallets, setLocalWallets] = useState(() => loadLocalWalletProfiles());
+  const [selectedLocalWalletId, setSelectedLocalWalletId] = useState<string | null>(() => loadSelectedLocalWalletId());
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<WalletTab>('wallet');
+  const [activeTab, setActiveTab] = useState<WalletTab>('overview');
 
   useEffect(() => {
     saveWalletWorkspaceState(workspace);
   }, [workspace]);
 
+  useEffect(() => {
+    saveLocalWalletProfiles(localWallets);
+  }, [localWallets]);
+
+  useEffect(() => {
+    saveSelectedLocalWalletId(selectedLocalWalletId);
+  }, [selectedLocalWalletId]);
+
+  useEffect(() => {
+    if (pendingCloakHandoff) {
+      setActiveTab('cloak');
+      if (pendingCloakHandoff.walletId) {
+        setSelectedLocalWalletId(pendingCloakHandoff.walletId);
+      }
+    }
+  }, [pendingCloakHandoff]);
+
   const selectedProfile = useMemo(
     () => workspace.profiles.find((p) => p.id === selectedProfileId) ?? workspace.profiles[0] ?? null,
     [selectedProfileId, workspace.profiles]
+  );
+
+  const selectedLocalWallet = useMemo(
+    () => localWallets.find((wallet) => wallet.walletId === selectedLocalWalletId) ?? localWallets[0] ?? null,
+    [localWallets, selectedLocalWalletId]
   );
 
   const contextSummary = useMemo(
@@ -212,7 +255,7 @@ export function WalletWorkbench() {
       </div>
 
       <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.5, color: '#475569' }}>
-        Address-only wallet profiles with read-only RPC snapshots and Markets watchlist bridge.
+        Local non-custodial wallet foundation with OS keychain storage, read-only snapshots, Markets wallet context, and Cloak private wallet integration.
       </p>
 
       <div
@@ -225,7 +268,7 @@ export function WalletWorkbench() {
           color: '#991b1b',
         }}
       >
-        Wallet shell only. No private transfer, signing, swap, or trading execution is available in this phase.
+        Private keys stay in the OS keychain. Agent and Assistant can draft, but cannot sign or execute. Cloak execution remains approval-gated and blocked until the secure signer path is complete.
       </div>
 
       <div
@@ -257,14 +300,37 @@ export function WalletWorkbench() {
         ))}
       </div>
 
-      {activeTab === 'wallet' && (
-        <div style={{ maxWidth: '640px' }}>
+      {activeTab === 'overview' && (
+        <div style={{ maxWidth: '760px', display: 'grid', gap: '1rem' }}>
           <WalletOverviewPanel
             profiles={workspace.profiles}
             selectedProfileId={selectedProfile?.id ?? null}
             onSelectProfile={handleSelectProfile}
             onCreateProfile={handleCreateProfile}
             onRemoveProfile={handleRemoveProfile}
+          />
+          <div className="gorkh-assistant-panel" style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.62)' }}>
+            This wallet can be used across Wallet, Markets, and Agent workflows. Markets receives public address context only; Agent can draft actions but cannot sign or execute.
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'local' && (
+        <div style={{ maxWidth: '760px' }}>
+          <LocalWalletVaultPanel
+            wallets={localWallets}
+            selectedWalletId={selectedLocalWallet?.walletId ?? null}
+            onWalletsChange={setLocalWallets}
+            onSelectWallet={setSelectedLocalWalletId}
+          />
+        </div>
+      )}
+
+      {activeTab === 'cloak' && (
+        <div style={{ maxWidth: '760px' }}>
+          <CloakWalletPanel
+            selectedWallet={selectedLocalWallet}
+            pendingHandoff={pendingCloakHandoff}
           />
         </div>
       )}
@@ -357,15 +423,12 @@ export function WalletWorkbench() {
         </div>
       )}
 
-      {activeTab === 'routes' && (
-        <div style={{ maxWidth: '640px' }}>
-          <PrivacyRoutesPanel />
-        </div>
-      )}
-
       {activeTab === 'markets' && (
         <div style={{ maxWidth: '640px' }}>
           <MarketsAccessPanel selectedProfile={selectedProfile} onAddToMarkets={handleAddToMarkets} />
+          <div className="gorkh-assistant-panel" style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'rgba(255,255,255,0.62)' }}>
+            Use selected local wallet for future trading — planned. Market trade execution is disabled in this phase.
+          </div>
         </div>
       )}
 
@@ -375,7 +438,16 @@ export function WalletWorkbench() {
         </div>
       )}
 
-      {activeTab === 'safety' && (
+      {activeTab === 'history' && (
+        <div style={{ maxWidth: '640px', display: 'grid', gap: '1rem' }}>
+          <PrivacyRoutesPanel />
+          <div className="gorkh-assistant-panel" style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.62)' }}>
+            Cloak audit history will show safe transaction summaries, request IDs, and signatures only. It must never include note secrets, viewing keys, or wallet secret material.
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'security' && (
         <div style={{ maxWidth: '640px' }}>
           <WalletSafetyPanel />
         </div>
@@ -391,7 +463,7 @@ export function WalletWorkbench() {
           color: '#94a3b8',
         }}
       >
-        GORKH Wallet v0.6 — Portfolio view, Markets sync, browser wallet handoff, address-only profiles, read-only RPC snapshots. No signing or trading execution.
+        GORKH Wallet v0.7 — local wallet vault, Cloak SDK configuration, metadata-only wallet sharing, read-only snapshots, browser handoff. No autonomous signing, no market execution, no secret export.
       </div>
     </div>
   );

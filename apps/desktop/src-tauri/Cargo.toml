@@ -36,3 +36,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "5"
 thiserror = "1"
 window-vibrancy = "0.5"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+bs58 = "0.5"
+sha2 = "0.10"

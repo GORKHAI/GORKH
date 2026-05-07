@@ -6,13 +6,19 @@
 #![allow(clippy::redundant_closure)]
 #![allow(clippy::unnecessary_sort_by)]
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
+use ed25519_dalek::{Signer, SigningKey};
 use enigo::{
     Enigo, Key as EnigoKey, KeyboardControllable, MouseButton as EnigoMouseButton,
     MouseControllable,
 };
+use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::webview::{NewWindowResponse, WebviewWindowBuilder};
 use tauri::{
     menu::{MenuBuilder, MenuEvent, MenuItemBuilder, PredefinedMenuItem},
@@ -711,6 +717,24 @@ struct DesktopAuthRuntimeState {
     pending: AsyncMutex<Option<PendingDesktopAuthListener>>,
 }
 
+#[derive(Default)]
+struct CloakSigningRuntimeState {
+    sessions: Mutex<HashMap<String, CloakSigningSession>>,
+}
+
+#[derive(Clone)]
+struct CloakSigningSession {
+    session_id: String,
+    draft_id: String,
+    wallet_id: String,
+    public_address: String,
+    operation_kind: String,
+    operation_digest: String,
+    expires_at: u64,
+    transaction_signatures_remaining: u8,
+    message_signatures_remaining: u8,
+}
+
 struct PendingDesktopAuthListener {
     result_rx: Option<oneshot::Receiver<Result<DesktopAuthLoopbackPayload, String>>>,
     shutdown_tx: Option<oneshot::Sender<()>>,
@@ -737,6 +761,26 @@ fn normalized_timeout_ms(requested_timeout_ms: Option<u64>) -> u64 {
 
 fn device_token_account(device_id: &str) -> String {
     format!("device_token::{}", device_id)
+}
+
+fn wallet_vault_account(wallet_id: &str) -> String {
+    format!("wallet:v1:{}", wallet_id)
+}
+
+fn cloak_note_account(wallet_id: &str, note_id: &str) -> String {
+    format!("cloak-note:v1:{}:{}", wallet_id, note_id)
+}
+
+fn cloak_note_meta_account(wallet_id: &str) -> String {
+    format!("cloak-note-meta:v1:{}", wallet_id)
+}
+
+fn cloak_deposit_draft_account(draft_id: &str) -> String {
+    format!("cloak-deposit-draft:v1:{}", draft_id)
+}
+
+fn cloak_deposit_used_account(draft_id: &str) -> String {
+    format!("cloak-deposit-used:v1:{}", draft_id)
 }
 
 fn keyring_entry_for_service(service: &str, account: &str) -> Result<keyring::Entry, String> {
@@ -808,6 +852,1787 @@ fn keyring_delete_secret(account: &str) -> Result<(), String> {
         (None, Some(legacy)) => format!("Failed to clear secure value: {}", legacy),
         (None, None) => "Failed to clear secure value".to_string(),
     })
+}
+
+fn zerion_api_key_account() -> &'static str {
+    "zerion-api-key:v1"
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionApiKeyStatusPayload {
+    configured: bool,
+    source: String,
+    redacted: bool,
+    updated_at: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionCliStatusPayload {
+    binary: String,
+    detected: bool,
+    version: Option<String>,
+    help_available: Option<bool>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionCliRunPayload {
+    ok: bool,
+    command_kind: String,
+    command_preview: Vec<String>,
+    exit_code: Option<i32>,
+    stdout_json: Option<serde_json::Value>,
+    stdout_text: Option<String>,
+    stderr_json: Option<serde_json::Value>,
+    stderr_text: Option<String>,
+    error_code: Option<String>,
+    timed_out: bool,
+    executed_at: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionBinaryRequest {
+    binary: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionApiKeySetRequest {
+    api_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionPolicyCreateRequest {
+    binary: String,
+    policy_name: String,
+    expires: String,
+    deny_transfers: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionTokenCreateRequest {
+    binary: String,
+    token_name: String,
+    wallet_name: String,
+    policy_name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionAddressRequest {
+    binary: String,
+    address: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionAgentPolicyRequest {
+    name: String,
+    chain: String,
+    #[serde(rename = "allowedFromToken")]
+    allowed_from_token: String,
+    #[serde(rename = "allowedToToken")]
+    allowed_to_token: String,
+    #[serde(rename = "maxSolAmount")]
+    max_sol_amount: String,
+    #[serde(rename = "expiresAt")]
+    expires_at: u64,
+    #[serde(rename = "maxExecutions")]
+    max_executions: u8,
+    #[serde(rename = "executionsUsed")]
+    executions_used: u8,
+    #[serde(rename = "bridgeDisabled")]
+    bridge_disabled: bool,
+    #[serde(rename = "sendDisabled")]
+    send_disabled: bool,
+    #[serde(rename = "denyTransfers")]
+    deny_transfers: bool,
+    #[serde(rename = "localOnlyDigest")]
+    local_only_digest: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionAgentProposalRequest {
+    id: String,
+    kind: String,
+    source: String,
+    chain: String,
+    wallet_name: String,
+    amount_sol: String,
+    from_token: String,
+    to_token: String,
+    policy_name: String,
+    local_policy_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionExecutionApprovalRequest {
+    proposal_id: String,
+    source: String,
+    approved: bool,
+    approved_at: u64,
+    approval_text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ZerionSwapExecuteRequest {
+    binary: String,
+    proposal: ZerionAgentProposalRequest,
+    policy: ZerionAgentPolicyRequest,
+    approval: ZerionExecutionApprovalRequest,
+}
+
+fn now_millis_u64() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn validate_zerion_binary(binary: &str) -> Result<(), String> {
+    match binary {
+        "zerion" | "gorkh-zerion" => Ok(()),
+        _ => Err("Only zerion or gorkh-zerion binaries are allowed.".to_string()),
+    }
+}
+
+fn validate_zerion_name(value: &str, label: &str) -> Result<(), String> {
+    if value.is_empty() || value.len() > 64 {
+        return Err(format!("{} must be 1-64 characters.", label));
+    }
+    if !value
+        .chars()
+        .enumerate()
+        .all(|(index, c)| c.is_ascii_alphanumeric() || (index > 0 && matches!(c, '_' | '-' | '.')))
+    {
+        return Err(format!(
+            "{} must use only letters, numbers, dot, dash, and underscore.",
+            label
+        ));
+    }
+    Ok(())
+}
+
+fn validate_zerion_address(value: &str) -> Result<(), String> {
+    if value.len() < 16 || value.len() > 128 || contains_shell_metachar(value) {
+        return Err("Zerion address is not valid for a read-only command.".to_string());
+    }
+    Ok(())
+}
+
+fn contains_shell_metachar(value: &str) -> bool {
+    value.chars().any(|c| {
+        matches!(
+            c,
+            ';' | '&'
+                | '|'
+                | '`'
+                | '$'
+                | '<'
+                | '>'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '['
+                | ']'
+                | '\\'
+                | '\n'
+                | '\r'
+        )
+    })
+}
+
+fn parse_decimal_nanos(value: &str) -> Result<u128, String> {
+    if value.is_empty() || value.contains('e') || value.contains('E') || value.starts_with('-') {
+        return Err("SOL amount must be a positive decimal.".to_string());
+    }
+    let parts: Vec<&str> = value.split('.').collect();
+    if parts.len() > 2 || parts[0].is_empty() || !parts[0].chars().all(|c| c.is_ascii_digit()) {
+        return Err("SOL amount must be a positive decimal.".to_string());
+    }
+    let fraction = if parts.len() == 2 { parts[1] } else { "" };
+    if fraction.len() > 9 || !fraction.chars().all(|c| c.is_ascii_digit()) {
+        return Err("SOL amount can have at most 9 decimals.".to_string());
+    }
+    let whole = parts[0]
+        .parse::<u128>()
+        .map_err(|_| "SOL amount is too large.".to_string())?;
+    let mut fraction_padded = fraction.to_string();
+    while fraction_padded.len() < 9 {
+        fraction_padded.push('0');
+    }
+    let fractional = if fraction_padded.is_empty() {
+        0
+    } else {
+        fraction_padded
+            .parse::<u128>()
+            .map_err(|_| "SOL amount is invalid.".to_string())?
+    };
+    let total = whole
+        .checked_mul(1_000_000_000)
+        .and_then(|value| value.checked_add(fractional))
+        .ok_or_else(|| "SOL amount is too large.".to_string())?;
+    if total == 0 {
+        return Err("SOL amount must be greater than zero.".to_string());
+    }
+    Ok(total)
+}
+
+fn redact_zerion_output(input: &str) -> String {
+    let api_key_redacted = regex::Regex::new(r"zk_[A-Za-z0-9_-]+")
+        .map(|re| {
+            re.replace_all(input, "[redacted_zerion_api_key]")
+                .to_string()
+        })
+        .unwrap_or_else(|_| input.to_string());
+    regex::Regex::new(r#"(?i)"(apiKey|agentToken|token|privateKey|seed|mnemonic)"\s*:\s*"[^"]+""#)
+        .map(|re| {
+            re.replace_all(&api_key_redacted, r#""$1":"[redacted]""#)
+                .to_string()
+        })
+        .unwrap_or(api_key_redacted)
+}
+
+fn parse_json_if_possible(input: &str) -> Option<serde_json::Value> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    serde_json::from_str(trimmed).ok()
+}
+
+fn run_zerion_command(
+    command_kind: &str,
+    binary: &str,
+    args: Vec<String>,
+    timeout_ms: u64,
+) -> ZerionCliRunPayload {
+    let executed_at = now_millis_u64();
+    let command_preview = std::iter::once(binary.to_string())
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>();
+
+    let mut command = std::process::Command::new(binary);
+    command
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    if let Some(api_key) = keyring_get_secret(zerion_api_key_account()) {
+        command.env("ZERION_API_KEY", api_key);
+    }
+
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return ZerionCliRunPayload {
+                ok: false,
+                command_kind: command_kind.to_string(),
+                command_preview,
+                exit_code: None,
+                stdout_json: None,
+                stdout_text: None,
+                stderr_json: None,
+                stderr_text: Some(redact_zerion_output(&error.to_string())),
+                error_code: Some("SPAWN_FAILED".to_string()),
+                timed_out: false,
+                executed_at,
+            };
+        }
+    };
+
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => break,
+            Ok(None) => {
+                if start.elapsed() > std::time::Duration::from_millis(timeout_ms) {
+                    let _ = child.kill();
+                    let output = child.wait_with_output().ok();
+                    let stderr = output
+                        .as_ref()
+                        .map(|o| redact_zerion_output(&String::from_utf8_lossy(&o.stderr)))
+                        .unwrap_or_else(|| "Zerion CLI command timed out.".to_string());
+                    return ZerionCliRunPayload {
+                        ok: false,
+                        command_kind: command_kind.to_string(),
+                        command_preview,
+                        exit_code: None,
+                        stdout_json: None,
+                        stdout_text: None,
+                        stderr_json: parse_json_if_possible(&stderr),
+                        stderr_text: Some(stderr),
+                        error_code: Some("TIMEOUT".to_string()),
+                        timed_out: true,
+                        executed_at,
+                    };
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(error) => {
+                return ZerionCliRunPayload {
+                    ok: false,
+                    command_kind: command_kind.to_string(),
+                    command_preview,
+                    exit_code: None,
+                    stdout_json: None,
+                    stdout_text: None,
+                    stderr_json: None,
+                    stderr_text: Some(redact_zerion_output(&error.to_string())),
+                    error_code: Some("WAIT_FAILED".to_string()),
+                    timed_out: false,
+                    executed_at,
+                };
+            }
+        }
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(error) => {
+            return ZerionCliRunPayload {
+                ok: false,
+                command_kind: command_kind.to_string(),
+                command_preview,
+                exit_code: None,
+                stdout_json: None,
+                stdout_text: None,
+                stderr_json: None,
+                stderr_text: Some(redact_zerion_output(&error.to_string())),
+                error_code: Some("OUTPUT_FAILED".to_string()),
+                timed_out: false,
+                executed_at,
+            };
+        }
+    };
+
+    let stdout = redact_zerion_output(&String::from_utf8_lossy(&output.stdout));
+    let stderr = redact_zerion_output(&String::from_utf8_lossy(&output.stderr));
+    ZerionCliRunPayload {
+        ok: output.status.success(),
+        command_kind: command_kind.to_string(),
+        command_preview,
+        exit_code: output.status.code(),
+        stdout_json: parse_json_if_possible(&stdout),
+        stdout_text: if stdout.trim().is_empty() {
+            None
+        } else {
+            Some(stdout)
+        },
+        stderr_json: parse_json_if_possible(&stderr),
+        stderr_text: if stderr.trim().is_empty() {
+            None
+        } else {
+            Some(stderr)
+        },
+        error_code: if output.status.success() {
+            None
+        } else {
+            Some(format!("EXIT_{}", output.status.code().unwrap_or(-1)))
+        },
+        timed_out: false,
+        executed_at,
+    }
+}
+
+fn validate_zerion_args(args: &[String]) -> Result<(), String> {
+    for arg in args {
+        if contains_shell_metachar(arg) {
+            return Err(
+                "Zerion command argument contains blocked shell metacharacters.".to_string(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn run_allowed_zerion(
+    command_kind: &str,
+    binary: &str,
+    args: Vec<String>,
+    timeout_ms: u64,
+) -> Result<ZerionCliRunPayload, String> {
+    validate_zerion_binary(binary)?;
+    validate_zerion_args(&args)?;
+    Ok(run_zerion_command(command_kind, binary, args, timeout_ms))
+}
+
+fn validate_zerion_swap_request(request: &ZerionSwapExecuteRequest) -> Result<(), String> {
+    validate_zerion_binary(&request.binary)?;
+    validate_zerion_name(&request.proposal.wallet_name, "Wallet name")?;
+    validate_zerion_name(&request.policy.name, "Policy name")?;
+    if request.proposal.kind != "zerion_solana_swap" {
+        return Err("Only Zerion Solana swap proposals are executable.".to_string());
+    }
+    if request.proposal.source != "agent_zerion_panel"
+        || request.approval.source != "agent_zerion_panel"
+    {
+        return Err("Zerion execution must originate from Agent Zerion panel.".to_string());
+    }
+    if !request.approval.approved || request.approval.proposal_id != request.proposal.id {
+        return Err("Explicit matching Zerion approval is required.".to_string());
+    }
+    if !request
+        .approval
+        .approval_text
+        .contains("real onchain transaction")
+    {
+        return Err("Approval text must acknowledge real onchain execution.".to_string());
+    }
+    if request.proposal.chain != "solana" || request.policy.chain != "solana" {
+        return Err("Only Solana Zerion execution is allowed.".to_string());
+    }
+    if request.proposal.from_token != "SOL"
+        || request.proposal.to_token != "USDC"
+        || request.policy.allowed_from_token != "SOL"
+        || request.policy.allowed_to_token != "USDC"
+    {
+        return Err("Only SOL to USDC swaps are allowed.".to_string());
+    }
+    if request.proposal.policy_name != request.policy.name {
+        return Err("Zerion proposal policy mismatch.".to_string());
+    }
+    if request.policy.local_only_digest.as_deref() != Some(&request.proposal.local_policy_digest) {
+        return Err("Zerion local policy digest mismatch.".to_string());
+    }
+    if !request.policy.bridge_disabled
+        || !request.policy.send_disabled
+        || !request.policy.deny_transfers
+    {
+        return Err("Bridge, send, and transfer bypasses must be disabled.".to_string());
+    }
+    if request.policy.max_executions != 1 || request.policy.executions_used > 0 {
+        return Err("Zerion policy execution limit blocks this command.".to_string());
+    }
+    if request.policy.expires_at <= now_millis_u64() {
+        return Err("Zerion local policy has expired.".to_string());
+    }
+    let amount = parse_decimal_nanos(&request.proposal.amount_sol)?;
+    let max_amount = parse_decimal_nanos(&request.policy.max_sol_amount)?;
+    if amount > max_amount {
+        return Err("Zerion swap amount exceeds local maximum.".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn zerion_cli_detect(request: ZerionBinaryRequest) -> ZerionCliStatusPayload {
+    if let Err(error) = validate_zerion_binary(&request.binary) {
+        return ZerionCliStatusPayload {
+            binary: request.binary,
+            detected: false,
+            version: None,
+            help_available: Some(false),
+            error: Some(error),
+        };
+    }
+    let result = run_zerion_command("detect", &request.binary, vec!["--help".to_string()], 5_000);
+    ZerionCliStatusPayload {
+        binary: request.binary,
+        detected: result.ok,
+        version: None,
+        help_available: Some(result.ok),
+        error: if result.ok {
+            None
+        } else {
+            result.stderr_text.or(result.error_code)
+        },
+    }
+}
+
+#[tauri::command]
+fn zerion_cli_version(request: ZerionBinaryRequest) -> Result<ZerionCliRunPayload, String> {
+    run_allowed_zerion(
+        "version",
+        &request.binary,
+        vec!["--version".to_string()],
+        5_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_config_status() -> ZerionApiKeyStatusPayload {
+    let keychain_configured = keyring_get_secret(zerion_api_key_account()).is_some();
+    let env_configured = std::env::var("ZERION_API_KEY").is_ok();
+    ZerionApiKeyStatusPayload {
+        configured: keychain_configured || env_configured,
+        source: if keychain_configured {
+            "keychain".to_string()
+        } else if env_configured {
+            "cli_config_or_env".to_string()
+        } else {
+            "missing".to_string()
+        },
+        redacted: true,
+        updated_at: None,
+    }
+}
+
+#[tauri::command]
+fn zerion_api_key_set(
+    request: ZerionApiKeySetRequest,
+) -> Result<ZerionApiKeyStatusPayload, String> {
+    if !request.api_key.starts_with("zk_") || request.api_key.len() < 8 {
+        return Err("Zerion API key must start with zk_.".to_string());
+    }
+    keyring_set_secret(zerion_api_key_account(), &request.api_key)?;
+    Ok(ZerionApiKeyStatusPayload {
+        configured: true,
+        source: "keychain".to_string(),
+        redacted: true,
+        updated_at: Some(now_millis_u64()),
+    })
+}
+
+#[tauri::command]
+fn zerion_api_key_clear() -> ZerionApiKeyStatusPayload {
+    let _ = keyring_delete_secret(zerion_api_key_account());
+    ZerionApiKeyStatusPayload {
+        configured: false,
+        source: "missing".to_string(),
+        redacted: true,
+        updated_at: Some(now_millis_u64()),
+    }
+}
+
+#[tauri::command]
+fn zerion_cli_wallet_list(request: ZerionBinaryRequest) -> Result<ZerionCliRunPayload, String> {
+    run_allowed_zerion(
+        "wallet_list",
+        &request.binary,
+        vec![
+            "wallet".to_string(),
+            "list".to_string(),
+            "--json".to_string(),
+        ],
+        15_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_agent_list_policies(
+    request: ZerionBinaryRequest,
+) -> Result<ZerionCliRunPayload, String> {
+    run_allowed_zerion(
+        "agent_list_policies",
+        &request.binary,
+        vec![
+            "agent".to_string(),
+            "list-policies".to_string(),
+            "--json".to_string(),
+        ],
+        15_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_agent_create_policy(
+    request: ZerionPolicyCreateRequest,
+) -> Result<ZerionCliRunPayload, String> {
+    validate_zerion_name(&request.policy_name, "Policy name")?;
+    if request.expires != "24h" {
+        return Err("Only 24h Zerion policy expiry is allowed in this phase.".to_string());
+    }
+    if !request.deny_transfers {
+        return Err("Zerion policy must deny transfers in this phase.".to_string());
+    }
+    run_allowed_zerion(
+        "agent_create_policy",
+        &request.binary,
+        vec![
+            "agent".to_string(),
+            "create-policy".to_string(),
+            "--name".to_string(),
+            request.policy_name,
+            "--chains".to_string(),
+            "solana".to_string(),
+            "--expires".to_string(),
+            "24h".to_string(),
+            "--deny-transfers".to_string(),
+            "--json".to_string(),
+        ],
+        20_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_agent_list_tokens(
+    request: ZerionBinaryRequest,
+) -> Result<ZerionCliRunPayload, String> {
+    run_allowed_zerion(
+        "agent_list_tokens",
+        &request.binary,
+        vec![
+            "agent".to_string(),
+            "list-tokens".to_string(),
+            "--json".to_string(),
+        ],
+        15_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_agent_create_token(
+    request: ZerionTokenCreateRequest,
+) -> Result<ZerionCliRunPayload, String> {
+    validate_zerion_name(&request.token_name, "Token name")?;
+    validate_zerion_name(&request.wallet_name, "Wallet name")?;
+    validate_zerion_name(&request.policy_name, "Policy name")?;
+    run_allowed_zerion(
+        "agent_create_token",
+        &request.binary,
+        vec![
+            "agent".to_string(),
+            "create-token".to_string(),
+            "--name".to_string(),
+            request.token_name,
+            "--wallet".to_string(),
+            request.wallet_name,
+            "--policy".to_string(),
+            request.policy_name,
+            "--json".to_string(),
+        ],
+        20_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_portfolio(request: ZerionAddressRequest) -> Result<ZerionCliRunPayload, String> {
+    validate_zerion_address(&request.address)?;
+    run_allowed_zerion(
+        "portfolio",
+        &request.binary,
+        vec![
+            "portfolio".to_string(),
+            request.address,
+            "--json".to_string(),
+        ],
+        20_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_positions(request: ZerionAddressRequest) -> Result<ZerionCliRunPayload, String> {
+    validate_zerion_address(&request.address)?;
+    run_allowed_zerion(
+        "positions",
+        &request.binary,
+        vec![
+            "positions".to_string(),
+            request.address,
+            "--json".to_string(),
+        ],
+        20_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_swap_tokens(request: ZerionBinaryRequest) -> Result<ZerionCliRunPayload, String> {
+    run_allowed_zerion(
+        "swap_tokens",
+        &request.binary,
+        vec![
+            "swap".to_string(),
+            "tokens".to_string(),
+            "solana".to_string(),
+            "--json".to_string(),
+        ],
+        15_000,
+    )
+}
+
+#[tauri::command]
+fn zerion_cli_swap_execute(
+    request: ZerionSwapExecuteRequest,
+) -> Result<ZerionCliRunPayload, String> {
+    validate_zerion_swap_request(&request)?;
+    run_allowed_zerion(
+        "swap_execute",
+        &request.binary,
+        vec![
+            "swap".to_string(),
+            "solana".to_string(),
+            request.proposal.amount_sol,
+            "SOL".to_string(),
+            "USDC".to_string(),
+            "--wallet".to_string(),
+            request.proposal.wallet_name,
+            "--json".to_string(),
+        ],
+        90_000,
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WalletVaultCreateRequest {
+    label: String,
+    network: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WalletVaultImportRequest {
+    label: String,
+    network: String,
+    secret: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WalletVaultProfilePayload {
+    wallet_id: String,
+    label: String,
+    public_address: String,
+    source: String,
+    security_status: String,
+    keychain_account: String,
+    network: String,
+    created_at: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WalletVaultStatusPayload {
+    wallet_id: String,
+    public_address: Option<String>,
+    security_status: String,
+    keychain_account: String,
+    secret_available: bool,
+}
+
+fn validate_wallet_label(label: &str) -> Result<String, String> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        return Err("Wallet label is required.".to_string());
+    }
+    if trimmed.len() > 80 {
+        return Err("Wallet label must be 80 characters or fewer.".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn validate_wallet_network(network: &str) -> Result<String, String> {
+    match network {
+        "localnet" | "devnet" | "mainnet-beta" | "mainnet" => Ok(network.to_string()),
+        _ => Err("Unsupported wallet network.".to_string()),
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn keypair_bytes_from_signing_key(signing_key: &SigningKey) -> [u8; 64] {
+    let verifying_key = signing_key.verifying_key();
+    let mut keypair = [0u8; 64];
+    keypair[..32].copy_from_slice(&signing_key.to_bytes());
+    keypair[32..].copy_from_slice(verifying_key.as_bytes());
+    keypair
+}
+
+fn public_address_from_keypair_bytes(bytes: &[u8]) -> Result<String, String> {
+    if bytes.len() != 64 {
+        return Err("Wallet secret must normalize to a 64-byte Solana keypair.".to_string());
+    }
+    Ok(bs58::encode(&bytes[32..64]).into_string())
+}
+
+fn parse_json_secret_array(secret: &str) -> Result<Option<Vec<u8>>, String> {
+    let trimmed = secret.trim();
+    if !trimmed.starts_with('[') {
+        return Ok(None);
+    }
+    let values: Vec<u16> = serde_json::from_str(trimmed)
+        .map_err(|_| "Wallet JSON must be an array of byte values.".to_string())?;
+    let mut bytes = Vec::with_capacity(values.len());
+    for value in values {
+        if value > u8::MAX as u16 {
+            return Err("Wallet JSON contains a byte outside 0..255.".to_string());
+        }
+        bytes.push(value as u8);
+    }
+    Ok(Some(bytes))
+}
+
+fn normalize_imported_secret(secret: &str) -> Result<[u8; 64], String> {
+    let bytes = match parse_json_secret_array(secret)? {
+        Some(bytes) => bytes,
+        None => bs58::decode(secret.trim()).into_vec().map_err(|_| {
+            "Secret must be a Solana CLI JSON array or base58 secret key.".to_string()
+        })?,
+    };
+
+    let seed: [u8; 32] = match bytes.len() {
+        32 => bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| "Invalid 32-byte seed.".to_string())?,
+        64 => {
+            let seed: [u8; 32] = bytes[..32]
+                .try_into()
+                .map_err(|_| "Invalid 64-byte keypair seed.".to_string())?;
+            let signing_key = SigningKey::from_bytes(&seed);
+            let expected_public = signing_key.verifying_key();
+            if expected_public.as_bytes() != &bytes[32..64] {
+                return Err("Secret key public half does not match derived public key.".to_string());
+            }
+            seed
+        }
+        _ => {
+            return Err(
+                "Wallet secret must be 32 seed bytes or 64 Solana keypair bytes.".to_string(),
+            );
+        }
+    };
+
+    let signing_key = SigningKey::from_bytes(&seed);
+    Ok(keypair_bytes_from_signing_key(&signing_key))
+}
+
+fn store_wallet_keypair(
+    label: String,
+    network: String,
+    source: &str,
+    keypair_bytes: [u8; 64],
+) -> Result<WalletVaultProfilePayload, String> {
+    let wallet_id = format!("local-wallet-{}", uuid::Uuid::new_v4());
+    let account = wallet_vault_account(&wallet_id);
+    let public_address = public_address_from_keypair_bytes(&keypair_bytes)?;
+    let encoded_secret = bs58::encode(keypair_bytes).into_string();
+    keyring_set_secret(&account, &encoded_secret)?;
+    Ok(WalletVaultProfilePayload {
+        wallet_id,
+        label,
+        public_address,
+        source: source.to_string(),
+        security_status: "locked".to_string(),
+        keychain_account: account,
+        network,
+        created_at: now_ms(),
+    })
+}
+
+#[tauri::command]
+fn wallet_vault_create(
+    request: WalletVaultCreateRequest,
+) -> Result<WalletVaultProfilePayload, String> {
+    let label = validate_wallet_label(&request.label)?;
+    let network = validate_wallet_network(&request.network)?;
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let keypair_bytes = keypair_bytes_from_signing_key(&signing_key);
+    store_wallet_keypair(label, network, "generated", keypair_bytes)
+}
+
+#[tauri::command]
+fn wallet_vault_import(
+    request: WalletVaultImportRequest,
+) -> Result<WalletVaultProfilePayload, String> {
+    let label = validate_wallet_label(&request.label)?;
+    let network = validate_wallet_network(&request.network)?;
+    let keypair_bytes = normalize_imported_secret(&request.secret)?;
+    store_wallet_keypair(label, network, "imported", keypair_bytes)
+}
+
+#[tauri::command]
+fn wallet_vault_status(wallet_id: String) -> WalletVaultStatusPayload {
+    let account = wallet_vault_account(&wallet_id);
+    let secret = keyring_get_secret(&account);
+    let public_address = secret.as_deref().and_then(|encoded| {
+        bs58::decode(encoded)
+            .into_vec()
+            .ok()
+            .and_then(|bytes| public_address_from_keypair_bytes(&bytes).ok())
+    });
+    WalletVaultStatusPayload {
+        wallet_id,
+        public_address,
+        security_status: if secret.is_some() {
+            "locked".to_string()
+        } else {
+            "error".to_string()
+        },
+        keychain_account: account,
+        secret_available: secret.is_some(),
+    }
+}
+
+#[tauri::command]
+fn wallet_vault_forget(wallet_id: String) -> KeyResult {
+    match keyring_delete_secret(&wallet_vault_account(&wallet_id)) {
+        Ok(()) => KeyResult {
+            ok: true,
+            error: None,
+        },
+        Err(error) => KeyResult {
+            ok: false,
+            error: Some(error),
+        },
+    }
+}
+
+const CLOAK_MAINNET_PROGRAM_ID: &str = "zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW";
+const CLOAK_NATIVE_SOL_MINT: &str = "So11111111111111111111111111111111111111112";
+const CLOAK_DEFAULT_RELAY_URL: &str = "https://api.cloak.ag";
+const CLOAK_MIN_SOL_DEPOSIT_LAMPORTS: u128 = 10_000_000;
+const CLOAK_FIXED_FEE_LAMPORTS: u128 = 5_000_000;
+const CLOAK_VARIABLE_FEE_NUMERATOR: u128 = 3;
+const CLOAK_VARIABLE_FEE_DENOMINATOR: u128 = 1_000;
+const CLOAK_APPROVAL_TTL_MS: u64 = 5 * 60 * 1_000;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakDepositPrepareRequest {
+    wallet_id: String,
+    amount_lamports: String,
+    asset: String,
+    network: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakDepositExecuteRequest {
+    draft_id: String,
+    wallet_id: String,
+    amount_lamports: String,
+    asset: String,
+    network: String,
+    approval_digest: String,
+    approval_confirmed: bool,
+    initiated_by: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakBeginSigningSessionRequest {
+    draft_id: String,
+    wallet_id: String,
+    amount_lamports: String,
+    asset: String,
+    network: String,
+    approval_digest: String,
+    approval_confirmed: bool,
+    initiated_by: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakSigningSessionPayload {
+    session_id: String,
+    draft_id: String,
+    wallet_id: String,
+    operation_kind: String,
+    operation_digest: String,
+    expires_at: u64,
+    allowed_message_kind: String,
+    allowed_transaction_kind: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakEndSigningSessionRequest {
+    session_id: String,
+    wallet_id: String,
+    operation_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakSignTransactionRequest {
+    session_id: String,
+    wallet_id: String,
+    operation_digest: String,
+    serialized_transaction: Vec<u8>,
+    purpose: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakSignTransactionPayload {
+    signed_transaction: Vec<u8>,
+    signer_public_address: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakSignMessageRequest {
+    session_id: String,
+    wallet_id: String,
+    operation_digest: String,
+    message: Vec<u8>,
+    purpose: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakSignMessagePayload {
+    signature: Vec<u8>,
+    signer_public_address: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakNoteSaveSecureRequest {
+    wallet_id: String,
+    draft_id: String,
+    operation_digest: String,
+    asset: String,
+    amount_lamports: String,
+    deposit_signature: Option<String>,
+    leaf_index: Option<u64>,
+    raw_note_payload: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CloakDepositDraftPayload {
+    id: String,
+    wallet_id: String,
+    public_address: String,
+    network: String,
+    asset: String,
+    mint: String,
+    amount_lamports: String,
+    estimated_fixed_fee_lamports: String,
+    estimated_variable_fee_lamports: String,
+    estimated_total_fee_lamports: String,
+    estimated_private_amount_lamports: String,
+    relay_url: String,
+    program_id: String,
+    created_at: u64,
+    expires_at: u64,
+    status: String,
+    risk_level: String,
+    warnings: Vec<String>,
+    approval_digest: String,
+    approval_required: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloakDepositResultPayload {
+    draft_id: String,
+    status: String,
+    signature: Option<String>,
+    request_id: Option<String>,
+    note_id: Option<String>,
+    submitted_at: Option<u64>,
+    error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CloakNoteMetadataPayload {
+    note_id: String,
+    wallet_id: String,
+    asset: String,
+    amount_lamports: String,
+    created_at: u64,
+    signature: Option<String>,
+    leaf_index: Option<u64>,
+    status: String,
+}
+
+fn parse_lamports(value: &str) -> Result<u128, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || !trimmed.chars().all(|character| character.is_ascii_digit()) {
+        return Err("Amount must be a positive integer lamport string.".to_string());
+    }
+    let amount = trimmed
+        .parse::<u128>()
+        .map_err(|_| "Amount is too large.".to_string())?;
+    if amount == 0 {
+        return Err("Amount must be greater than zero.".to_string());
+    }
+    Ok(amount)
+}
+
+fn cloak_variable_fee_lamports(amount: u128) -> u128 {
+    amount.saturating_mul(CLOAK_VARIABLE_FEE_NUMERATOR) / CLOAK_VARIABLE_FEE_DENOMINATOR
+}
+
+fn cloak_digest_hex(fields: &[(&str, &str)]) -> String {
+    let mut hasher = Sha256::new();
+    for (key, value) in fields {
+        hasher.update(key.as_bytes());
+        hasher.update(b"=");
+        hasher.update(value.as_bytes());
+        hasher.update(b"\n");
+    }
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn cloak_deposit_approval_digest(
+    wallet_id: &str,
+    public_address: &str,
+    network: &str,
+    asset: &str,
+    amount_lamports: &str,
+    variable_fee_lamports: &str,
+) -> String {
+    cloak_digest_hex(&[
+        ("operation", "cloak_deposit"),
+        ("walletId", wallet_id),
+        ("publicAddress", public_address),
+        ("network", network),
+        ("asset", asset),
+        ("mint", CLOAK_NATIVE_SOL_MINT),
+        ("amountLamports", amount_lamports),
+        (
+            "estimatedFixedFeeLamports",
+            &CLOAK_FIXED_FEE_LAMPORTS.to_string(),
+        ),
+        ("estimatedVariableFeeLamports", variable_fee_lamports),
+        ("relayUrl", CLOAK_DEFAULT_RELAY_URL),
+        ("programId", CLOAK_MAINNET_PROGRAM_ID),
+    ])
+}
+
+fn load_wallet_keypair(wallet_id: &str) -> Result<(String, Vec<u8>), String> {
+    let account = wallet_vault_account(wallet_id);
+    let encoded = keyring_get_secret(&account)
+        .ok_or_else(|| "Selected local wallet is missing from secure storage.".to_string())?;
+    let bytes = bs58::decode(encoded)
+        .into_vec()
+        .map_err(|_| "Stored wallet secret is not valid base58.".to_string())?;
+    let public_address = public_address_from_keypair_bytes(&bytes)?;
+    Ok((public_address, bytes))
+}
+
+fn validate_cloak_deposit_request(
+    wallet_id: &str,
+    amount_lamports: &str,
+    asset: &str,
+    network: &str,
+) -> Result<(String, u128, u128, u128), String> {
+    if wallet_id.trim().is_empty() {
+        return Err("Wallet id is required.".to_string());
+    }
+    if asset != "SOL" {
+        return Err("Cloak deposit supports SOL only in this phase.".to_string());
+    }
+    if network != "mainnet" {
+        return Err("Cloak deposit is mainnet-only in this phase.".to_string());
+    }
+    let amount = parse_lamports(amount_lamports)?;
+    if amount < CLOAK_MIN_SOL_DEPOSIT_LAMPORTS {
+        return Err(format!(
+            "Minimum Cloak SOL deposit is {} lamports.",
+            CLOAK_MIN_SOL_DEPOSIT_LAMPORTS
+        ));
+    }
+    let variable_fee = cloak_variable_fee_lamports(amount);
+    let total_fee = CLOAK_FIXED_FEE_LAMPORTS.saturating_add(variable_fee);
+    let estimated_private_amount = amount.saturating_sub(total_fee);
+    Ok((
+        estimated_private_amount.to_string(),
+        variable_fee,
+        total_fee,
+        amount,
+    ))
+}
+
+fn load_cloak_deposit_draft(draft_id: &str) -> Result<CloakDepositDraftPayload, String> {
+    let encoded = keyring_get_secret(&cloak_deposit_draft_account(draft_id))
+        .ok_or_else(|| "Cloak deposit draft is missing or expired locally.".to_string())?;
+    serde_json::from_str(&encoded)
+        .map_err(|_| "Cloak deposit draft metadata is invalid.".to_string())
+}
+
+fn load_cloak_note_metadata(wallet_id: &str) -> Vec<CloakNoteMetadataPayload> {
+    keyring_get_secret(&cloak_note_meta_account(wallet_id))
+        .and_then(|encoded| serde_json::from_str::<Vec<CloakNoteMetadataPayload>>(&encoded).ok())
+        .unwrap_or_default()
+}
+
+fn save_cloak_note_metadata(
+    wallet_id: &str,
+    notes: &[CloakNoteMetadataPayload],
+) -> Result<(), String> {
+    let encoded = serde_json::to_string(notes)
+        .map_err(|_| "Failed to serialize Cloak note metadata.".to_string())?;
+    keyring_set_secret(&cloak_note_meta_account(wallet_id), &encoded)
+}
+
+fn validate_cloak_execution_approval(
+    draft_id: &str,
+    wallet_id: &str,
+    amount_lamports: &str,
+    asset: &str,
+    network: &str,
+    approval_digest: &str,
+    approval_confirmed: bool,
+    initiated_by: &str,
+) -> Result<CloakDepositDraftPayload, String> {
+    if !approval_confirmed {
+        return Err("Explicit local approval is required for Cloak deposit.".to_string());
+    }
+    if initiated_by != "wallet_ui" {
+        return Err("Cloak deposit execution is only allowed from the Wallet UI.".to_string());
+    }
+    if keyring_get_secret(&cloak_deposit_used_account(draft_id)).is_some() {
+        return Err("Cloak deposit approval has already been used.".to_string());
+    }
+    let draft = load_cloak_deposit_draft(draft_id)?;
+    if now_ms() > draft.expires_at {
+        return Err("Cloak deposit approval has expired.".to_string());
+    }
+    if draft.wallet_id != wallet_id
+        || draft.amount_lamports != amount_lamports.trim()
+        || draft.asset != asset
+        || draft.network != network
+        || draft.approval_digest != approval_digest
+    {
+        return Err("Cloak deposit approval digest does not match the prepared draft.".to_string());
+    }
+    let (_estimated_private_amount, variable_fee, _total_fee, _amount) =
+        validate_cloak_deposit_request(wallet_id, amount_lamports, asset, network)?;
+    let expected_digest = cloak_deposit_approval_digest(
+        &draft.wallet_id,
+        &draft.public_address,
+        &draft.network,
+        &draft.asset,
+        &draft.amount_lamports,
+        &variable_fee.to_string(),
+    );
+    if expected_digest != approval_digest {
+        return Err("Cloak deposit approval digest failed native verification.".to_string());
+    }
+    let (public_address, keypair_bytes) = load_wallet_keypair(wallet_id)?;
+    if public_address != draft.public_address || keypair_bytes.len() != 64 {
+        return Err("Selected local wallet does not match the prepared Cloak draft.".to_string());
+    }
+    Ok(draft)
+}
+
+fn validate_signing_session(
+    state: &State<'_, CloakSigningRuntimeState>,
+    session_id: &str,
+    wallet_id: &str,
+    operation_digest: &str,
+    purpose: &str,
+    signing_kind: &str,
+) -> Result<CloakSigningSession, String> {
+    let mut sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "Cloak signing session state is unavailable.".to_string())?;
+    let session = sessions
+        .get_mut(session_id)
+        .ok_or_else(|| "Cloak signing session is missing.".to_string())?;
+    if now_ms() > session.expires_at {
+        sessions.remove(session_id);
+        return Err("Cloak signing session has expired.".to_string());
+    }
+    if session.wallet_id != wallet_id || session.operation_digest != operation_digest {
+        return Err("Cloak signing session does not match the approved operation.".to_string());
+    }
+    if session.operation_kind != "cloak_deposit" {
+        return Err("Cloak signing session is not approved for deposits.".to_string());
+    }
+    match signing_kind {
+        "transaction" => {
+            if purpose != "cloak_deposit" {
+                return Err("Transaction signing is scoped to Cloak deposit only.".to_string());
+            }
+            if session.transaction_signatures_remaining == 0 {
+                return Err(
+                    "Cloak transaction signing allowance has already been used.".to_string()
+                );
+            }
+            session.transaction_signatures_remaining =
+                session.transaction_signatures_remaining.saturating_sub(1);
+        }
+        "message" => {
+            if purpose != "cloak_viewing_key_registration" {
+                return Err(
+                    "Message signing is scoped to Cloak viewing-key registration only.".to_string(),
+                );
+            }
+            if session.message_signatures_remaining == 0 {
+                return Err("Cloak message signing allowance has already been used.".to_string());
+            }
+            session.message_signatures_remaining =
+                session.message_signatures_remaining.saturating_sub(1);
+        }
+        _ => return Err("Unsupported Cloak signing kind.".to_string()),
+    }
+    Ok(session.clone())
+}
+
+fn read_shortvec(bytes: &[u8], cursor: &mut usize) -> Result<usize, String> {
+    let mut value = 0usize;
+    let mut shift = 0usize;
+    loop {
+        if *cursor >= bytes.len() {
+            return Err("Serialized transaction ended while reading a compact length.".to_string());
+        }
+        let byte = bytes[*cursor];
+        *cursor += 1;
+        value |= ((byte & 0x7f) as usize) << shift;
+        if byte & 0x80 == 0 {
+            return Ok(value);
+        }
+        shift += 7;
+        if shift > 21 {
+            return Err("Serialized transaction compact length is too large.".to_string());
+        }
+    }
+}
+
+fn skip_shortvec_bytes(bytes: &[u8], cursor: &mut usize) -> Result<(), String> {
+    let len = read_shortvec(bytes, cursor)?;
+    *cursor = cursor
+        .checked_add(len)
+        .ok_or_else(|| "Serialized transaction cursor overflow.".to_string())?;
+    if *cursor > bytes.len() {
+        return Err("Serialized transaction ended unexpectedly.".to_string());
+    }
+    Ok(())
+}
+
+fn parse_solana_transaction_for_signing(
+    transaction: &[u8],
+    signer_public_key: &[u8],
+) -> Result<(usize, usize, bool), String> {
+    let mut cursor = 0usize;
+    let signature_count = read_shortvec(transaction, &mut cursor)?;
+    if signature_count == 0 || signature_count > 32 {
+        return Err("Serialized transaction has an invalid signature count.".to_string());
+    }
+    let signature_start = cursor;
+    let signatures_len = signature_count
+        .checked_mul(64)
+        .ok_or_else(|| "Serialized transaction signature section is too large.".to_string())?;
+    cursor = cursor
+        .checked_add(signatures_len)
+        .ok_or_else(|| "Serialized transaction cursor overflow.".to_string())?;
+    if cursor >= transaction.len() {
+        return Err("Serialized transaction is missing a message.".to_string());
+    }
+    let message_start = cursor;
+    let message = &transaction[message_start..];
+    let mut message_cursor = 0usize;
+    let versioned = message[0] & 0x80 != 0;
+    if versioned {
+        if message[0] & 0x7f != 0 {
+            return Err(
+                "Only legacy and v0 Solana transactions are supported for Cloak signing."
+                    .to_string(),
+            );
+        }
+        message_cursor += 1;
+    }
+    if message_cursor + 3 > message.len() {
+        return Err("Serialized transaction message header is missing.".to_string());
+    }
+    let required_signatures = message[message_cursor] as usize;
+    message_cursor += 3;
+    if required_signatures == 0 || required_signatures > signature_count {
+        return Err("Serialized transaction required signer count is invalid.".to_string());
+    }
+    let account_count = read_shortvec(message, &mut message_cursor)?;
+    if account_count == 0 || account_count > 256 {
+        return Err("Serialized transaction account list is invalid.".to_string());
+    }
+    let account_keys_start = message_cursor;
+    let account_keys_len = account_count
+        .checked_mul(32)
+        .ok_or_else(|| "Serialized transaction account list is too large.".to_string())?;
+    message_cursor = message_cursor
+        .checked_add(account_keys_len)
+        .ok_or_else(|| "Serialized transaction cursor overflow.".to_string())?;
+    if message_cursor + 32 > message.len() {
+        return Err(
+            "Serialized transaction account or blockhash section is truncated.".to_string(),
+        );
+    }
+    let mut signer_index = None;
+    for index in 0..required_signatures {
+        let start = account_keys_start + index * 32;
+        let end = start + 32;
+        if &message[start..end] == signer_public_key {
+            signer_index = Some(index);
+            break;
+        }
+    }
+    let signer_index = signer_index.ok_or_else(|| {
+        "Selected wallet is not a required signer for this transaction.".to_string()
+    })?;
+
+    message_cursor += 32;
+    let instruction_count = read_shortvec(message, &mut message_cursor)?;
+    let cloak_program_bytes = bs58::decode(CLOAK_MAINNET_PROGRAM_ID)
+        .into_vec()
+        .map_err(|_| "Cloak program id is invalid.".to_string())?;
+    let mut contains_cloak_program = false;
+    for _ in 0..instruction_count {
+        if message_cursor >= message.len() {
+            return Err("Serialized transaction instruction is truncated.".to_string());
+        }
+        let program_index = message[message_cursor] as usize;
+        message_cursor += 1;
+        let account_index_count = read_shortvec(message, &mut message_cursor)?;
+        message_cursor = message_cursor
+            .checked_add(account_index_count)
+            .ok_or_else(|| {
+                "Serialized transaction instruction account list is too large.".to_string()
+            })?;
+        if message_cursor > message.len() {
+            return Err(
+                "Serialized transaction instruction account list is truncated.".to_string(),
+            );
+        }
+        skip_shortvec_bytes(message, &mut message_cursor)?;
+        if program_index < account_count {
+            let start = account_keys_start + program_index * 32;
+            let end = start + 32;
+            if &message[start..end] == cloak_program_bytes.as_slice() {
+                contains_cloak_program = true;
+            }
+        }
+    }
+    if !contains_cloak_program {
+        return Err(
+            "Cloak deposit transaction must reference the Cloak mainnet program id.".to_string(),
+        );
+    }
+    let signature_offset = signature_start + signer_index * 64;
+    Ok((message_start, signature_offset, versioned))
+}
+
+fn sign_approved_solana_transaction(
+    wallet_id: &str,
+    serialized_transaction: &[u8],
+) -> Result<(Vec<u8>, String), String> {
+    let (public_address, keypair_bytes) = load_wallet_keypair(wallet_id)?;
+    if keypair_bytes.len() != 64 {
+        return Err("Stored wallet secret is not a 64-byte Solana keypair.".to_string());
+    }
+    let signing_seed: [u8; 32] = keypair_bytes[..32]
+        .try_into()
+        .map_err(|_| "Stored wallet seed is invalid.".to_string())?;
+    let signing_key = SigningKey::from_bytes(&signing_seed);
+    let derived_public = signing_key.verifying_key();
+    if derived_public.as_bytes() != &keypair_bytes[32..64] {
+        return Err("Stored wallet public key does not match the signing key.".to_string());
+    }
+    let (message_start, signature_offset, _versioned) =
+        parse_solana_transaction_for_signing(serialized_transaction, derived_public.as_bytes())?;
+    let signature = signing_key.sign(&serialized_transaction[message_start..]);
+    let mut signed = serialized_transaction.to_vec();
+    signed[signature_offset..signature_offset + 64].copy_from_slice(&signature.to_bytes());
+    Ok((signed, public_address))
+}
+
+#[tauri::command]
+fn wallet_cloak_deposit_prepare(
+    request: CloakDepositPrepareRequest,
+) -> Result<CloakDepositDraftPayload, String> {
+    let (estimated_private_amount, variable_fee, total_fee, _amount) =
+        validate_cloak_deposit_request(
+            &request.wallet_id,
+            &request.amount_lamports,
+            &request.asset,
+            &request.network,
+        )?;
+    let (public_address, _keypair_bytes) = load_wallet_keypair(&request.wallet_id)?;
+    let created_at = now_ms();
+    let expires_at = created_at.saturating_add(CLOAK_APPROVAL_TTL_MS);
+    let amount_lamports = request.amount_lamports.trim().to_string();
+    let variable_fee_lamports = variable_fee.to_string();
+    let approval_digest = cloak_deposit_approval_digest(
+        &request.wallet_id,
+        &public_address,
+        &request.network,
+        &request.asset,
+        &amount_lamports,
+        &variable_fee_lamports,
+    );
+    let draft = CloakDepositDraftPayload {
+        id: format!("cloak-deposit-{}", uuid::Uuid::new_v4()),
+        wallet_id: request.wallet_id,
+        public_address,
+        network: request.network,
+        asset: request.asset,
+        mint: CLOAK_NATIVE_SOL_MINT.to_string(),
+        amount_lamports,
+        estimated_fixed_fee_lamports: CLOAK_FIXED_FEE_LAMPORTS.to_string(),
+        estimated_variable_fee_lamports: variable_fee_lamports,
+        estimated_total_fee_lamports: total_fee.to_string(),
+        estimated_private_amount_lamports: estimated_private_amount,
+        relay_url: CLOAK_DEFAULT_RELAY_URL.to_string(),
+        program_id: CLOAK_MAINNET_PROGRAM_ID.to_string(),
+        created_at,
+        expires_at,
+        status: "requires_approval".to_string(),
+        risk_level: "high".to_string(),
+        warnings: vec![
+            "Cloak currently uses mainnet defaults. Use tiny test amounts first.".to_string(),
+            "Deposit execution requires a one-time explicit local approval.".to_string(),
+            "Private keys and Cloak notes remain in Rust secure storage.".to_string(),
+        ],
+        approval_digest,
+        approval_required: true,
+    };
+    let encoded = serde_json::to_string(&draft)
+        .map_err(|_| "Failed to serialize Cloak deposit draft.".to_string())?;
+    keyring_set_secret(&cloak_deposit_draft_account(&draft.id), &encoded)?;
+    Ok(draft)
+}
+
+#[tauri::command]
+fn wallet_cloak_deposit_execute(
+    request: CloakDepositExecuteRequest,
+) -> Result<CloakDepositResultPayload, String> {
+    validate_cloak_execution_approval(
+        &request.draft_id,
+        &request.wallet_id,
+        &request.amount_lamports,
+        &request.asset,
+        &request.network,
+        &request.approval_digest,
+        request.approval_confirmed,
+        &request.initiated_by,
+    )?;
+    Ok(CloakDepositResultPayload {
+        draft_id: request.draft_id,
+        status: "approved".to_string(),
+        signature: None,
+        request_id: None,
+        note_id: None,
+        submitted_at: None,
+        error: None,
+    })
+}
+
+#[tauri::command]
+fn wallet_cloak_begin_signing_session(
+    state: State<'_, CloakSigningRuntimeState>,
+    request: CloakBeginSigningSessionRequest,
+) -> Result<CloakSigningSessionPayload, String> {
+    let draft = validate_cloak_execution_approval(
+        &request.draft_id,
+        &request.wallet_id,
+        &request.amount_lamports,
+        &request.asset,
+        &request.network,
+        &request.approval_digest,
+        request.approval_confirmed,
+        &request.initiated_by,
+    )?;
+    let session_id = format!("cloak-signing-{}", uuid::Uuid::new_v4());
+    let session = CloakSigningSession {
+        session_id: session_id.clone(),
+        draft_id: draft.id.clone(),
+        wallet_id: draft.wallet_id.clone(),
+        public_address: draft.public_address.clone(),
+        operation_kind: "cloak_deposit".to_string(),
+        operation_digest: draft.approval_digest.clone(),
+        expires_at: now_ms().saturating_add(90_000),
+        transaction_signatures_remaining: 1,
+        message_signatures_remaining: 1,
+    };
+    state
+        .sessions
+        .lock()
+        .map_err(|_| "Cloak signing session state is unavailable.".to_string())?
+        .insert(session_id.clone(), session);
+
+    Ok(CloakSigningSessionPayload {
+        session_id,
+        draft_id: draft.id,
+        wallet_id: draft.wallet_id,
+        operation_kind: "cloak_deposit".to_string(),
+        operation_digest: draft.approval_digest,
+        expires_at: now_ms().saturating_add(90_000),
+        allowed_message_kind: "cloak_viewing_key_registration".to_string(),
+        allowed_transaction_kind: "cloak_deposit".to_string(),
+    })
+}
+
+#[tauri::command]
+fn wallet_cloak_end_signing_session(
+    state: State<'_, CloakSigningRuntimeState>,
+    request: CloakEndSigningSessionRequest,
+) -> KeyResult {
+    let mut sessions = match state.sessions.lock() {
+        Ok(sessions) => sessions,
+        Err(_) => {
+            return KeyResult {
+                ok: false,
+                error: Some("Cloak signing session state is unavailable.".to_string()),
+            }
+        }
+    };
+    let removed = sessions.remove(&request.session_id);
+    match removed {
+        Some(session)
+            if session.wallet_id == request.wallet_id
+                && session.operation_digest == request.operation_digest =>
+        {
+            KeyResult {
+                ok: true,
+                error: None,
+            }
+        }
+        Some(session) => {
+            sessions.insert(session.session_id.clone(), session);
+            KeyResult {
+                ok: false,
+                error: Some(
+                    "Cloak signing session did not match the approved operation.".to_string(),
+                ),
+            }
+        }
+        None => KeyResult {
+            ok: true,
+            error: None,
+        },
+    }
+}
+
+#[tauri::command]
+fn wallet_cloak_sign_transaction(
+    state: State<'_, CloakSigningRuntimeState>,
+    request: CloakSignTransactionRequest,
+) -> Result<CloakSignTransactionPayload, String> {
+    let session = validate_signing_session(
+        &state,
+        &request.session_id,
+        &request.wallet_id,
+        &request.operation_digest,
+        &request.purpose,
+        "transaction",
+    )?;
+    let (signed_transaction, signer_public_address) =
+        sign_approved_solana_transaction(&request.wallet_id, &request.serialized_transaction)?;
+    if signer_public_address != session.public_address {
+        return Err("Signed transaction wallet does not match Cloak session.".to_string());
+    }
+    keyring_set_secret(&cloak_deposit_used_account(&session.draft_id), "used")?;
+    Ok(CloakSignTransactionPayload {
+        signed_transaction,
+        signer_public_address,
+    })
+}
+
+#[tauri::command]
+fn wallet_cloak_sign_message(
+    state: State<'_, CloakSigningRuntimeState>,
+    request: CloakSignMessageRequest,
+) -> Result<CloakSignMessagePayload, String> {
+    if request.message.is_empty() || request.message.len() > 2_048 {
+        return Err("Cloak viewing-key registration message size is invalid.".to_string());
+    }
+    let session = validate_signing_session(
+        &state,
+        &request.session_id,
+        &request.wallet_id,
+        &request.operation_digest,
+        &request.purpose,
+        "message",
+    )?;
+    let (public_address, keypair_bytes) = load_wallet_keypair(&request.wallet_id)?;
+    if public_address != session.public_address || keypair_bytes.len() != 64 {
+        return Err("Selected local wallet does not match the Cloak signing session.".to_string());
+    }
+    let signing_seed: [u8; 32] = keypair_bytes[..32]
+        .try_into()
+        .map_err(|_| "Stored wallet seed is invalid.".to_string())?;
+    let signing_key = SigningKey::from_bytes(&signing_seed);
+    let signature = signing_key.sign(&request.message);
+    Ok(CloakSignMessagePayload {
+        signature: signature.to_bytes().to_vec(),
+        signer_public_address: public_address,
+    })
+}
+
+#[tauri::command]
+fn wallet_cloak_note_save_secure(
+    request: CloakNoteSaveSecureRequest,
+) -> Result<CloakNoteMetadataPayload, String> {
+    if request.wallet_id.trim().is_empty() {
+        return Err("Wallet id is required.".to_string());
+    }
+    if request.asset != "SOL" {
+        return Err("Only SOL Cloak note metadata is supported in this phase.".to_string());
+    }
+    parse_lamports(&request.amount_lamports)?;
+    if request.raw_note_payload.trim().is_empty() || request.raw_note_payload.len() > 128_000 {
+        return Err("Cloak note payload size is invalid.".to_string());
+    }
+    let draft = load_cloak_deposit_draft(&request.draft_id)?;
+    if draft.wallet_id != request.wallet_id || draft.approval_digest != request.operation_digest {
+        return Err("Cloak note save request does not match the approved draft.".to_string());
+    }
+    let note_id = format!("cloak-note-{}", uuid::Uuid::new_v4());
+    keyring_set_secret(
+        &cloak_note_account(&request.wallet_id, &note_id),
+        &request.raw_note_payload,
+    )?;
+    let metadata = CloakNoteMetadataPayload {
+        note_id: note_id.clone(),
+        wallet_id: request.wallet_id.clone(),
+        asset: request.asset,
+        amount_lamports: request.amount_lamports,
+        created_at: now_ms(),
+        signature: request.deposit_signature,
+        leaf_index: request.leaf_index,
+        status: "confirmed".to_string(),
+    };
+    let mut notes = load_cloak_note_metadata(&request.wallet_id);
+    notes.push(metadata.clone());
+    save_cloak_note_metadata(&request.wallet_id, &notes)?;
+    Ok(metadata)
+}
+
+#[tauri::command]
+fn wallet_cloak_notes_list(wallet_id: String) -> Vec<CloakNoteMetadataPayload> {
+    load_cloak_note_metadata(&wallet_id)
+}
+
+#[tauri::command]
+fn wallet_cloak_note_status(
+    wallet_id: String,
+    note_id: String,
+) -> Result<CloakNoteMetadataPayload, String> {
+    load_cloak_note_metadata(&wallet_id)
+        .into_iter()
+        .find(|note| note.note_id == note_id)
+        .ok_or_else(|| "Cloak note metadata was not found.".to_string())
+}
+
+#[tauri::command]
+fn wallet_cloak_note_forget(wallet_id: String, note_id: String) -> KeyResult {
+    let mut notes = load_cloak_note_metadata(&wallet_id);
+    notes.retain(|note| note.note_id != note_id);
+    let raw_deleted = keyring_delete_secret(&cloak_note_account(&wallet_id, &note_id)).is_ok();
+    let meta_saved = save_cloak_note_metadata(&wallet_id, &notes).is_ok();
+    KeyResult {
+        ok: raw_deleted || meta_saved,
+        error: if raw_deleted || meta_saved {
+            None
+        } else {
+            Some("Failed to forget Cloak note metadata.".to_string())
+        },
+    }
 }
 
 fn is_local_dev_host(host: Option<&str>) -> bool {
@@ -1457,7 +3282,10 @@ fn main_window_hide(app: AppHandle, runtime: State<'_, TrayRuntimeState>) -> Key
 #[tauri::command]
 fn permissions_get_status() -> PermissionStatusPayload {
     PermissionStatusPayload {
-        screen_recording: detect_screen_recording_status(),
+        // Do not probe Screen Recording here. On macOS, probing requires a screen
+        // capture attempt and can trigger the OS permission prompt on app launch.
+        // Desktop Vision/screen capture must stay explicit opt-in.
+        screen_recording: PermissionState::Unknown,
         accessibility: detect_accessibility_status(),
     }
 }
@@ -2356,7 +4184,9 @@ struct GorkhAppSnapshot {
 #[tauri::command]
 async fn gorkh_app_snapshot() -> Result<GorkhAppSnapshot, String> {
     let permissions = PermissionStatusPayload {
-        screen_recording: detect_screen_recording_status(),
+        // Keep assistant context reads non-prompting; capture status is discovered
+        // only after the user explicitly enables Desktop Vision.
+        screen_recording: PermissionState::Unknown,
         accessibility: detect_accessibility_status(),
     };
     let workspace_root = workspace::WORKSPACE_ROOT.lock().unwrap().clone();
@@ -2407,6 +4237,7 @@ pub fn run() {
         .manage(TrayRuntimeState::default())
         .manage(OverlayModeRuntimeState::default())
         .manage(DesktopAuthRuntimeState::default())
+        .manage(CloakSigningRuntimeState::default())
         .manage(AgentState::new())
         .plugin(
             tauri_plugin_opener::Builder::new()
@@ -2431,6 +4262,34 @@ pub fn run() {
             device_token_set,
             device_token_get,
             device_token_clear,
+            wallet_vault_create,
+            wallet_vault_import,
+            wallet_vault_status,
+            wallet_vault_forget,
+            wallet_cloak_deposit_prepare,
+            wallet_cloak_deposit_execute,
+            wallet_cloak_begin_signing_session,
+            wallet_cloak_end_signing_session,
+            wallet_cloak_sign_transaction,
+            wallet_cloak_sign_message,
+            wallet_cloak_note_save_secure,
+            wallet_cloak_notes_list,
+            wallet_cloak_note_status,
+            wallet_cloak_note_forget,
+            zerion_cli_detect,
+            zerion_cli_version,
+            zerion_cli_config_status,
+            zerion_api_key_set,
+            zerion_api_key_clear,
+            zerion_cli_wallet_list,
+            zerion_cli_agent_list_policies,
+            zerion_cli_agent_create_policy,
+            zerion_cli_agent_list_tokens,
+            zerion_cli_agent_create_token,
+            zerion_cli_portfolio,
+            zerion_cli_positions,
+            zerion_cli_swap_tokens,
+            zerion_cli_swap_execute,
             desktop_auth_listen_start,
             desktop_auth_listen_finish,
             desktop_auth_listen_cancel,

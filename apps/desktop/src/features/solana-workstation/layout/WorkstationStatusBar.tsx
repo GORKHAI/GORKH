@@ -1,14 +1,18 @@
-import { getNavItemById, type WorkstationModuleId } from './workstationNavigation.js';
+import { getNavItemById, type WorkstationModuleId, type WorkstationViewId } from './workstationNavigation.js';
 
 export function WorkstationStatusBar({
   activeModule,
 }: {
-  activeModule: WorkstationModuleId | null;
+  activeModule: WorkstationViewId | null;
 }) {
-  const activeItem = activeModule ? getNavItemById(activeModule) : undefined;
+  const activeItem =
+    activeModule && activeModule !== 'assistant'
+      ? getNavItemById(activeModule as WorkstationModuleId)
+      : undefined;
 
   return (
     <footer
+      className="gorkh-workstation-statusbar"
       style={{
         height: '32px',
         minHeight: '32px',
@@ -24,7 +28,7 @@ export function WorkstationStatusBar({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
         <span style={{ fontWeight: 600, color: '#94a3b8' }}>Module:</span>
-        <span>{activeItem?.label ?? 'Dashboard'}</span>
+        <span>{activeModule === 'assistant' ? 'Assistant' : activeItem?.label ?? 'Dashboard'}</span>
       </div>
 
       <div style={{ width: '1px', height: '14px', background: '#1e293b' }} />

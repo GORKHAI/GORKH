@@ -220,6 +220,9 @@ const DEFAULT_PERMISSION_STATUS: NativePermissionStatus = {
   accessibility: 'unknown',
 };
 
+const DESKTOP_VISION_OPTIONAL_COPY =
+  'Desktop Vision is optional. It lets GORKH inspect your screen for approved assistant tasks. It is not required for Wallet, Markets, Shield, Builder, Agent, or Context.';
+
 function persistLlmSettings(settings: LlmSettings): void {
   localStorage.setItem(LLM_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
 }
@@ -361,7 +364,7 @@ function App() {
   useEffect(() => {
     const previousHtmlBackground = document.documentElement.style.background;
     const previousBodyBackground = document.body.style.background;
-    const targetBackground = platform === 'macos' ? 'transparent' : '#eef2f7';
+    const targetBackground = '#030304';
 
     document.documentElement.style.background = targetBackground;
     document.body.style.background = targetBackground;
@@ -401,8 +404,7 @@ function App() {
   const notePermissionIssue = useCallback((target: PermissionTarget, message: string) => {
     setPermissionHintTarget(target);
     setPermissionHintMessage(message);
-    void refreshPermissionStatus();
-  }, [refreshPermissionStatus]);
+  }, []);
 
   const noteControlExecutionBlocker = useCallback((blocker: { id: string; detail: string }) => {
     setInputPermissionError(blocker.detail);
@@ -648,12 +650,6 @@ function App() {
     });
     return unsubscribe;
   }, []);
-
-  useEffect(() => {
-    void refreshPermissionStatus();
-  }, [refreshPermissionStatus]);
-
-
 
   useEffect(() => {
     if (currentProposal?.kind !== 'ask_user') {
@@ -2396,20 +2392,17 @@ function App() {
     }
   }, [isOverlayActive, overlayDetailsOpen]);
 
-  const shellBlur = platform === 'macos' ? 'blur(28px) saturate(165%)' : 'blur(18px) saturate(135%)';
-  const homeTopInset = platform === 'macos' ? '4.25rem' : '1.5rem';
+  const homeTopInset = '0';
   const frameStyle: CSSProperties = {
-    maxWidth: '1180px',
-    margin: '0 auto',
-    padding: '1.35rem',
-    borderRadius: '32px',
-    background: platform === 'macos'
-      ? 'linear-gradient(180deg, rgba(255,255,255,0.58) 0%, rgba(241,245,249,0.52) 100%)'
-      : 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.96) 100%)',
-    border: '1px solid rgba(255,255,255,0.38)',
-    boxShadow: '0 34px 90px rgba(15, 23, 42, 0.18)',
-    backdropFilter: shellBlur,
-    WebkitBackdropFilter: shellBlur,
+    width: '100vw',
+    height: '100vh',
+    margin: 0,
+    padding: 0,
+    borderRadius: 0,
+    background: '#030304',
+    border: 'none',
+    boxShadow: 'none',
+    overflow: 'hidden',
   };
   const panelStyle: CSSProperties = {
     padding: '1rem',
@@ -2867,6 +2860,92 @@ function App() {
   const hasActiveAssistantTasks =
     approvalItems.some((item) => item.state === 'pending') || Boolean(aiState?.isRunning);
 
+  const assistantWorkspaceContent = (
+    <>
+      <section className="gorkh-assistant-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1rem', color: 'rgba(255,255,255,0.92)' }}>
+              Assistant — Secondary Workspace
+            </h2>
+            <p style={{ margin: '0.35rem 0 0', color: 'rgba(255,255,255,0.62)', fontSize: '0.82rem' }}>
+              Secondary workspace for chat, planning, and approved desktop tasks.
+            </p>
+            <p style={{ margin: '0.25rem 0 0', color: 'rgba(255,255,255,0.48)', fontSize: '0.78rem' }}>
+              Screen context is optional and disabled until explicitly enabled. Return to Workstation modules from the sidebar.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <span className="gorkh-workstation-mini-badge">
+              {assistantReadiness.ready ? 'Chat ready' : 'Setup needed'}
+            </span>
+            <span className="gorkh-workstation-mini-badge">
+              {getLlmProviderLabel(llmSettings.provider)}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="gorkh-assistant-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <p style={{ margin: 0, color: 'rgba(255,255,255,0.62)', fontSize: '0.78rem', maxWidth: '72ch' }}>
+            {DESKTOP_VISION_OPTIONAL_COPY}
+          </p>
+          <div style={{ display: 'flex', gap: '0.45rem' }}>
+            <button className="gorkh-workstation-icon-button" style={{ width: 'auto', padding: '0 0.65rem' }} onClick={() => handleScreenPreviewToggle(true)}>
+              Enable Desktop Vision
+            </button>
+            <button className="gorkh-workstation-icon-button" style={{ width: 'auto', padding: '0 0.65rem' }} onClick={() => handleScreenPreviewToggle(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="gorkh-assistant-panel" style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <ChatOverlay
+          messages={messages}
+          status={status}
+          onSendMessage={handleSendMessage}
+          busy={assistantConversationBusy || pendingTaskConfirmationBusy}
+          assistantStatusLabel={isSignedIn ? overlayStatusLabel : null}
+          pendingTaskConfirmation={pendingTaskConfirmation}
+          pendingTaskConfirmationBusy={pendingTaskConfirmationBusy}
+          onConfirmPendingTask={handleConfirmPendingTask}
+          onCancelPendingTask={handleCancelPendingTask}
+          freeTierUsage={freeTierUsage}
+          provider={llmSettings.provider}
+          providerConfigured={providerStatusState.activeConfigured}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+      </section>
+
+      {isSignedIn && (
+        <section className="gorkh-assistant-panel">
+          <RunPanel
+            run={activeRun}
+            displayGoal={activeRunDisplayGoal ?? undefined}
+            onCancel={handleCancelRun}
+            isAiAssist={isAiAssist}
+            aiState={aiState?.status}
+            currentProposal={currentProposal}
+            currentApproval={pendingAiProposalApproval}
+            actionCount={activeRun?.actionCount}
+            maxActions={activeRun?.constraints?.maxActions}
+            onApproveAction={handleAiApproveAction}
+            onRejectAction={handleAiRejectAction}
+            onApproveTool={handleAiApproveTool}
+            onRejectTool={handleAiRejectTool}
+            onUserResponse={handleAiUserResponse}
+            onStopAi={handleStopAi}
+            toolHistory={activeToolHistory}
+            workspaceConfigured={workspaceState.configured}
+          />
+        </section>
+      )}
+    </>
+  );
+
   return (
     <div
       style={{
@@ -2921,8 +3000,8 @@ function App() {
       <div
         style={{
           flex: 1,
-          padding: `${homeTopInset} 1.5rem 2rem`,
-          overflow: 'auto',
+          padding: homeTopInset,
+          overflow: 'hidden',
           pointerEvents: 'auto',
           position: 'relative',
           zIndex: 1,
@@ -2932,9 +3011,9 @@ function App() {
           <div
             data-tauri-drag-region
             style={{
+              display: 'none',
               position: 'relative',
               minHeight: platform === 'macos' ? '4.75rem' : '4.25rem',
-              display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'flex-start',
               gap: '1rem',
@@ -3002,13 +3081,14 @@ function App() {
               </div>
           </div>
 
-        {primaryView === 'workstation' && (
-          <div style={{ marginTop: '1.5rem' }}>
-            <SolanaWorkstation />
-          </div>
-        )}
+        <SolanaWorkstation
+          assistantActive={primaryView === 'assistant'}
+          assistantContent={assistantWorkspaceContent}
+          onAssistantActiveChange={(active) => setPrimaryView(active ? 'assistant' : 'workstation')}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
 
-        {primaryView === 'assistant' && (
+        {false && primaryView === 'assistant' && (
         <>
         {runtimeConfigError && (
           <div
@@ -3067,7 +3147,7 @@ function App() {
           </span>
           
           {status === 'disconnected' && runtimeConfig && authState === 'signed_in' && (
-            <button onClick={() => client?.connect(runtimeConfig.wsUrl)}>
+            <button onClick={() => runtimeConfig && client?.connect(runtimeConfig.wsUrl)}>
               Reconnect
             </button>
           )}
@@ -3246,7 +3326,7 @@ function App() {
                         color: '#334155',
                       }}
                     >
-                      Current task: {activeRun.status}
+                      Current task: {activeRun?.status}
                     </span>
                   )}
                 </div>
@@ -3420,7 +3500,7 @@ function App() {
               color: '#92400e',
             }}
           >
-            <strong>Permission Required:</strong> {inputPermissionError.includes('Accessibility') 
+            <strong>Permission Required:</strong> {inputPermissionError?.includes('Accessibility') 
               ? accessibilityPermissionBannerMessage
               : inputPermissionError}
             <div style={{ marginTop: '0.75rem' }}>

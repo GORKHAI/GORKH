@@ -723,3 +723,205 @@ export const SOLANA_WALLET_PORTFOLIO_PHASE_16_SAFETY_NOTES: string[] = [
   'GORKH cannot sign, swap, trade, or move funds.',
   'Token holdings should be reviewed manually before any future action.',
 ];
+
+// ----------------------------------------------------------------------------
+// Local Wallet Vault + Cloak Foundation
+// ----------------------------------------------------------------------------
+
+export const WalletSourceSchema = z.enum(['generated', 'imported', 'browser_handoff', 'address_only']);
+export type WalletSource = z.infer<typeof WalletSourceSchema>;
+
+export const WalletSecurityStatusSchema = z.enum(['locked', 'unlocked', 'keychain_unavailable', 'error']);
+export type WalletSecurityStatus = z.infer<typeof WalletSecurityStatusSchema>;
+
+export const WalletTransactionKindSchema = z.enum([
+  'cloak_deposit',
+  'cloak_private_send',
+  'cloak_withdraw',
+  'market_trade',
+  'manual_transfer',
+]);
+export type WalletTransactionKind = z.infer<typeof WalletTransactionKindSchema>;
+
+export const WalletExecutionStatusSchema = z.enum([
+  'draft',
+  'requires_approval',
+  'approved',
+  'submitted',
+  'confirmed',
+  'failed',
+  'blocked',
+]);
+export type WalletExecutionStatus = z.infer<typeof WalletExecutionStatusSchema>;
+
+export const LocalWalletProfileSchema = z.object({
+  walletId: z.string().min(1),
+  label: z.string().min(1),
+  publicAddress: z.string().min(1),
+  source: WalletSourceSchema,
+  securityStatus: WalletSecurityStatusSchema,
+  keychainAccount: z.string().regex(/^wallet:v1:/),
+  network: SolanaRpcNetworkSchema,
+  createdAt: z.number().int(),
+  updatedAt: z.number().int(),
+  localOnly: z.literal(true),
+});
+export type LocalWalletProfile = z.infer<typeof LocalWalletProfileSchema>;
+
+export const WalletVaultOperationResultSchema = z.object({
+  ok: z.boolean(),
+  wallet: LocalWalletProfileSchema.optional(),
+  error: z.string().optional(),
+});
+export type WalletVaultOperationResult = z.infer<typeof WalletVaultOperationResultSchema>;
+
+export const WalletSigningRequestSchema = z.object({
+  requestId: z.string().min(1),
+  walletId: z.string().min(1),
+  publicAddress: z.string().min(1),
+  kind: WalletTransactionKindSchema,
+  status: WalletExecutionStatusSchema,
+  humanSummary: z.string().min(1),
+  createdAt: z.number().int(),
+  expiresAt: z.number().int().optional(),
+  approvalRequired: z.literal(true),
+  initiatedBy: z.enum(['wallet_user', 'agent_draft', 'assistant_draft', 'markets_future']),
+});
+export type WalletSigningRequest = z.infer<typeof WalletSigningRequestSchema>;
+
+export const WalletSigningApprovalSchema = z.object({
+  approvalId: z.string().min(1),
+  requestId: z.string().min(1),
+  approvedAt: z.number().int(),
+  approvedBy: z.literal('local_user'),
+  status: z.literal('approved'),
+});
+export type WalletSigningApproval = z.infer<typeof WalletSigningApprovalSchema>;
+
+export const GORKH_LOCAL_WALLET_SAFETY_CONSTANTS = {
+  privateKeyNeverLeavesDevice: true,
+  keychainStorageOnly: true,
+  noBackendSync: true,
+  explicitApprovalRequiredForEverySignature: true,
+  agentCannotSignAutomatically: true,
+} as const;
+
+export const CLOAK_MAINNET_PROGRAM_ID = 'zh1eLd6rSphLejbFfJEneUwzHRfMKxgzrgkfwA6qRkW';
+export const CLOAK_NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const CLOAK_DEFAULT_RELAY_URL = 'https://api.cloak.ag';
+export const CLOAK_MIN_SOL_DEPOSIT_LAMPORTS = '10000000';
+export const CLOAK_FIXED_FEE_LAMPORTS = '5000000';
+export const CLOAK_VARIABLE_FEE_NUMERATOR = '3';
+export const CLOAK_VARIABLE_FEE_DENOMINATOR = '1000';
+
+export const CloakExecutionStatusSchema = z.enum([
+  'draft',
+  'requires_approval',
+  'approved',
+  'submitting',
+  'submitted',
+  'confirmed',
+  'failed',
+  'blocked',
+]);
+export type CloakExecutionStatus = z.infer<typeof CloakExecutionStatusSchema>;
+
+export const CloakApprovalDigestSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/, 'Cloak approval digest must be a SHA-256 hex digest.');
+export type CloakApprovalDigest = z.infer<typeof CloakApprovalDigestSchema>;
+
+export const CloakDepositDraftSchema = z.object({
+  id: z.string().min(1),
+  walletId: z.string().min(1),
+  publicAddress: z.string().min(1),
+  network: z.literal('mainnet'),
+  asset: z.literal('SOL'),
+  mint: z.literal(CLOAK_NATIVE_SOL_MINT),
+  amountLamports: z.string().regex(/^[0-9]+$/),
+  estimatedFixedFeeLamports: z.string().regex(/^[0-9]+$/),
+  estimatedVariableFeeLamports: z.string().regex(/^[0-9]+$/),
+  estimatedTotalFeeLamports: z.string().regex(/^[0-9]+$/),
+  estimatedPrivateAmountLamports: z.string().regex(/^[0-9]+$/),
+  relayUrl: z.literal(CLOAK_DEFAULT_RELAY_URL),
+  programId: z.literal(CLOAK_MAINNET_PROGRAM_ID),
+  createdAt: z.number().int(),
+  expiresAt: z.number().int(),
+  status: CloakExecutionStatusSchema,
+  riskLevel: WorkstationRiskLevelSchema,
+  warnings: z.array(z.string()),
+  approvalDigest: CloakApprovalDigestSchema,
+  approvalRequired: z.literal(true),
+});
+export type CloakDepositDraft = z.infer<typeof CloakDepositDraftSchema>;
+
+export const CloakDepositResultSchema = z.object({
+  draftId: z.string().min(1),
+  status: CloakExecutionStatusSchema,
+  signature: z.string().optional().nullable(),
+  requestId: z.string().optional().nullable(),
+  noteId: z.string().optional().nullable(),
+  submittedAt: z.number().int().optional().nullable(),
+  error: z.string().optional().nullable(),
+});
+export type CloakDepositResult = z.infer<typeof CloakDepositResultSchema>;
+
+export const CloakNoteMetadataSchema = z.object({
+  noteId: z.string().min(1),
+  walletId: z.string().min(1),
+  asset: z.enum(['SOL', 'USDC', 'USDT']),
+  amountLamports: z.string().regex(/^[0-9]+$/),
+  createdAt: z.number().int(),
+  signature: z.string().optional().nullable(),
+  leafIndex: z.number().int().optional().nullable(),
+  status: CloakExecutionStatusSchema,
+});
+export type CloakNoteMetadata = z.infer<typeof CloakNoteMetadataSchema>;
+
+export const CloakSigningSessionSchema = z.object({
+  sessionId: z.string().min(1),
+  draftId: z.string().min(1),
+  walletId: z.string().min(1),
+  operationKind: z.literal('cloak_deposit'),
+  operationDigest: CloakApprovalDigestSchema,
+  expiresAt: z.number().int(),
+  allowedMessageKind: z.literal('cloak_viewing_key_registration'),
+  allowedTransactionKind: z.literal('cloak_deposit'),
+});
+export type CloakSigningSession = z.infer<typeof CloakSigningSessionSchema>;
+
+export const CloakDepositProgressSchema = z.object({
+  stage: z.enum([
+    'preparing',
+    'awaiting_approval',
+    'creating_utxo',
+    'signing_viewing_key_registration',
+    'generating_proof',
+    'signing_transaction',
+    'submitting',
+    'confirmed',
+    'failed',
+  ]),
+  label: z.string().min(1),
+  proofPercent: z.number().min(0).max(100).optional(),
+});
+export type CloakDepositProgress = z.infer<typeof CloakDepositProgressSchema>;
+
+export const CloakErrorSummarySchema = z.object({
+  category: z.enum(['wallet', 'network', 'validation', 'service', 'transaction', 'unknown']),
+  message: z.string().min(1),
+  recoverable: z.boolean(),
+  suggestion: z.string().optional(),
+});
+export type CloakErrorSummary = z.infer<typeof CloakErrorSummarySchema>;
+
+export const GORKH_CLOAK_DEPOSIT_SAFETY_NOTES = [
+  'Cloak deposit is mainnet-only in this phase.',
+  'A local keychain wallet is required.',
+  'Every deposit requires explicit local approval bound to the prepared draft digest.',
+  'The official @cloak.dev/sdk TypeScript package is used through a Tauri signer bridge.',
+  'Raw keypair bytes are never exported to the webview for Cloak execution.',
+  'signMessage is allowed only for ownership proof and Cloak viewing-key registration.',
+  'Raw note material and viewing keys are stored only in secure storage.',
+  'Agent, Assistant, and Markets cannot execute Cloak deposits.',
+] as const;

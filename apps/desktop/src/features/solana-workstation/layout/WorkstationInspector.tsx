@@ -1,15 +1,19 @@
-import { getNavItemById, type WorkstationModuleId } from './workstationNavigation.js';
+import { getNavItemById, type WorkstationModuleId, type WorkstationViewId } from './workstationNavigation.js';
 import { WorkstationSafetyBadge, WorkstationStatusBadge } from './WorkstationSafetyBadge.js';
 
 export function WorkstationInspector({
   activeModule,
 }: {
-  activeModule: WorkstationModuleId | null;
+  activeModule: WorkstationViewId | null;
 }) {
-  const item = activeModule ? getNavItemById(activeModule) : undefined;
+  const item =
+    activeModule && activeModule !== 'assistant'
+      ? getNavItemById(activeModule as WorkstationModuleId)
+      : undefined;
 
   return (
     <aside
+      className="gorkh-workstation-inspector"
       style={{
         width: '320px',
         minWidth: '320px',
@@ -32,7 +36,26 @@ export function WorkstationInspector({
         Inspector
       </div>
 
-      {item ? (
+      {activeModule === 'assistant' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div className="gorkh-inspector-card">
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.35rem' }}>
+              Assistant
+            </div>
+            <p style={{ margin: 0, fontSize: '0.78rem', lineHeight: 1.5, color: '#94a3b8' }}>
+              Secondary workspace for chat, planning, and approved desktop tasks.
+            </p>
+          </div>
+          <div className="gorkh-inspector-card">
+            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.35rem' }}>
+              Desktop Vision
+            </div>
+            <p style={{ margin: 0, fontSize: '0.75rem', lineHeight: 1.5, color: '#94a3b8' }}>
+              Optional and disabled until explicitly enabled. Workstation modules do not require screen context.
+            </p>
+          </div>
+        </div>
+      ) : item ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <div
             style={{

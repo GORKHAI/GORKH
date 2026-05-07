@@ -15,6 +15,8 @@ import { AssistantExportPanel } from './AssistantExportPanel.js';
 import { createAgentContextMarkdown } from '../createAgentContextMarkdown.js';
 import { createShieldContextMarkdown } from '../createShieldContextMarkdown.js';
 import { createWorkstationContextBundle } from '../createWorkstationContextBundle.js';
+import { createZerionSafeContext } from '../../agent/zerion/zerionContext.js';
+import { loadZerionLocalState } from '../../agent/zerion/zerionStorage.js';
 
 export function ContextBridgePanel({
   agents: agentsProp,
@@ -88,6 +90,19 @@ export function ContextBridgePanel({
     return privateContextSummary ?? undefined;
   }, [privateContextSummary]);
 
+  const zerionMarkdown = useMemo(() => {
+    const zerion = loadZerionLocalState();
+    if (!zerion.policy && !zerion.proposal && !zerion.lastResult && zerion.auditEvents.length === 0) {
+      return undefined;
+    }
+    return createZerionSafeContext({
+      policy: zerion.policy,
+      proposal: zerion.proposal,
+      result: zerion.lastResult,
+      auditEvents: zerion.auditEvents,
+    });
+  }, []);
+
   const bundle = useMemo(() => {
     const references = [];
 
@@ -147,6 +162,20 @@ export function ContextBridgePanel({
       });
     }
 
+    if (zerionMarkdown) {
+      references.push({
+        id: `ref-zerion-${Date.now()}`,
+        kind: SolanaWorkstationContextReferenceKind.ZERION_AUDIT_SUMMARY,
+        source: SolanaWorkstationContextSource.ZERION_AGENT,
+        title: 'Zerion Agent Executor Summary',
+        summary: 'Safe Zerion policy, proposal, result, and audit metadata only',
+        createdAt: Date.now(),
+        sensitivity: SolanaWorkstationContextSensitivity.REDACTED_SAFE_SUMMARY,
+        localOnly: true,
+        safetyNotes: ['No Zerion API key, agent token, private key, or Cloak note data.'],
+      });
+    }
+
     return createWorkstationContextBundle({
       title: 'GORKH Workstation Context Bundle',
       description: 'Consolidated context from Agent, Builder, Shield, and Private for manual assistant review.',
@@ -154,9 +183,10 @@ export function ContextBridgePanel({
       builderMarkdown,
       shieldMarkdown,
       privateMarkdown,
+      zerionMarkdown,
       references,
     });
-  }, [selectedAgent, savedBuilderContext, shieldAnalysis, privateMarkdown, agentMarkdown, builderMarkdown, shieldMarkdown]);
+  }, [selectedAgent, savedBuilderContext, shieldAnalysis, privateMarkdown, zerionMarkdown, agentMarkdown, builderMarkdown, shieldMarkdown]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

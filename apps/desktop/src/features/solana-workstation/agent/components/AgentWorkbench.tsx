@@ -15,6 +15,8 @@ import { ActionDraftPanel } from './ActionDraftPanel.js';
 import { AttestationPreviewPanel } from './AttestationPreviewPanel.js';
 import { AgentAuditTimeline } from './AgentAuditTimeline.js';
 import { AgentExportPanel } from './AgentExportPanel.js';
+import { ZerionAgentExecutorPanel } from '../zerion/index.js';
+import { GorkhAgentStationPanel } from '../station/index.js';
 import { createDefaultAgent } from '../createDefaultAgent.js';
 import {
   loadAgentWorkspaceState,
@@ -36,10 +38,12 @@ import {
   archiveAgentDraft,
 } from '../../context-bridge/bridgeActions.js';
 
-type AgentTab = 'agents' | 'policy' | 'draft' | 'attestation' | 'audit' | 'export' | 'safety';
+type AgentTab = 'station' | 'agents' | 'policy' | 'draft' | 'zerion' | 'attestation' | 'audit' | 'export' | 'safety';
 
 const TABS: { id: AgentTab; label: string }[] = [
-  { id: 'agents', label: 'Agents' },
+  { id: 'station', label: 'GORKH Agent' },
+  { id: 'zerion', label: 'Zerion Executor' },
+  { id: 'agents', label: 'Legacy Agents' },
   { id: 'policy', label: 'Policy' },
   { id: 'draft', label: 'Draft Action' },
   { id: 'attestation', label: 'Attestation Preview' },
@@ -51,11 +55,23 @@ const TABS: { id: AgentTab; label: string }[] = [
 export function AgentWorkbench({
   onPrefillShield,
   savedBuilderContext,
+  walletWorkspace,
+  marketsWorkspace,
+  marketsSampleData,
+  onOpenWalletCloak,
+  onOpenZerionExecutor,
+  pendingZerionProposal,
 }: {
   onPrefillShield?: (input: string) => void;
   savedBuilderContext?: string | null;
+  walletWorkspace?: import('@gorkh/shared').SolanaWalletWorkspaceState | null;
+  marketsWorkspace?: import('@gorkh/shared').SolanaMarketsWorkspaceState | null;
+  marketsSampleData?: boolean;
+  onOpenWalletCloak?: (handoff: import('@gorkh/shared').GorkhAgentCloakDraftHandoff) => void;
+  onOpenZerionExecutor?: (handoff: import('@gorkh/shared').GorkhAgentZerionProposalHandoff) => void;
+  pendingZerionProposal?: import('@gorkh/shared').GorkhAgentZerionProposalHandoff | null;
 }) {
-  const [activeTab, setActiveTab] = useState<AgentTab>('agents');
+  const [activeTab, setActiveTab] = useState<AgentTab>('station');
   const [state, setState] = useState(() => {
     const loaded = loadAgentWorkspaceState();
     return loaded ?? createEmptyAgentWorkspaceState();
@@ -64,6 +80,12 @@ export function AgentWorkbench({
   useEffect(() => {
     saveAgentWorkspaceState(state);
   }, [state]);
+
+  useEffect(() => {
+    if (pendingZerionProposal) {
+      setActiveTab('zerion');
+    }
+  }, [pendingZerionProposal]);
 
   const selectedAgent = state.agents.find((a) => a.id === state.selectedAgentId);
 
@@ -206,14 +228,15 @@ export function AgentWorkbench({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#0ea5e9' }} />
           <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
-            GORKH Agent — Mainnet-Safe Solana Agent Control Center
+            GORKH Agent Station — Persistent Mainnet-Safe Solana Agent
           </h3>
         </div>
       </div>
 
       <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.5, color: '#475569' }}>
-        Create local Solana agent profiles, configure policy boundaries, draft actions, and preview
-        local agent attestations before any future on-chain execution.
+        GORKH Agent runs locally while the desktop app is open. It can analyze, plan, draft, and coordinate
+        safe internal tools. It never holds private keys, never signs transactions, and never executes
+        Cloak sends or Zerion swaps without explicit module-specific approval.
       </p>
 
       <AgentSafetyPanel />
@@ -241,6 +264,17 @@ export function AgentWorkbench({
       </div>
 
       {/* Tab content */}
+      {activeTab === 'station' && (
+        <GorkhAgentStationPanel
+          walletWorkspace={walletWorkspace}
+          marketsWorkspace={marketsWorkspace}
+          marketsSampleData={marketsSampleData}
+          onOpenWalletCloak={onOpenWalletCloak}
+          onOpenZerionExecutor={onOpenZerionExecutor}
+          onOpenShield={onPrefillShield}
+        />
+      )}
+
       {activeTab === 'agents' && (
         <AgentProfilePanel
           agents={state.agents}
@@ -399,6 +433,10 @@ export function AgentWorkbench({
           drafts={state.drafts}
           onGenerate={handleGenerateAttestation}
         />
+      )}
+
+      {activeTab === 'zerion' && (
+        <ZerionAgentExecutorPanel pendingAgentHandoff={pendingZerionProposal} />
       )}
 
       {activeTab === 'audit' && <AgentAuditTimeline events={state.auditEvents} />}

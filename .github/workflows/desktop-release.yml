@@ -410,7 +410,7 @@ jobs:
             exit 1
           }
 
-          $normalizedAsset = "release-assets/ai-operator-desktop_${env:RELEASE_VERSION}_windows_x86_64.msi"
+          $normalizedAsset = "release-assets/GORKH_${env:RELEASE_VERSION}_windows_x86_64.msi"
           Copy-Item $msiSource.FullName $normalizedAsset -Force
           "WINDOWS_ASSET_PATH=$normalizedAsset" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -571,7 +571,7 @@ jobs:
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/release-assets"
-          TARGET_NAME="$GITHUB_WORKSPACE/release-assets/ai-operator-desktop_${RELEASE_VERSION}_macos_${RELEASE_ARCH}.dmg"
+          TARGET_NAME="$GITHUB_WORKSPACE/release-assets/GORKH_${RELEASE_VERSION}_macos_${RELEASE_ARCH}.dmg"
           cp "$DMG_SOURCE" "$TARGET_NAME"
           printf 'MACOS_ASSET_PATH=%s\n' "$TARGET_NAME" >> "$GITHUB_ENV"
 

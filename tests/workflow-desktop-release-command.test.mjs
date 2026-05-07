@@ -187,7 +187,7 @@ test('desktop release workflow stores the macOS asset path as an absolute worksp
 
   assert.match(
     source,
-    /TARGET_NAME="\$GITHUB_WORKSPACE\/release-assets\/ai-operator-desktop_\$\{RELEASE_VERSION\}_macos_\$\{RELEASE_ARCH\}\.dmg"/,
+    /TARGET_NAME="\$GITHUB_WORKSPACE\/release-assets\/GORKH_\$\{RELEASE_VERSION\}_macos_\$\{RELEASE_ARCH\}\.dmg"/,
     'macOS asset normalization should store the DMG under an absolute workspace path so later package-scoped commands resolve it correctly'
   );
 

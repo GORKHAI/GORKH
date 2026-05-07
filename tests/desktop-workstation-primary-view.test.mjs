@@ -23,6 +23,18 @@ function listSourceFiles(root) {
   return files;
 }
 
+function isApprovedCloakSignerBridge(file, content, method) {
+  return (
+    file.endsWith('wallet/cloak/cloakDeposit.ts') &&
+    content.includes('wallet_cloak_begin_signing_session') &&
+    content.includes('wallet_cloak_sign_transaction') &&
+    content.includes('wallet_cloak_sign_message') &&
+    content.includes("purpose: 'cloak_deposit'") &&
+    content.includes("purpose: 'cloak_viewing_key_registration'") &&
+    (method === 'signTransaction' || method === 'signMessage')
+  );
+}
+
 test('desktop primary view defaults to Workstation', () => {
   assert.match(appSource, /type\s+DesktopPrimaryView\s*=\s*'workstation'\s*\|\s*'assistant'/);
   assert.match(
@@ -93,6 +105,7 @@ test('active Workstation source does not introduce forbidden blockchain method c
 
     const content = readFileSync(file, 'utf8');
     for (const method of forbiddenMethods) {
+      if (isApprovedCloakSignerBridge(file, content, method)) continue;
       assert.doesNotMatch(content, new RegExp(`\\b${method}\\s*\\(`), `${method}() found in ${file}`);
     }
   }
@@ -103,6 +116,7 @@ test('signMessage remains constrained to ownership-proof contexts', () => {
   for (const file of files) {
     const content = readFileSync(file, 'utf8');
     if (!/\bsignMessage\s*\(/.test(content)) continue;
+    if (isApprovedCloakSignerBridge(file, content, 'signMessage')) continue;
     assert.match(file, /ownership|proof|verify/i, `signMessage() found outside ownership proof context: ${file}`);
   }
 });

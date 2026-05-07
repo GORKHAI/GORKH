@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { type WorkstationModuleId } from './workstationNavigation.js';
+import { type WorkstationViewId } from './workstationNavigation.js';
 import { WorkstationSidebar } from './WorkstationSidebar.js';
 import { WorkstationTopBar } from './WorkstationTopBar.js';
 import { WorkstationStatusBar } from './WorkstationStatusBar.js';
@@ -9,42 +9,34 @@ export function WorkstationShell({
   activeModule,
   onSelectModule,
   onShieldPrefill,
+  onOpenSettings,
+  onOpenAssistant,
+  assistantActive,
   children,
 }: {
-  activeModule: WorkstationModuleId | null;
-  onSelectModule: (id: WorkstationModuleId) => void;
+  activeModule: WorkstationViewId | null;
+  onSelectModule: (id: WorkstationViewId | null) => void;
   onShieldPrefill?: (input: string) => void;
+  onOpenSettings?: () => void;
+  onOpenAssistant?: () => void;
+  assistantActive?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        width: '100vw',
-        overflow: 'hidden',
-        background: '#0f1117',
-        color: '#e2e8f0',
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
-        WebkitFontSmoothing: 'antialiased',
-      }}
-    >
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+    <div className="gorkh-workstation-shell">
+      <div className="gorkh-workstation-main-row">
         <WorkstationSidebar activeModule={activeModule} onSelect={onSelectModule} />
 
-        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-          <WorkstationTopBar activeModule={activeModule} onShieldPrefill={onShieldPrefill} />
+        <div className="gorkh-workstation-content-area">
+          <WorkstationTopBar
+            activeModule={activeModule}
+            onShieldPrefill={onShieldPrefill}
+            onOpenSettings={onOpenSettings}
+            onOpenAssistant={onOpenAssistant}
+            assistantActive={assistantActive}
+          />
 
-          <main
-            style={{
-              flex: 1,
-              overflow: 'auto',
-              padding: '1rem',
-              background: '#0f1117',
-            }}
-          >
+          <main className="gorkh-workstation-workspace">
             {children}
           </main>
 
