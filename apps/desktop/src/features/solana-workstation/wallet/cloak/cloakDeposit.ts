@@ -1,14 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import {
-  CLOAK_PROGRAM_ID,
-  NATIVE_SOL_MINT,
-  createUtxo,
-  createZeroUtxo,
-  generateUtxoKeypair,
-  parseError,
-  serializeUtxo,
-  transact,
-} from '@cloak.dev/sdk';
 import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import {
   CloakDepositDraftSchema,
@@ -16,6 +6,12 @@ import {
   type CloakDepositDraft,
   type CloakNoteMetadata,
 } from '@gorkh/shared';
+
+type CloakSdk = typeof import('@cloak.dev/sdk');
+
+async function loadCloakSdk(): Promise<CloakSdk> {
+  return import('@cloak.dev/sdk');
+}
 
 export function calculateCloakSolDepositFees(amountLamports: string): {
   fixedFeeLamports: string;
@@ -172,8 +168,9 @@ function createTauriCloakSigner(session: CloakSigningSession, publicAddress: str
   };
 }
 
-function summarizeCloakError(error: unknown): string {
+async function summarizeCloakError(error: unknown): Promise<string> {
   try {
+    const { parseError } = await loadCloakSdk();
     const parsed = parseError(error);
     return `${parsed.message}${parsed.recoverable ? ' This may be recoverable with a retry.' : ''}`;
   } catch {
@@ -190,6 +187,15 @@ export async function executeCloakDepositWithSignerBridge(
   }
   let session: CloakSigningSession | null = null;
   try {
+    const {
+      CLOAK_PROGRAM_ID,
+      NATIVE_SOL_MINT,
+      createUtxo,
+      createZeroUtxo,
+      generateUtxoKeypair,
+      serializeUtxo,
+      transact,
+    } = await loadCloakSdk();
     session = await beginCloakSigningSession(draft);
     onProgress?.({ stage: 'creating_utxo', label: 'Creating private UTXO' });
     const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
@@ -256,8 +262,9 @@ export async function executeCloakDepositWithSignerBridge(
     onProgress?.({ stage: 'confirmed', label: 'Cloak deposit confirmed' });
     return CloakNoteMetadataSchema.parse(note);
   } catch (error) {
-    onProgress?.({ stage: 'failed', label: summarizeCloakError(error) });
-    throw new Error(summarizeCloakError(error));
+    const message = await summarizeCloakError(error);
+    onProgress?.({ stage: 'failed', label: message });
+    throw new Error(message);
   } finally {
     if (session) {
       await endCloakSigningSession(session).catch(() => undefined);

@@ -1,7 +1,8 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   SolanaBuilderWorkspaceStatus,
   type SolanaBuilderIdlSummary,
+  type SolanaBuilderLogAnalysis,
   type SolanaBuilderToolStatus,
 } from '@gorkh/shared';
 import {
@@ -22,6 +23,8 @@ import { DiagnosticsPanel } from './DiagnosticsPanel.js';
 import { CommandDraftsPanel } from './CommandDraftsPanel.js';
 import { FilePreviewPanel } from './FilePreviewPanel.js';
 import { BuilderContextPanel } from './BuilderContextPanel.js';
+import { createLastBuilderContextSnapshot } from '../../context-bridge/createLastModuleContextSnapshots.js';
+import { saveLastBuilderContext } from '../../context-bridge/lastModuleContextStorage.js';
 
 type BuilderTab = 'inspect' | 'files' | 'logs' | 'diagnostics' | 'commands' | 'context';
 
@@ -43,6 +46,7 @@ export function BuilderWorkbench({ onSaveContext }: { onSaveContext?: (markdown:
   const [toolStatuses, setToolStatuses] = useState<SolanaBuilderToolStatus[]>([]);
   const [checkingTools, setCheckingTools] = useState(false);
   const [selectedIdl, setSelectedIdl] = useState<SolanaBuilderIdlSummary | null>(null);
+  const [logAnalysis, setLogAnalysis] = useState<SolanaBuilderLogAnalysis | null>(null);
   const handleSelectDirectory = useCallback(async () => {
     setError(null);
     setStatus(SolanaBuilderWorkspaceStatus.LOADING);
@@ -66,6 +70,7 @@ export function BuilderWorkbench({ onSaveContext }: { onSaveContext?: (markdown:
   const handleClear = useCallback(async () => {
     setInspection(null);
     setSelectedIdl(null);
+    setLogAnalysis(null);
     setToolStatuses([]);
     setWorkspacePath(null);
     setError(null);
@@ -108,10 +113,16 @@ export function BuilderWorkbench({ onSaveContext }: { onSaveContext?: (markdown:
         inspection?.summary ?? null,
         inspection?.anchorToml ?? null,
         inspection?.idls ?? [],
-        toolStatuses
+        toolStatuses,
+        logAnalysis
       ),
-    [inspection, toolStatuses]
+    [inspection, logAnalysis, toolStatuses]
   );
+
+  useEffect(() => {
+    if (!inspection) return;
+    saveLastBuilderContext(createLastBuilderContextSnapshot(contextSummary));
+  }, [contextSummary, inspection]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -301,7 +312,9 @@ export function BuilderWorkbench({ onSaveContext }: { onSaveContext?: (markdown:
           )}
 
           {activeTab === 'files' && <FilePreviewPanel fileTree={inspection.fileTree} />}
-          {activeTab === 'logs' && <LogAnalyzerPanel idls={inspection.idls} />}
+          {activeTab === 'logs' && (
+            <LogAnalyzerPanel idls={inspection.idls} onAnalysisChange={setLogAnalysis} />
+          )}
           {activeTab === 'diagnostics' && <DiagnosticsPanel />}
           {activeTab === 'commands' && <CommandDraftsPanel drafts={commandDrafts} />}
           {activeTab === 'context' && <BuilderContextPanel summary={contextSummary} />}

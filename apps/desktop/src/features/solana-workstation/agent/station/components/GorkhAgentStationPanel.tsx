@@ -15,6 +15,7 @@ import {
   type GorkhAgentWalletToolResult,
   type GorkhAgentZerionProposalHandoff,
   type SolanaMarketsWorkspaceState,
+  type SolanaWorkstationLastModuleContext,
   type SolanaWalletWorkspaceState,
 } from '@gorkh/shared';
 import {
@@ -42,6 +43,7 @@ import { summarizeZerionHandoff } from '../agentZerionHandoff.js';
 export interface GorkhAgentStationPanelProps {
   walletWorkspace?: SolanaWalletWorkspaceState | null;
   marketsWorkspace?: SolanaMarketsWorkspaceState | null;
+  lastModuleContext?: SolanaWorkstationLastModuleContext | null;
   marketsSampleData?: boolean;
   onOpenWalletCloak?: (handoff: GorkhAgentCloakDraftHandoff) => void;
   onOpenZerionExecutor?: (handoff: GorkhAgentZerionProposalHandoff) => void;
@@ -141,8 +143,9 @@ export function GorkhAgentStationPanel(props: GorkhAgentStationPanelProps = {}) 
       walletWorkspace: props.walletWorkspace ?? null,
       marketsWorkspace: props.marketsWorkspace ?? null,
       marketsSampleData: props.marketsSampleData,
+      lastModuleContext: props.lastModuleContext ?? null,
     }),
-    [props.walletWorkspace, props.marketsWorkspace, props.marketsSampleData]
+    [props.walletWorkspace, props.marketsWorkspace, props.marketsSampleData, props.lastModuleContext]
   );
 
   const handleManualRun = useCallback(() => {

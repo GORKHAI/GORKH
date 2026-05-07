@@ -43,6 +43,8 @@ This is the manual smoke checklist for the desktop GORKH Agent Station.
       task; `requiresApproval=true`, `executionBlocked=true`, and a Zerion handoff card appears.
 - [ ] Click **Open Agent -> Zerion Executor**. Zerion Executor opens with safe amount/wallet/policy fields prefilled where available. No CLI swap executes automatically.
 - [ ] Submitting `summarize my current workstation context` creates a **Context Bundle** result with redactions listed.
+- [ ] After manually analyzing in Shield, return to Agent and submit `summarize my current workstation context`. Verify the bundle includes **Last Shield Context** without rerunning RPC or simulation.
+- [ ] After manually inspecting a Builder workspace, return to Agent and submit `review my builder workspace`. Verify the bundle includes **Last Builder Context** without running tool checks, diagnostics, builds, tests, or deploys.
 - [ ] Submitting an intent while the kill switch is on raises an inline
       error and creates no task.
 
@@ -96,6 +98,8 @@ This is the manual smoke checklist for the desktop GORKH Agent Station.
       `apps/desktop/src-tauri/permissions/desktop-ipc.toml`.
 - [ ] Handoff storage does not contain `privateKey`, `seedPhrase`,
       `walletJson`, `cloakNoteSecret`, `viewingKey`, `apiKey`, or `agentToken`.
+- [ ] Last module context storage key `gorkh.solana.contextBridge.lastModuleContext.v1`
+      contains only redacted Shield/Builder summaries and no full private paths or secret keys.
 - [ ] `pnpm check:desktop:security` passes.
 - [ ] `pnpm check:release:readiness` passes.
 - [ ] No Telegram, WhatsApp, or Discord copy anywhere in the panel.

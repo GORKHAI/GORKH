@@ -57,6 +57,7 @@ export function AgentWorkbench({
   savedBuilderContext,
   walletWorkspace,
   marketsWorkspace,
+  lastModuleContext,
   marketsSampleData,
   onOpenWalletCloak,
   onOpenZerionExecutor,
@@ -66,6 +67,7 @@ export function AgentWorkbench({
   savedBuilderContext?: string | null;
   walletWorkspace?: import('@gorkh/shared').SolanaWalletWorkspaceState | null;
   marketsWorkspace?: import('@gorkh/shared').SolanaMarketsWorkspaceState | null;
+  lastModuleContext?: import('@gorkh/shared').SolanaWorkstationLastModuleContext | null;
   marketsSampleData?: boolean;
   onOpenWalletCloak?: (handoff: import('@gorkh/shared').GorkhAgentCloakDraftHandoff) => void;
   onOpenZerionExecutor?: (handoff: import('@gorkh/shared').GorkhAgentZerionProposalHandoff) => void;
@@ -268,6 +270,7 @@ export function AgentWorkbench({
         <GorkhAgentStationPanel
           walletWorkspace={walletWorkspace}
           marketsWorkspace={marketsWorkspace}
+          lastModuleContext={lastModuleContext}
           marketsSampleData={marketsSampleData}
           onOpenWalletCloak={onOpenWalletCloak}
           onOpenZerionExecutor={onOpenZerionExecutor}

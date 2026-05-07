@@ -13,6 +13,7 @@ the GORKH desktop app. v0.2 still ships exactly **one active agent** — `GORKH 
 - Tool router with safe read/draft tools only.
 - Real Wallet and Markets summaries from existing local workstation state.
 - Shield, Cloak, Zerion, and Context handoffs that prefill destination modules.
+- Passive last-module context summaries for Shield and Builder, stored only after user-triggered module actions.
 - Approval queue for proposals that require explicit human approval.
 - Local-only audit log of every state transition.
 - Local memory v0.1 (non-sensitive observations) backed by `localStorage`.
@@ -44,6 +45,15 @@ The deterministic intent classifier routes user requests to safe tools:
 | "bundle", "summary", "export context" | `context.create_bundle` | Sanitized local context bundle with redaction labels. |
 
 The agent never fetches RPC, Birdeye, Cloak, or Zerion data automatically in v0.2. It reads existing local state and creates proposal/handoff records only.
+
+## Last Module Context Store
+
+`gorkh.solana.contextBridge.lastModuleContext.v1` stores redacted deterministic summaries from modules after the user performs an action:
+
+- Shield writes input kind, truncated input preview, input hash, network, summary, risk count, highest risk, and whether RPC/simulation results already exist.
+- Builder writes project kind, package manager, workspace label only, IDL/instruction/error counts, toolchain status, warnings, recommendations, and sanitized markdown.
+
+The store deliberately excludes full workspace paths, raw private files, `.env`, wallet files, private keys, seed phrases, Cloak notes/viewing keys, Zerion API keys, and agent tokens. Agent Station reads this store passively for context bundles and Builder Review intents; it does not start Shield RPC/simulation, Builder inspection, tool version checks, or diagnostic commands.
 
 ## Background runtime scope
 

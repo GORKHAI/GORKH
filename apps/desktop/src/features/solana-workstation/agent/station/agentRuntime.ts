@@ -18,6 +18,7 @@ import {
   type GorkhAgentWalletToolResult,
   type GorkhAgentZerionProposalHandoff,
   type SolanaMarketsWorkspaceState,
+  type SolanaWorkstationLastModuleContext,
   type SolanaWalletPortfolioSummary,
   type SolanaWalletWorkspaceState,
 } from '@gorkh/shared';
@@ -163,6 +164,7 @@ export interface ManualRunModuleContext {
   zerionWalletName?: string;
   zerionPolicyName?: string;
   zerionPolicyDigest?: string;
+  lastModuleContext?: SolanaWorkstationLastModuleContext | null;
 }
 
 export interface ManualRunResult {
@@ -259,6 +261,7 @@ export function manualRun(
         });
         break;
       case GorkhAgentTaskKind.CONTEXT_SUMMARY:
+      case GorkhAgentTaskKind.BUILDER_REVIEW:
         walletResult = readWalletToolResult({
           workspace: context.walletWorkspace ?? null,
           portfolioSummary: context.walletPortfolioSummary,
@@ -283,6 +286,7 @@ export function manualRun(
           shieldResult,
           cloakHandoffs: [],
           zerionHandoffs: [],
+          lastModuleContext: context.lastModuleContext ?? null,
         });
         break;
       default:

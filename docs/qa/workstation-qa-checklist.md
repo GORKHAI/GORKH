@@ -224,6 +224,8 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 - [ ] Submit `prepare a Cloak private send` → a **Cloak Draft Handoff** appears. Click **Open Wallet -> Cloak Private** and verify safe fields prefill; no Cloak proof, signer bridge, or transaction starts automatically.
 - [ ] Submit `prepare a tiny Zerion DCA` → a **Zerion Proposal Handoff** appears. Click **Open Agent -> Zerion Executor** and verify safe fields prefill; no Zerion CLI swap executes automatically.
 - [ ] Submit `summarize my current workstation context` → a **Context Bundle** card appears with redactions listed.
+- [ ] Manually analyze an input in Shield, return to Agent, then submit `summarize my current workstation context` → verify the bundle includes **Last Shield Context** and does not rerun RPC/simulation.
+- [ ] Manually inspect a workspace in Builder, return to Agent, then submit `review my builder workspace` → verify the bundle includes **Last Builder Context** and does not run tool checks, diagnostics, builds, tests, or deploys.
 - [ ] Submit `cloak send privately` → cloak_draft proposal queued with `executionBlocked=true` and a pending approval card.
 - [ ] Submit `DCA tiny SOL via Zerion` → zerion_proposal queued with `executionBlocked=true`.
 - [ ] Confirm submitting an empty intent surfaces an error.

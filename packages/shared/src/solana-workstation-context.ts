@@ -185,6 +185,64 @@ export const SolanaWorkstationBridgeActionResultSchema = z.object({
 });
 
 // ----------------------------------------------------------------------------
+// Last Module Context Snapshots
+// ----------------------------------------------------------------------------
+
+export const SolanaWorkstationLastShieldContextSchema = z.object({
+  source: z.literal(SolanaWorkstationContextSource.SHIELD),
+  inputKind: z.string().max(64),
+  inputPreview: z.string().max(180),
+  inputHash: z.string().max(64),
+  network: z.string().max(32),
+  summary: z.string().max(1000),
+  decodedAvailable: z.boolean(),
+  riskFindingCount: z.number().int().nonnegative(),
+  highestRiskLevel: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+  simulationAvailable: z.boolean(),
+  accountLookupAvailable: z.boolean(),
+  signatureLookupAvailable: z.boolean(),
+  lookupTableResolutionCount: z.number().int().nonnegative(),
+  warnings: z.array(z.string().max(280)).default([]),
+  redactionsApplied: z.array(z.string().max(64)).default([]),
+  updatedAt: z.number().int(),
+  localOnly: z.literal(true),
+});
+export type SolanaWorkstationLastShieldContext = z.infer<
+  typeof SolanaWorkstationLastShieldContextSchema
+>;
+
+export const SolanaWorkstationLastBuilderContextSchema = z.object({
+  source: z.literal(SolanaWorkstationContextSource.BUILDER),
+  projectKind: z.string().max(64),
+  packageManager: z.string().max(64).optional(),
+  rootPathLabel: z.string().max(180).optional(),
+  idlCount: z.number().int().nonnegative(),
+  instructionCount: z.number().int().nonnegative(),
+  idlErrorCount: z.number().int().nonnegative(),
+  logFindingCount: z.number().int().nonnegative(),
+  toolchainAvailable: z.array(z.string().max(64)).default([]),
+  warnings: z.array(z.string().max(280)).default([]),
+  recommendedNextChecks: z.array(z.string().max(280)).default([]),
+  markdown: z.string().max(32_000),
+  redactionsApplied: z.array(z.string().max(64)).default([]),
+  updatedAt: z.number().int(),
+  localOnly: z.literal(true),
+});
+export type SolanaWorkstationLastBuilderContext = z.infer<
+  typeof SolanaWorkstationLastBuilderContextSchema
+>;
+
+export const SolanaWorkstationLastModuleContextSchema = z.object({
+  shield: SolanaWorkstationLastShieldContextSchema.optional(),
+  builder: SolanaWorkstationLastBuilderContextSchema.optional(),
+  updatedAt: z.number().int(),
+  localOnly: z.literal(true),
+});
+export type SolanaWorkstationLastModuleContext = z.infer<
+  typeof SolanaWorkstationLastModuleContextSchema
+>;
+
+// ----------------------------------------------------------------------------
 // Inferred Types
 // ----------------------------------------------------------------------------
 
@@ -195,6 +253,7 @@ export type SolanaWorkstationContextBundle = z.infer<typeof SolanaWorkstationCon
 export type SolanaWorkstationBridgeActionResult = z.infer<
   typeof SolanaWorkstationBridgeActionResultSchema
 >;
+export type SolanaWorkstationLastModuleContextState = SolanaWorkstationLastModuleContext;
 
 // ----------------------------------------------------------------------------
 // Constants

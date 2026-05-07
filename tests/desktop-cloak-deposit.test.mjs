@@ -56,7 +56,7 @@ test('Cloak execute requires explicit Wallet UI approval and never exposes keypa
 
 test('Cloak TypeScript SDK path is active and Rust GitHub SDK path is absent', () => {
   assert.match(desktopPackage, /"@cloak\.dev\/sdk"/);
-  assert.match(cloakDeposit, /from '@cloak\.dev\/sdk'/);
+  assert.match(cloakDeposit, /import\('@cloak\.dev\/sdk'\)/);
   assert.match(cloakDeposit, /transact/);
   assert.match(cloakDeposit, /createZeroUtxo/);
   assert.match(cloakDeposit, /createUtxo/);

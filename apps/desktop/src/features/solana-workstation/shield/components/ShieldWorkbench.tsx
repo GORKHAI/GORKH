@@ -27,6 +27,8 @@ import { RpcAccountView } from './RpcAccountView.js';
 import { RpcTransactionView } from './RpcTransactionView.js';
 import { RpcSimulationView } from './RpcSimulationView.js';
 import { RpcLookupTableResolutionView } from './RpcLookupTableResolutionView.js';
+import { createLastShieldContextSnapshot } from '../../context-bridge/createLastModuleContextSnapshots.js';
+import { saveLastShieldContext } from '../../context-bridge/lastModuleContextStorage.js';
 
 const NETWORK_OPTIONS: { value: SolanaRpcNetwork; label: string }[] = [
   { value: 'devnet', label: 'Devnet' },
@@ -54,6 +56,20 @@ export function ShieldWorkbench({ prefilledInput }: { prefilledInput?: string })
   const [rpcError, setRpcError] = useState<string | null>(null);
   const [rpcBusy, setRpcBusy] = useState(false);
   const [rpcAction, setRpcAction] = useState<string>('');
+
+  useEffect(() => {
+    if (!analysis) return;
+    saveLastShieldContext(
+      createLastShieldContextSnapshot({
+        analysis,
+        decodedAvailable: Boolean(decodedTx),
+        accountLookup,
+        signatureLookup,
+        simulationPreview,
+        altResolutions,
+      })
+    );
+  }, [accountLookup, altResolutions, analysis, decodedTx, signatureLookup, simulationPreview]);
 
   const endpoint = getDefaultEndpointConfig(network);
   const activeEndpoint = customUrl.trim()

@@ -4,9 +4,10 @@ import { analyzeSolanaBuilderLogs } from '../analyzeLogs.js';
 
 interface LogAnalyzerPanelProps {
   idls: SolanaBuilderIdlSummary[];
+  onAnalysisChange?: (analysis: SolanaBuilderLogAnalysis | null) => void;
 }
 
-export function LogAnalyzerPanel({ idls }: LogAnalyzerPanelProps) {
+export function LogAnalyzerPanel({ idls, onAnalysisChange }: LogAnalyzerPanelProps) {
   const [input, setInput] = useState('');
   const [analysis, setAnalysis] = useState<SolanaBuilderLogAnalysis | null>(null);
   const [busy, setBusy] = useState(false);
@@ -15,8 +16,15 @@ export function LogAnalyzerPanel({ idls }: LogAnalyzerPanelProps) {
     setBusy(true);
     const result = analyzeSolanaBuilderLogs(input, idls);
     setAnalysis(result);
+    onAnalysisChange?.(result);
     setBusy(false);
-  }, [input, idls]);
+  }, [input, idls, onAnalysisChange]);
+
+  const handleClear = useCallback(() => {
+    setInput('');
+    setAnalysis(null);
+    onAnalysisChange?.(null);
+  }, [onAnalysisChange]);
 
   const severityColor = (s: string) => {
     switch (s) {
@@ -65,7 +73,7 @@ export function LogAnalyzerPanel({ idls }: LogAnalyzerPanelProps) {
           {busy ? 'Analyzing…' : 'Analyze Logs'}
         </button>
         <button
-          onClick={() => { setInput(''); setAnalysis(null); }}
+          onClick={handleClear}
           style={{
             padding: '0.5rem 1rem',
             borderRadius: '9999px',

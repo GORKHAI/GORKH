@@ -17,6 +17,7 @@ import {
   type GorkhAgentTask,
   type GorkhAgentWalletToolResult,
   type GorkhAgentZerionProposalHandoff,
+  type SolanaWorkstationLastModuleContext,
 } from '@gorkh/shared';
 
 export interface CreateAgentContextBundleInput {
@@ -33,6 +34,7 @@ export interface CreateAgentContextBundleInput {
   shieldResult?: GorkhAgentShieldToolResult | null;
   cloakHandoffs?: GorkhAgentCloakDraftHandoff[];
   zerionHandoffs?: GorkhAgentZerionProposalHandoff[];
+  lastModuleContext?: SolanaWorkstationLastModuleContext | null;
 }
 
 const ALWAYS_REDACTED = [
@@ -147,6 +149,45 @@ export function createAgentContextBundle(
         `- ${handoff.proposalKind} ${handoff.amountSol} ${handoff.fromToken} → ${handoff.toToken} (${handoff.handoffStatus}). Execution stays in Zerion Executor.`
       );
     }
+    lines.push('');
+  }
+
+  if (input.lastModuleContext?.shield) {
+    sources.push('shield_context');
+    const shield = input.lastModuleContext.shield;
+    lines.push('## Last Shield Context');
+    lines.push(`Input kind: ${shield.inputKind}`);
+    lines.push(`Network: ${shield.network}`);
+    lines.push(`Summary: ${shield.summary}`);
+    lines.push(`Risk findings: ${shield.riskFindingCount}`);
+    if (shield.highestRiskLevel) lines.push(`Highest risk: ${shield.highestRiskLevel}`);
+    lines.push(`Simulation present: ${shield.simulationAvailable}`);
+    lines.push(`RPC lookup present: ${shield.accountLookupAvailable || shield.signatureLookupAvailable}`);
+    for (const w of shield.warnings) lines.push(`- warning: ${w}`);
+    redactionsApplied.push(...shield.redactionsApplied);
+    lines.push('');
+  }
+
+  if (input.lastModuleContext?.builder) {
+    sources.push('builder_context');
+    const builder = input.lastModuleContext.builder;
+    lines.push('## Last Builder Context');
+    lines.push(`Project: ${builder.projectKind}`);
+    if (builder.rootPathLabel) lines.push(`Workspace label: ${builder.rootPathLabel}`);
+    if (builder.packageManager) lines.push(`Package manager: ${builder.packageManager}`);
+    lines.push(`IDLs: ${builder.idlCount}`);
+    lines.push(`Instructions: ${builder.instructionCount}`);
+    lines.push(`IDL errors: ${builder.idlErrorCount}`);
+    lines.push(`Recent log findings: ${builder.logFindingCount}`);
+    if (builder.toolchainAvailable.length > 0) {
+      lines.push(`Toolchain: ${builder.toolchainAvailable.join(', ')}`);
+    }
+    for (const w of builder.warnings) lines.push(`- warning: ${w}`);
+    if (builder.recommendedNextChecks.length > 0) {
+      lines.push('Recommended next checks:');
+      for (const check of builder.recommendedNextChecks) lines.push(`- ${check}`);
+    }
+    redactionsApplied.push(...builder.redactionsApplied);
     lines.push('');
   }
 

@@ -10,12 +10,14 @@ import { ContextBridgePanel } from './context-bridge/index.js';
 import { MarketsWorkbench } from './markets/index.js';
 import { WalletWorkbench } from './wallet/index.js';
 import { saveBuilderContextMarkdown } from './context-bridge/contextBridgeStorage.js';
+import { loadLastModuleContext } from './context-bridge/lastModuleContextStorage.js';
 import { loadWalletWorkspaceState } from './wallet/walletStorage.js';
 import { loadMarketsWorkspaceState } from './markets/marketsStorage.js';
 import type {
   GorkhAgentCloakDraftHandoff,
   GorkhAgentZerionProposalHandoff,
   SolanaMarketsWorkspaceState,
+  SolanaWorkstationLastModuleContext,
   SolanaWalletWorkspaceState,
 } from '@gorkh/shared';
 
@@ -43,12 +45,16 @@ export function SolanaWorkstation({
   const [marketsWorkspace, setMarketsWorkspace] = useState<SolanaMarketsWorkspaceState | null>(
     () => loadMarketsWorkspaceState()
   );
+  const [lastModuleContext, setLastModuleContext] = useState<SolanaWorkstationLastModuleContext | null>(
+    () => loadLastModuleContext()
+  );
 
   // Refresh module workspaces when the user opens Agent (cheap re-read of localStorage).
   useEffect(() => {
     if (activeModule === 'agent') {
       setWalletWorkspace(loadWalletWorkspaceState());
       setMarketsWorkspace(loadMarketsWorkspaceState());
+      setLastModuleContext(loadLastModuleContext());
     }
   }, [activeModule]);
 
@@ -146,6 +152,7 @@ export function SolanaWorkstation({
             savedBuilderContext={savedBuilderContext}
             walletWorkspace={walletWorkspace}
             marketsWorkspace={marketsWorkspace}
+            lastModuleContext={lastModuleContext}
             onOpenWalletCloak={handleOpenWalletCloak}
             onOpenZerionExecutor={handleOpenZerionExecutor}
             pendingZerionProposal={pendingZerionProposal}
