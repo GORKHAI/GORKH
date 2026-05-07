@@ -33,7 +33,7 @@ auto-launch = "0.5"
 # Iteration 31: Advanced Agent System
 async-trait = "0.1"
 uuid = { version = "1", features = ["v4"] }
-dirs = "5"
+dirs = "6"
 thiserror = "1"
 window-vibrancy = "0.5"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
