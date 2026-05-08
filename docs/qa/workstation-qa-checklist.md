@@ -1,7 +1,7 @@
 # GORKH Workstation QA Checklist
 
-> Version: 0.0.49  
-> Last updated: 2026-05-08 (v0.0.49+ RC visual hardening)
+> Version: 0.0.51
+> Last updated: 2026-05-08 (v0.0.51 release metadata sync)
 
 ## How to use this checklist
 
@@ -25,7 +25,7 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 - [ ] Verify Assistant copy says screen context is optional and disabled until explicitly enabled.
 - [ ] Verify Desktop Vision shows explanatory copy before any Screen Recording request.
 - [ ] Verify the visual style matches the GORKH dark Apple-level branding: graphite background, compact density, subtle borders/glow, no generic SaaS hero or large CTA header.
-- [ ] Confirm `v0.0.48` is not moved, deleted, or reused; the next release tag must be `v0.0.49` or later after final validation.
+- [ ] Confirm `v0.0.48`, `v0.0.49`, and `v0.0.50` are not moved, deleted, or reused; the next release tag must be `v0.0.51` or later after final validation.
 
 ## Desktop UI QA
 
