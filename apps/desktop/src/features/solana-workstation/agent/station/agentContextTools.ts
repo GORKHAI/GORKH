@@ -168,6 +168,20 @@ export function createAgentContextBundle(
     lines.push('');
   }
 
+  if (input.lastModuleContext?.transactionStudio) {
+    sources.push('transaction_studio_context');
+    const studio = input.lastModuleContext.transactionStudio;
+    lines.push('## Last Transaction Studio Context');
+    lines.push(`Input kind: ${studio.inputKind}`);
+    lines.push(`Decoded: ${studio.decodedSummary}`);
+    lines.push(`Risk: ${studio.riskSummary}`);
+    lines.push(`Simulation: ${studio.simulationSummary}`);
+    lines.push(`Balance diffs: ${studio.balanceDiffSummary}`);
+    lines.push(`Explanation: ${studio.explanationSummary}`);
+    redactionsApplied.push(...studio.redactionsApplied);
+    lines.push('');
+  }
+
   if (input.lastModuleContext?.builder) {
     sources.push('builder_context');
     const builder = input.lastModuleContext.builder;

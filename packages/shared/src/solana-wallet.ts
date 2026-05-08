@@ -725,6 +725,241 @@ export const SOLANA_WALLET_PORTFOLIO_PHASE_16_SAFETY_NOTES: string[] = [
 ];
 
 // ----------------------------------------------------------------------------
+// Wallet Hub + Portfolio Dashboard v0.1
+// ----------------------------------------------------------------------------
+// Safe multi-wallet metadata and read-only portfolio aggregation.
+// No private keys, seed phrases, wallet JSON, signing, execution, Squads,
+// hardware signing, staking, swaps, bridging, Jito, Drift, or DeFi execution.
+// ----------------------------------------------------------------------------
+
+export const WalletProfileKind = {
+  LOCAL_VAULT: 'local_vault',
+  BROWSER_HANDOFF: 'browser_handoff',
+  WATCH_ONLY: 'watch_only',
+  HARDWARE_WALLET_LOCKED: 'hardware_wallet_locked',
+  MULTISIG_LOCKED: 'multisig_locked',
+} as const;
+export type WalletProfileKind = (typeof WalletProfileKind)[keyof typeof WalletProfileKind];
+
+export const WalletProfileStatus = {
+  ACTIVE: 'active',
+  LOCKED: 'locked',
+  WATCH_ONLY: 'watch_only',
+  DISCONNECTED: 'disconnected',
+  ERROR: 'error',
+} as const;
+export type WalletProfileStatus = (typeof WalletProfileStatus)[keyof typeof WalletProfileStatus];
+
+export const WalletHubFilter = {
+  ALL_WALLETS: 'all_wallets',
+  ACTIVE_WALLET: 'active_wallet',
+  WATCH_ONLY: 'watch_only',
+  LOCAL_VAULT: 'local_vault',
+} as const;
+export type WalletHubFilter = (typeof WalletHubFilter)[keyof typeof WalletHubFilter];
+
+export const WalletProfileKindSchema = z.enum([
+  WalletProfileKind.LOCAL_VAULT,
+  WalletProfileKind.BROWSER_HANDOFF,
+  WalletProfileKind.WATCH_ONLY,
+  WalletProfileKind.HARDWARE_WALLET_LOCKED,
+  WalletProfileKind.MULTISIG_LOCKED,
+]);
+
+export const WalletProfileStatusSchema = z.enum([
+  WalletProfileStatus.ACTIVE,
+  WalletProfileStatus.LOCKED,
+  WalletProfileStatus.WATCH_ONLY,
+  WalletProfileStatus.DISCONNECTED,
+  WalletProfileStatus.ERROR,
+]);
+
+export const WalletHubFilterSchema = z.enum([
+  WalletHubFilter.ALL_WALLETS,
+  WalletHubFilter.ACTIVE_WALLET,
+  WalletHubFilter.WATCH_ONLY,
+  WalletHubFilter.LOCAL_VAULT,
+]);
+
+export const WalletLabelSchema = z.string().trim().min(1).max(48);
+export const WalletTagSchema = z.string().trim().min(1).max(24);
+
+export const WalletHubProfileSchema = z.object({
+  id: z.string().min(1),
+  kind: WalletProfileKindSchema,
+  status: WalletProfileStatusSchema,
+  label: WalletLabelSchema,
+  publicAddress: z.string().min(1),
+  network: SolanaRpcNetworkSchema,
+  tags: z.array(WalletTagSchema).default([]),
+  category: z.string().trim().max(32).optional(),
+  sourceProfileId: z.string().optional(),
+  createdAt: z.number().int(),
+  updatedAt: z.number().int(),
+  localOnly: z.literal(true),
+  secretMaterial: z.never().optional(),
+  safetyNotes: z.array(z.string()),
+});
+
+export const PortfolioPriceEstimateSchema = z.object({
+  mint: z.string().min(1),
+  symbol: z.string().optional(),
+  priceUsd: z.string().optional(),
+  source: z.enum(['known_stable', 'market_adapter', 'unavailable']),
+  estimated: z.literal(true),
+  fetchedAt: z.number().int().optional(),
+  warnings: z.array(z.string()).default([]),
+});
+
+export const PortfolioTokenBalanceSchema = z.object({
+  walletProfileId: z.string().min(1),
+  walletLabel: z.string().min(1),
+  mint: z.string().min(1),
+  symbol: z.string().optional(),
+  tokenAccountCount: z.number().int().nonnegative(),
+  amountRaw: z.string().optional(),
+  amountUi: z.string().optional(),
+  decimals: z.number().int().optional(),
+  uiAmountString: z.string().optional(),
+  priceEstimate: PortfolioPriceEstimateSchema.optional(),
+  estimatedUsdValue: z.string().optional(),
+  priceUnavailable: z.boolean().default(false),
+  warnings: z.array(z.string()).default([]),
+});
+
+export const PortfolioWalletSummarySchema = z.object({
+  walletProfileId: z.string().min(1),
+  walletLabel: z.string().min(1),
+  walletKind: WalletProfileKindSchema,
+  walletStatus: WalletProfileStatusSchema,
+  publicAddress: z.string().min(1),
+  network: SolanaRpcNetworkSchema,
+  solBalanceLamports: z.string().optional(),
+  solBalanceUi: z.string().optional(),
+  solEstimatedUsdValue: z.string().optional(),
+  tokenBalances: z.array(PortfolioTokenBalanceSchema),
+  totalEstimatedUsdValue: z.string().optional(),
+  priceUnavailable: z.boolean().default(false),
+  balanceStatus: z.enum(['idle', 'loading', 'loaded', 'error']),
+  error: z.string().optional(),
+  refreshedAt: z.number().int().optional(),
+  warnings: z.array(z.string()).default([]),
+});
+
+export const ConsolidatedPortfolioSummarySchema = z.object({
+  id: z.string().min(1),
+  filter: WalletHubFilterSchema,
+  walletCount: z.number().int().nonnegative(),
+  watchOnlyCount: z.number().int().nonnegative(),
+  localVaultCount: z.number().int().nonnegative(),
+  browserHandoffCount: z.number().int().nonnegative(),
+  totalEstimatedUsdValue: z.string().optional(),
+  priceUnavailable: z.boolean().default(false),
+  wallets: z.array(PortfolioWalletSummarySchema),
+  tokenBalances: z.array(PortfolioTokenBalanceSchema),
+  generatedAt: z.number().int(),
+  refreshedAt: z.number().int().optional(),
+  warnings: z.array(z.string()).default([]),
+  localOnly: z.literal(true),
+});
+
+export const PortfolioSnapshotSchema = z.object({
+  id: z.string().min(1),
+  summaryId: z.string().min(1),
+  filter: WalletHubFilterSchema,
+  walletIds: z.array(z.string().min(1)),
+  publicAddresses: z.array(z.string().min(1)),
+  tokenSummary: z.array(z.object({
+    mint: z.string().min(1),
+    symbol: z.string().optional(),
+    amountUi: z.string().optional(),
+    estimatedUsdValue: z.string().optional(),
+  })),
+  totalEstimatedUsdValue: z.string().optional(),
+  priceUnavailable: z.boolean().default(false),
+  capturedAt: z.number().int(),
+  redactionsApplied: z.array(z.string()),
+  localOnly: z.literal(true),
+});
+
+export const PortfolioContextSnapshotSchema = z.object({
+  storageKey: z.literal('gorkh.solana.walletHub.lastContext.v1'),
+  activeWalletLabel: z.string().optional(),
+  activeWalletPublicAddress: z.string().optional(),
+  walletCount: z.number().int().nonnegative(),
+  watchOnlyCount: z.number().int().nonnegative(),
+  localVaultCount: z.number().int().nonnegative(),
+  totalEstimatedUsdValue: z.string().optional(),
+  topTokens: z.array(z.string()).default([]),
+  staleOrErrorState: z.string().optional(),
+  generatedAt: z.number().int(),
+  summary: z.string(),
+  redactionsApplied: z.array(z.string()),
+  localOnly: z.literal(true),
+});
+
+export type WalletHubProfile = z.infer<typeof WalletHubProfileSchema>;
+export type WalletLabel = z.infer<typeof WalletLabelSchema>;
+export type WalletTag = z.infer<typeof WalletTagSchema>;
+export type PortfolioPriceEstimate = z.infer<typeof PortfolioPriceEstimateSchema>;
+export type PortfolioTokenBalance = z.infer<typeof PortfolioTokenBalanceSchema>;
+export type PortfolioWalletSummary = z.infer<typeof PortfolioWalletSummarySchema>;
+export type ConsolidatedPortfolioSummary = z.infer<typeof ConsolidatedPortfolioSummarySchema>;
+export type PortfolioSnapshot = z.infer<typeof PortfolioSnapshotSchema>;
+export type PortfolioContextSnapshot = z.infer<typeof PortfolioContextSnapshotSchema>;
+
+export const WALLET_HUB_STORAGE_KEY = 'gorkh.solana.walletHub.profiles.v1';
+export const WALLET_HUB_ACTIVE_PROFILE_STORAGE_KEY = 'gorkh.solana.walletHub.activeProfile.v1';
+export const WALLET_HUB_PORTFOLIO_HISTORY_STORAGE_KEY = 'gorkh.solana.walletHub.portfolioHistory.v1';
+export const WALLET_HUB_CONTEXT_STORAGE_KEY = 'gorkh.solana.walletHub.lastContext.v1';
+
+export const WALLET_HUB_SAFETY_NOTES: string[] = [
+  'Wallet Hub v0.1 stores metadata and read-only portfolio summaries only.',
+  'Watch-only wallets never request signing.',
+  'Local vault secrets remain Rust/keychain-side and are not exposed to the frontend.',
+  'Portfolio USD values are estimates and may be unavailable.',
+  'No trading, staking, swaps, bridging, Jito, Squads execution, hardware signing, or Drift integration is available.',
+];
+
+export const WALLET_HUB_LOCKED_ROADMAP = [
+  {
+    id: 'hardware_wallets_locked',
+    title: 'Hardware Wallets: Ledger/Trezor',
+    copy: 'Hardware wallets are planned for native desktop USB/HID support. Locked in v0.1. No hardware signing is available yet.',
+  },
+  {
+    id: 'squads_multisig_locked',
+    title: 'Multisig: Squads v4',
+    copy: 'Squads multisig management is planned. Locked in v0.1. No proposal creation, signing, or execution is available yet.',
+  },
+  {
+    id: 'nft_gallery_locked',
+    title: 'NFT Gallery',
+    copy: 'NFT gallery is planned as a read-only collector view. Locked in v0.1.',
+  },
+  {
+    id: 'defi_positions_locked',
+    title: 'DeFi Positions',
+    copy: 'Read-only DeFi Command Center is available. Swap execution, lending actions, LP changes, staking, and auto-optimization remain locked in v0.1.',
+  },
+  {
+    id: 'stake_accounts_locked',
+    title: 'Stake Accounts',
+    copy: 'Stake account monitoring is planned. Locked in v0.1. No staking actions are available.',
+  },
+  {
+    id: 'pnl_tracking_locked',
+    title: 'PnL Tracking',
+    copy: 'PnL tracking requires cost-basis accounting and is locked in v0.1.',
+  },
+  {
+    id: 'advanced_history_locked',
+    title: 'Advanced Portfolio History',
+    copy: 'Advanced portfolio history charts are planned. v0.1 stores compact safe snapshots only.',
+  },
+] as const;
+
+// ----------------------------------------------------------------------------
 // Local Wallet Vault + Cloak Foundation
 // ----------------------------------------------------------------------------
 

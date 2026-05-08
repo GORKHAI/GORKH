@@ -32,6 +32,7 @@ export {
   classifyShieldInput,
   extractShieldCandidate,
   prepareShieldHandoff,
+  prepareTransactionStudioHandoffFromAgent,
   summarizeShieldResult,
   type PrepareShieldHandoffInput,
 } from './agentShieldTools.js';

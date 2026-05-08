@@ -5,7 +5,14 @@
 // No execution, signing, or blockchain interaction here.
 // ============================================================================
 
-export type WorkstationModuleId = 'wallet' | 'markets' | 'agent' | 'builder' | 'shield' | 'context';
+export type WorkstationModuleId =
+  | 'wallet'
+  | 'markets'
+  | 'agent'
+  | 'builder'
+  | 'shield'
+  | 'transaction-studio'
+  | 'context';
 export type WorkstationViewId = WorkstationModuleId | 'assistant';
 
 export type WorkstationModuleStatus =
@@ -96,6 +103,18 @@ export const WORKSTATION_NAV_ITEMS: WorkstationNavItem[] = [
     iconColor: '#ef4444',
   },
   {
+    id: 'transaction-studio',
+    label: 'Transaction Studio',
+    shortLabel: 'Studio',
+    description: 'Decode, simulate, and explain Solana transactions before approval.',
+    status: 'read_only',
+    safetyLevel: 'safe_read_only',
+    primaryActionLabel: 'Review',
+    badge: 'v0.1',
+    keyboardHint: '⌘6',
+    iconColor: '#14b8a6',
+  },
+  {
     id: 'context',
     label: 'Context',
     shortLabel: 'Context',
@@ -104,7 +123,7 @@ export const WORKSTATION_NAV_ITEMS: WorkstationNavItem[] = [
     safetyLevel: 'local_only',
     primaryActionLabel: 'Export',
     badge: 'v0.1',
-    keyboardHint: '⌘6',
+    keyboardHint: '⌘7',
     iconColor: '#f59e0b',
   },
 ];

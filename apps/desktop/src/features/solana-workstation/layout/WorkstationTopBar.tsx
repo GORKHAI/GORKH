@@ -6,12 +6,14 @@ import { getNavItemById, type WorkstationModuleId, type WorkstationViewId } from
 export function WorkstationTopBar({
   activeModule,
   onShieldPrefill,
+  onTransactionStudioPrefill,
   onOpenSettings,
   onOpenAssistant,
   assistantActive,
 }: {
   activeModule: WorkstationViewId | null;
   onShieldPrefill?: (input: string) => void;
+  onTransactionStudioPrefill?: (input: string) => void;
   onOpenSettings?: () => void;
   onOpenAssistant?: () => void;
   assistantActive?: boolean;
@@ -28,10 +30,11 @@ export function WorkstationTopBar({
     if (!trimmed) return;
     const classification = classifySolanaInput(trimmed);
     if (classification !== SolanaShieldInputKind.UNKNOWN) {
-      onShieldPrefill?.(trimmed);
+      onTransactionStudioPrefill?.(trimmed);
+      if (!onTransactionStudioPrefill) onShieldPrefill?.(trimmed);
     }
     setCommand('');
-  }, [command, onShieldPrefill]);
+  }, [command, onShieldPrefill, onTransactionStudioPrefill]);
 
   return (
     <header
@@ -107,7 +110,7 @@ export function WorkstationTopBar({
             border: '1px solid #1e293b',
           }}
         >
-          Devnet
+          Global Safety: Read-only shell
         </span>
         <span
           style={{
@@ -121,7 +124,7 @@ export function WorkstationTopBar({
             color: '#94a3b8',
           }}
         >
-          Read-Only
+          Module Data: local / backend / RPC
         </span>
         <span className="gorkh-workstation-mini-badge">No signing</span>
         <span className="gorkh-workstation-mini-badge">Execution disabled</span>

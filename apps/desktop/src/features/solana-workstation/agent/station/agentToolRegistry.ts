@@ -31,9 +31,9 @@ const TOOL_DEFAULT_OUTPUTS: Record<GorkhAgentToolId, string> = {
   'markets.fetch_context':
     'Read existing Markets analyses if present. No automatic Birdeye/API fetch in v0.2.',
   'shield.decode_transaction':
-    'Prepared Shield decode handoff. Open Shield to run analyze manually.',
+    'Prepared Transaction Studio decode handoff. Open Transaction Studio to run analyze manually.',
   'shield.simulate_transaction':
-    'Prepared Shield simulation handoff. Open Shield to run simulate manually.',
+    'Prepared Transaction Studio simulation handoff. Open Transaction Studio to run simulate manually.',
   'cloak.prepare_deposit':
     'Cloak deposit draft prepared. Execution stays in Wallet → Cloak Private with explicit approval.',
   'cloak.prepare_private_send':

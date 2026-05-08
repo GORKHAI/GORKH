@@ -162,13 +162,14 @@ export function MarketsWorkbench() {
 
   return (
     <div
+      className="gorkh-premium-workbench gorkh-markets-workbench"
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '1rem',
-        padding: '1rem',
+        gap: '0.65rem',
         height: '100%',
-        overflow: 'auto',
+        minHeight: 0,
+        overflow: 'hidden',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>

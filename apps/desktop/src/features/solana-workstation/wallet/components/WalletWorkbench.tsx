@@ -44,14 +44,23 @@ import {
   saveSelectedLocalWalletId,
 } from '../local-vault/localWalletVaultStorage.js';
 import { CloakWalletPanel } from '../cloak/components/CloakWalletPanel.js';
+import { WalletHubDashboard } from '../hub/index.js';
+import {
+  loadActiveWalletHubProfileId,
+  loadWalletHubProfiles,
+  mergeWalletHubProfiles,
+} from '../hub/index.js';
+import { DeFiCommandCenter } from '../defi/index.js';
 
-type WalletTab = 'overview' | 'local' | 'cloak' | 'portfolio' | 'snapshot' | 'send' | 'receive' | 'history' | 'security' | 'connect' | 'markets' | 'context';
+type WalletTab = 'hub' | 'overview' | 'local' | 'cloak' | 'portfolio' | 'defi' | 'snapshot' | 'send' | 'receive' | 'history' | 'security' | 'connect' | 'markets' | 'context';
 
 const TABS: { id: WalletTab; label: string }[] = [
+  { id: 'hub', label: 'Hub' },
   { id: 'overview', label: 'Overview' },
   { id: 'local', label: 'Local Wallet' },
   { id: 'cloak', label: 'Private / Cloak' },
   { id: 'portfolio', label: 'Balances' },
+  { id: 'defi', label: 'DeFi' },
   { id: 'snapshot', label: 'Snapshot' },
   { id: 'send', label: 'Send' },
   { id: 'receive', label: 'Receive' },
@@ -73,7 +82,7 @@ export function WalletWorkbench({
   const [localWallets, setLocalWallets] = useState(() => loadLocalWalletProfiles());
   const [selectedLocalWalletId, setSelectedLocalWalletId] = useState<string | null>(() => loadSelectedLocalWalletId());
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<WalletTab>('overview');
+  const [activeTab, setActiveTab] = useState<WalletTab>('hub');
 
   useEffect(() => {
     saveWalletWorkspaceState(workspace);
@@ -105,6 +114,15 @@ export function WalletWorkbench({
     () => localWallets.find((wallet) => wallet.walletId === selectedLocalWalletId) ?? localWallets[0] ?? null,
     [localWallets, selectedLocalWalletId]
   );
+  const walletHubProfiles = useMemo(
+    () => mergeWalletHubProfiles({
+      storedProfiles: loadWalletHubProfiles(),
+      walletProfiles: workspace.profiles,
+      localWallets,
+    }),
+    [localWallets, workspace.profiles]
+  );
+  const activeWalletHubProfileId = loadActiveWalletHubProfileId();
 
   const contextSummary = useMemo(
     () => createWalletContextSummary(workspace, selectedProfile?.network ?? 'devnet', selectedProfile?.id),
@@ -238,13 +256,15 @@ export function WalletWorkbench({
 
   return (
     <div
+      className="gorkh-premium-workbench gorkh-wallet-workbench"
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1rem',
-        padding: '1rem',
+        display: activeTab === 'hub' ? 'grid' : 'flex',
+        gridTemplateRows: activeTab === 'hub' ? 'auto auto auto minmax(0, 1fr) auto' : undefined,
+        flexDirection: activeTab === 'hub' ? undefined : 'column',
+        gap: activeTab === 'hub' ? '0.6rem' : '1rem',
         height: '100%',
-        overflow: 'auto',
+        minHeight: 0,
+        overflow: 'hidden',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -315,6 +335,15 @@ export function WalletWorkbench({
         </div>
       )}
 
+      {activeTab === 'hub' && (
+        <WalletHubDashboard
+          walletProfiles={workspace.profiles}
+          localWallets={localWallets}
+          readOnlySnapshots={workspace.readOnlySnapshots}
+          onSnapshot={handleSnapshot}
+        />
+      )}
+
       {activeTab === 'local' && (
         <div style={{ maxWidth: '760px' }}>
           <LocalWalletVaultPanel
@@ -348,6 +377,14 @@ export function WalletWorkbench({
             }}
           />
         </div>
+      )}
+
+      {activeTab === 'defi' && (
+        <DeFiCommandCenter
+          profiles={walletHubProfiles}
+          activeProfileId={activeWalletHubProfileId}
+          initialScope="active_wallet"
+        />
       )}
 
       {activeTab === 'connect' && (

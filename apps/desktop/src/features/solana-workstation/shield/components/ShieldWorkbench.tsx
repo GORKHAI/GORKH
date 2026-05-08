@@ -254,7 +254,7 @@ export function ShieldWorkbench({ prefilledInput }: { prefilledInput?: string })
   const isSerializedTx = inputKind === SolanaShieldInputKind.SERIALIZED_TRANSACTION_BASE64;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="gorkh-premium-workbench gorkh-shield-workbench" style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', height: '100%', minHeight: 0, overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

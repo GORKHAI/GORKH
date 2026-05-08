@@ -65,6 +65,13 @@ export function createRedactedAgentChatContext(input: AgentChatContextInput): Go
     excludedSources.push('shield_context');
   }
 
+  if (input.settings.includeShieldContext && input.lastModuleContext?.transactionStudio) {
+    const studio = input.lastModuleContext.transactionStudio;
+    sources.push('transaction_studio_context');
+    lines.push(`Last Transaction Studio: ${studio.decodedSummary}; ${studio.riskSummary}; ${studio.simulationSummary}`);
+    studio.redactionsApplied.forEach((r) => redactions.add(r));
+  }
+
   if (input.settings.includeBuilderContext && input.lastModuleContext?.builder) {
     sources.push('builder_context');
     lines.push(`Last Builder: ${input.lastModuleContext.builder.projectKind}; IDLs=${input.lastModuleContext.builder.idlCount}; logs=${input.lastModuleContext.builder.logFindingCount}`);

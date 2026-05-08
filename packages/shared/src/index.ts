@@ -1837,10 +1837,17 @@ export * from './solana-shield.js';
 export * from './solana-rpc.js';
 
 // ============================================================================
+// GORKH Transaction Studio (v0.1 — Decode + Simulate + Explain)
+// ============================================================================
+
+export * from './solana-transaction-studio.js';
+
+// ============================================================================
 // GORKH Builder (Phase 4 — Anchor/Solana Workspace Inspector)
 // ============================================================================
 
 export * from './solana-builder.js';
+export * from './solana-builder-toolbox.js';
 
 // ============================================================================
 // GORKH Agent (Phase 6 / 9A — Mainnet-Safe Solana Agent Control Center)
@@ -1859,6 +1866,7 @@ export * from './solana-markets.js';
 export * from './solana-protocol-registry.js';
 export * from './solana-private.js';
 export * from './solana-wallet.js';
+export * from './solana-defi-command-center.js';
 
 // ============================================================================
 // GORKH Markets (Phase 8 — Read-Only Market Intelligence)

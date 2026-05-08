@@ -1,7 +1,10 @@
 import type {
   GorkhAgentShieldInputKind,
   GorkhAgentShieldToolResult,
+  TransactionStudioHandoff,
 } from '@gorkh/shared';
+import { TransactionStudioSource } from '@gorkh/shared';
+import { createTransactionStudioHandoff } from '../../transaction-studio/transactionStudioHandoff.js';
 
 export interface PrepareShieldHandoffInput {
   intent: string;
@@ -62,7 +65,22 @@ export function prepareShieldHandoff(
 
 export function summarizeShieldResult(result: GorkhAgentShieldToolResult): string {
   if (!result.prefilledInput) {
-    return 'Shield handoff prepared without a candidate. Open Shield and paste input manually.';
+    return 'Transaction Studio handoff prepared without a candidate. Open Transaction Studio and paste input manually.';
   }
-  return `Shield handoff prepared (${result.inputKind}). Open Shield to decode/simulate manually.`;
+  return `Transaction Studio handoff prepared (${result.inputKind}). Open Transaction Studio to decode and simulate manually.`;
+}
+
+export function prepareTransactionStudioHandoffFromAgent(
+  input: PrepareShieldHandoffInput
+): TransactionStudioHandoff {
+  const candidate = input.candidate ?? extractShieldCandidate(input.intent) ?? '';
+  return createTransactionStudioHandoff({
+    source: TransactionStudioSource.AGENT,
+    rawInput: candidate,
+    label: 'Agent transaction review handoff',
+    decodedSummary: candidate ? `Agent detected ${classifyShieldInput(candidate)} candidate.` : undefined,
+    warnings: candidate
+      ? ['GORKH Agent prepared this for manual Transaction Studio review.']
+      : ['No transaction candidate detected. Paste input manually in Transaction Studio.'],
+  });
 }

@@ -32,7 +32,7 @@ export function formatAgentChatReply(
         ? `I read your local Markets watchlist. ${summarizeMarketsResult(result.marketsResult)} I did not fetch Birdeye or execute any market action.`
         : 'I read local Markets state, but no market context was available. I did not fetch Birdeye or execute any market action.';
     case GorkhAgentTaskKind.TRANSACTION_REVIEW:
-      return 'I prepared a Shield review handoff. Open Shield to decode or simulate manually.';
+      return 'I prepared this transaction for Transaction Studio review. Open Transaction Studio to decode and simulate manually.';
     case GorkhAgentTaskKind.CLOAK_PRIVATE_PAYMENT_DRAFT:
       return 'I prepared a Cloak draft handoff. Execution is blocked in chat. Review it inside Wallet → Cloak Private, where the secure wallet approval flow is enforced.';
     case GorkhAgentTaskKind.ZERION_DCA_PROPOSAL:

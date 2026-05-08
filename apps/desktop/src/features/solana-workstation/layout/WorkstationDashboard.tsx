@@ -29,6 +29,13 @@ const DASHBOARD_PANELS: Array<{
     action: 'Open Shield',
   },
   {
+    id: 'transaction-studio',
+    title: 'Transaction Studio',
+    metric: 'Safe review',
+    detail: 'Decode, simulate, explain, inspect risk, and prepare review handoffs.',
+    action: 'Open Transaction Studio',
+  },
+  {
     id: 'builder',
     title: 'Builder',
     metric: 'Local workspace',
@@ -75,7 +82,7 @@ export function WorkstationDashboard({
             Operational Dashboard
           </h1>
           <p style={{ margin: '0.22rem 0 0', fontSize: '0.76rem', color: 'rgba(255,255,255,0.56)' }}>
-            Fixed-shell overview for Wallet, Markets, Shield, Builder, Agent, and Context.
+            Fixed-shell overview for Wallet, Markets, Shield, Transaction Studio, Builder, Agent, and Context.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>

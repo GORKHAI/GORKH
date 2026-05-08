@@ -9,6 +9,7 @@ export function WorkstationShell({
   activeModule,
   onSelectModule,
   onShieldPrefill,
+  onTransactionStudioPrefill,
   onOpenSettings,
   onOpenAssistant,
   assistantActive,
@@ -17,6 +18,7 @@ export function WorkstationShell({
   activeModule: WorkstationViewId | null;
   onSelectModule: (id: WorkstationViewId | null) => void;
   onShieldPrefill?: (input: string) => void;
+  onTransactionStudioPrefill?: (input: string) => void;
   onOpenSettings?: () => void;
   onOpenAssistant?: () => void;
   assistantActive?: boolean;
@@ -31,6 +33,7 @@ export function WorkstationShell({
           <WorkstationTopBar
             activeModule={activeModule}
             onShieldPrefill={onShieldPrefill}
+            onTransactionStudioPrefill={onTransactionStudioPrefill}
             onOpenSettings={onOpenSettings}
             onOpenAssistant={onOpenAssistant}
             assistantActive={assistantActive}

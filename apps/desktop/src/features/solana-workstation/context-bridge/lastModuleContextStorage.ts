@@ -4,6 +4,7 @@ import {
   type SolanaWorkstationLastBuilderContext,
   type SolanaWorkstationLastModuleContext,
   type SolanaWorkstationLastShieldContext,
+  type SolanaWorkstationLastTransactionStudioContext,
 } from '@gorkh/shared';
 
 const STORAGE_KEY = 'gorkh.solana.contextBridge.lastModuleContext.v1';
@@ -98,6 +99,21 @@ export function saveLastBuilderContext(snapshot: SolanaWorkstationLastBuilderCon
     builder: {
       ...snapshot,
       source: SolanaWorkstationContextSource.BUILDER,
+      localOnly: true,
+      updatedAt: Date.now(),
+    },
+  });
+}
+
+export function saveLastTransactionStudioContext(
+  snapshot: SolanaWorkstationLastTransactionStudioContext
+): void {
+  const current = loadLastModuleContext();
+  saveLastModuleContext({
+    ...current,
+    transactionStudio: {
+      ...snapshot,
+      source: SolanaWorkstationContextSource.TRANSACTION_STUDIO,
       localOnly: true,
       updatedAt: Date.now(),
     },

@@ -253,7 +253,8 @@ export async function getTokenAccountsByOwnerReadOnly(
 export async function simulateTransactionPreview(
   endpoint: SolanaRpcEndpointConfig,
   serializedTransactionBase64: string,
-  commitment?: SolanaRpcCommitment
+  commitment?: SolanaRpcCommitment,
+  accountAddresses?: string[]
 ): Promise<SolanaSimulationPreview> {
   const result = await rpcCall<{
     value: {
@@ -270,6 +271,14 @@ export async function simulateTransactionPreview(
       encoding: 'base64',
       replaceRecentBlockhash: true,
       sigVerify: false,
+      ...(accountAddresses && accountAddresses.length > 0
+        ? {
+            accounts: {
+              encoding: 'base64',
+              addresses: accountAddresses.slice(0, 20),
+            },
+          }
+        : {}),
     },
   ]);
 
@@ -386,4 +395,64 @@ export async function getTokenLargestAccountsReadOnly(
     uiAmountString: v.uiAmountString,
     fetchedAt,
   }));
+}
+
+export async function getHealthReadOnly(endpoint: SolanaRpcEndpointConfig): Promise<{ status: string; fetchedAt: number }> {
+  const result = await rpcCall<string>(endpoint, 'getHealth', []);
+  return { status: result, fetchedAt: Date.now() };
+}
+
+export async function getVersionReadOnly(endpoint: SolanaRpcEndpointConfig): Promise<{ version?: string; raw: unknown; fetchedAt: number }> {
+  const result = await rpcCall<{ 'solana-core'?: string }>(endpoint, 'getVersion', []);
+  return { version: result['solana-core'], raw: result, fetchedAt: Date.now() };
+}
+
+export async function getSlotReadOnly(
+  endpoint: SolanaRpcEndpointConfig,
+  commitment?: SolanaRpcCommitment
+): Promise<{ slot: number; fetchedAt: number }> {
+  const result = await rpcCall<number>(endpoint, 'getSlot', [commitmentParam(commitment)]);
+  return { slot: result, fetchedAt: Date.now() };
+}
+
+export async function getBlockHeightReadOnly(
+  endpoint: SolanaRpcEndpointConfig,
+  commitment?: SolanaRpcCommitment
+): Promise<{ blockHeight: number; fetchedAt: number }> {
+  const result = await rpcCall<number>(endpoint, 'getBlockHeight', [commitmentParam(commitment)]);
+  return { blockHeight: result, fetchedAt: Date.now() };
+}
+
+export async function getEpochInfoReadOnly(
+  endpoint: SolanaRpcEndpointConfig,
+  commitment?: SolanaRpcCommitment
+): Promise<{
+  epoch: number;
+  slotIndex: number;
+  slotsInEpoch: number;
+  absoluteSlot: number;
+  blockHeight?: number;
+  transactionCount?: number;
+  fetchedAt: number;
+}> {
+  const result = await rpcCall<{
+    epoch: number;
+    slotIndex: number;
+    slotsInEpoch: number;
+    absoluteSlot: number;
+    blockHeight?: number;
+    transactionCount?: number;
+  }>(endpoint, 'getEpochInfo', [commitmentParam(commitment)]);
+  return { ...result, fetchedAt: Date.now() };
+}
+
+export async function getSignatureStatusesReadOnly(
+  endpoint: SolanaRpcEndpointConfig,
+  signatures: string[]
+): Promise<{ statuses: unknown[]; fetchedAt: number }> {
+  const result = await rpcCall<{ value: unknown[] }>(endpoint, 'getSignatureStatuses', [
+    signatures.slice(0, 20),
+    { searchTransactionHistory: false },
+  ]);
+  return { statuses: result.value, fetchedAt: Date.now() };
 }

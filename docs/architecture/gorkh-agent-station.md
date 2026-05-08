@@ -9,7 +9,7 @@ the GORKH desktop app. v0.4 still ships exactly **one active agent** — `GORKH 
 - One persistent local agent: **GORKH Agent**.
 - In-app conversational chat at **Agent → GORKH Agent → Chat**.
 - Deterministic chat planning by default.
-- Redacted context builder for safe Wallet, Markets, Shield, Builder, Memory, and Agent Station summaries.
+- Redacted context builder for safe Wallet, Markets, Shield, Transaction Studio, Builder, Memory, and Agent Station summaries.
 - Inline chat tool cards for Wallet, Markets, Shield, Cloak, Zerion, Builder, Context, and policy blocks.
 - Durable chat-card action references that resolve Cloak, Zerion, Shield, and Context payloads from local handoff history after reload.
 - Manual and `background_while_app_open` runtime modes.
@@ -17,8 +17,8 @@ the GORKH desktop app. v0.4 still ships exactly **one active agent** — `GORKH 
 - Policy engine that gates every tool call.
 - Tool router with safe read/draft tools only.
 - Real Wallet and Markets summaries from existing local workstation state.
-- Shield, Cloak, Zerion, and Context handoffs that prefill destination modules.
-- Passive last-module context summaries for Shield and Builder, stored only after user-triggered module actions.
+- Transaction Studio, Shield, Cloak, Zerion, and Context handoffs that prefill destination modules.
+- Passive last-module context summaries for Shield, Transaction Studio, and Builder, stored only after user-triggered module actions.
 - Approval queue for proposals that require explicit human approval.
 - Local-only audit log of every state transition.
 - Local memory v0.1 (non-sensitive observations) backed by `localStorage`.
@@ -81,7 +81,7 @@ uses the same safe runtime from chat:
 |---|---|---|
 | "check my wallet", "portfolio", "balance" | `wallet.read_portfolio` / `wallet.read_snapshot` | Wallet Summary card from stored wallet profile, latest read-only snapshot, and portfolio summary where present. |
 | "analyze token", "mint", "risk" | `markets.fetch_context` | Markets Summary card from local watchlist and stored analyses. No Birdeye/API fetch is started. |
-| "explain tx", "signature", "transaction" | `shield.decode_transaction` | Shield Review handoff with prefilled input. User clicks Analyze/Simulate in Shield. |
+| "explain tx", "signature", "transaction" | `shield.decode_transaction` | Transaction Studio review handoff with prefilled input. User clicks Decode/Simulate in Transaction Studio. |
 | "private send", "cloak", "deposit privately" | `cloak.prepare_private_send` / `cloak.prepare_deposit` | Cloak draft handoff to Wallet -> Private / Cloak. No signer bridge call. |
 | "dca", "zerion", "SOL to USDC" | `zerion.create_proposal` | Zerion proposal handoff to Agent -> Zerion Executor. No CLI swap execution. |
 | "bundle", "summary", "export context" | `context.create_bundle` | Sanitized local context bundle with redaction labels. |
@@ -93,7 +93,7 @@ results. Examples:
 
 - Wallet: local selected profile, SOL balance, token account count, and no RPC refresh from chat.
 - Markets: local watchlist summary and no Birdeye/API fetch from chat.
-- Shield: handoff only; decode/simulation happens after the user opens Shield.
+- Transaction Studio: handoff only; decode/simulation happens after the user opens Transaction Studio.
 - Cloak: draft handoff only; execution stays in Wallet → Cloak Private.
 - Zerion: proposal handoff only; execution stays in Zerion Executor.
 - Context: redacted context bundle excluding private keys, seed phrases, Cloak notes, viewing keys, API keys, Zerion tokens, and raw signing payloads.
@@ -103,6 +103,7 @@ results. Examples:
 `gorkh.solana.contextBridge.lastModuleContext.v1` stores redacted deterministic summaries from modules after the user performs an action:
 
 - Shield writes input kind, truncated input preview, input hash, network, summary, risk count, highest risk, and whether RPC/simulation results already exist.
+- Transaction Studio writes input kind, decoded summary, risk summary, simulation summary, balance diff summary, explanation summary, and redaction labels.
 - Builder writes project kind, package manager, workspace label only, IDL/instruction/error counts, toolchain status, warnings, recommendations, and sanitized markdown.
 
 The store deliberately excludes full workspace paths, raw private files, `.env`, wallet files, private keys, seed phrases, Cloak notes/viewing keys, Zerion API keys, and agent tokens. Agent Station reads this store passively for context bundles and Builder Review intents; it does not start Shield RPC/simulation, Builder inspection, tool version checks, or diagnostic commands.
@@ -131,7 +132,7 @@ Cross-module navigation is prefill-only:
 
 - **Open Wallet -> Cloak Private** moves the user to Wallet and preloads safe amount/recipient fields when available.
 - **Open Agent -> Zerion Executor** moves the user to Zerion Executor and preloads safe amount/wallet/policy fields when available.
-- **Open Shield** moves the user to Shield and preloads the candidate input.
+- **Open Transaction Studio** moves the user to Transaction Studio and preloads the candidate input for manual decode/simulation review.
 
 The destination module still requires the user to click its own review, prepare, approve, or execute controls.
 

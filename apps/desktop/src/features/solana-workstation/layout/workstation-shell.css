@@ -89,7 +89,7 @@ select {
 .gorkh-workstation-workspace {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 0.85rem;
 }
 
@@ -227,6 +227,125 @@ select {
   gap: 1rem;
   padding: 0.7rem 0.85rem;
   margin-bottom: 0.7rem;
+}
+
+.gorkh-workstation-module-frame {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gorkh-workstation-module-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gorkh-premium-workbench {
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden !important;
+  color: var(--gorkh-text);
+}
+
+.gorkh-premium-workbench h1,
+.gorkh-premium-workbench h2,
+.gorkh-premium-workbench h3,
+.gorkh-premium-workbench h4 {
+  color: var(--gorkh-text) !important;
+  letter-spacing: 0 !important;
+}
+
+.gorkh-premium-workbench p,
+.gorkh-premium-workbench label,
+.gorkh-premium-workbench span {
+  color: inherit;
+}
+
+.gorkh-premium-workbench input,
+.gorkh-premium-workbench textarea,
+.gorkh-premium-workbench select {
+  background: rgba(0, 0, 0, 0.24) !important;
+  border: 1px solid var(--gorkh-border) !important;
+  border-radius: 6px !important;
+  color: rgba(255, 255, 255, 0.84) !important;
+  box-shadow: none !important;
+}
+
+.gorkh-premium-workbench textarea {
+  resize: none !important;
+}
+
+.gorkh-premium-workbench button {
+  border-radius: 6px !important;
+  border: 1px solid var(--gorkh-border) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.82) !important;
+  box-shadow: none !important;
+}
+
+.gorkh-premium-workbench button:disabled,
+.gorkh-premium-workbench [aria-disabled="true"] {
+  opacity: 0.48;
+  cursor: not-allowed !important;
+}
+
+.gorkh-premium-workbench > div {
+  min-height: 0;
+}
+
+.gorkh-premium-workbench [style*="background: '#f8fafc'"],
+.gorkh-premium-workbench [style*="background: '#fef2f2'"],
+.gorkh-premium-workbench [style*="background: '#fff'"],
+.gorkh-premium-workbench [style*="background: 'rgba(255,255,255,0.8)'"],
+.gorkh-premium-workbench [style*="background: 'rgba(254,252,232,0.6)'"],
+.gorkh-premium-workbench [style*="background: 'rgba(254,252,232,0.5)'"] {
+  background: var(--gorkh-panel) !important;
+  border-color: var(--gorkh-border) !important;
+  color: rgba(255, 255, 255, 0.68) !important;
+}
+
+.gorkh-premium-workbench [style*="border: '1px dashed #cbd5e1'"] {
+  border: 1px dashed var(--gorkh-border-strong) !important;
+}
+
+.gorkh-premium-workbench [style*="color: '#0f172a'"],
+.gorkh-premium-workbench [style*="color: '#475569'"],
+.gorkh-premium-workbench [style*="color: '#64748b'"],
+.gorkh-premium-workbench [style*="color: '#94a3b8'"],
+.gorkh-premium-workbench [style*="color: '#854d0e'"],
+.gorkh-premium-workbench [style*="color: '#991b1b'"] {
+  color: rgba(255, 255, 255, 0.64) !important;
+}
+
+.gorkh-premium-scroll-pane {
+  min-height: 0;
+  overflow: auto;
+  border-radius: 8px;
+}
+
+.gorkh-premium-status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 0.42rem;
+  border-radius: 4px;
+  border: 1px solid var(--gorkh-border);
+  background: var(--gorkh-panel);
+  color: var(--gorkh-text-muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gorkh-premium-safety-strip {
+  border: 1px solid rgba(20, 184, 166, 0.28) !important;
+  background: rgba(20, 184, 166, 0.08) !important;
+  color: rgba(223, 254, 249, 0.86) !important;
 }
 
 .gorkh-workstation-dashboard-grid {

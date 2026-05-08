@@ -25,11 +25,13 @@ import { FilePreviewPanel } from './FilePreviewPanel.js';
 import { BuilderContextPanel } from './BuilderContextPanel.js';
 import { createLastBuilderContextSnapshot } from '../../context-bridge/createLastModuleContextSnapshots.js';
 import { saveLastBuilderContext } from '../../context-bridge/lastModuleContextStorage.js';
+import { DeveloperToolboxPanel } from '../toolbox/index.js';
 
-type BuilderTab = 'inspect' | 'files' | 'logs' | 'diagnostics' | 'commands' | 'context';
+type BuilderTab = 'inspect' | 'toolbox' | 'files' | 'logs' | 'diagnostics' | 'commands' | 'context';
 
 const TABS: { id: BuilderTab; label: string }[] = [
   { id: 'inspect', label: 'Inspect' },
+  { id: 'toolbox', label: 'Developer Toolbox' },
   { id: 'files', label: 'Files' },
   { id: 'logs', label: 'Logs' },
   { id: 'diagnostics', label: 'Diagnostics' },
@@ -125,7 +127,18 @@ export function BuilderWorkbench({ onSaveContext }: { onSaveContext?: (markdown:
   }, [contextSummary, inspection]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div
+      className="gorkh-premium-workbench gorkh-builder-workbench"
+      style={{
+        display: activeTab === 'toolbox' ? 'grid' : 'flex',
+        gridTemplateRows: activeTab === 'toolbox' ? 'auto auto auto minmax(0, 1fr)' : undefined,
+        flexDirection: activeTab === 'toolbox' ? undefined : 'column',
+        gap: activeTab === 'toolbox' ? '0.65rem' : '1rem',
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -261,22 +274,24 @@ export function BuilderWorkbench({ onSaveContext }: { onSaveContext?: (markdown:
       )}
 
       {/* Tabs */}
-      {inspection && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: activeTab === 'toolbox' ? 'grid' : 'flex', gridTemplateRows: activeTab === 'toolbox' ? 'auto minmax(0, 1fr)' : undefined, minHeight: 0, overflow: activeTab === 'toolbox' ? 'hidden' : undefined, flexDirection: activeTab === 'toolbox' ? undefined : 'column', gap: activeTab === 'toolbox' ? '0.65rem' : '1rem' }}>
           <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', borderBottom: '1px solid rgba(148,163,184,0.18)', paddingBottom: '0.25rem' }}>
             {TABS.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  if (tab.id === 'toolbox' || inspection) setActiveTab(tab.id);
+                }}
+                disabled={tab.id !== 'toolbox' && !inspection}
                 style={{
                   padding: '0.4rem 0.85rem',
                   borderRadius: '6px',
                   border: 'none',
                   background: activeTab === tab.id ? '#0f172a' : 'transparent',
-                  color: activeTab === tab.id ? 'white' : '#64748b',
+                  color: tab.id !== 'toolbox' && !inspection ? '#cbd5e1' : activeTab === tab.id ? 'white' : '#64748b',
                   fontSize: '0.8rem',
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: tab.id !== 'toolbox' && !inspection ? 'not-allowed' : 'pointer',
                 }}
               >
                 {tab.label}
@@ -284,7 +299,7 @@ export function BuilderWorkbench({ onSaveContext }: { onSaveContext?: (markdown:
             ))}
           </div>
 
-          {activeTab === 'inspect' && (
+          {activeTab === 'inspect' && inspection && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <WorkspaceInspector summary={inspection.summary} anchorToml={inspection.anchorToml} />
               {toolStatuses.length > 0 && <ToolStatusPanel statuses={toolStatuses} />}
@@ -311,18 +326,19 @@ export function BuilderWorkbench({ onSaveContext }: { onSaveContext?: (markdown:
             </div>
           )}
 
-          {activeTab === 'files' && <FilePreviewPanel fileTree={inspection.fileTree} />}
-          {activeTab === 'logs' && (
+          {activeTab === 'toolbox' && <DeveloperToolboxPanel />}
+
+          {activeTab === 'files' && inspection && <FilePreviewPanel fileTree={inspection.fileTree} />}
+          {activeTab === 'logs' && inspection && (
             <LogAnalyzerPanel idls={inspection.idls} onAnalysisChange={setLogAnalysis} />
           )}
           {activeTab === 'diagnostics' && <DiagnosticsPanel />}
           {activeTab === 'commands' && <CommandDraftsPanel drafts={commandDrafts} />}
           {activeTab === 'context' && <BuilderContextPanel summary={contextSummary} />}
         </div>
-      )}
 
       {/* Empty state */}
-      {!inspection && status === SolanaBuilderWorkspaceStatus.IDLE && !error && (
+      {!inspection && activeTab !== 'toolbox' && status === SolanaBuilderWorkspaceStatus.IDLE && !error && (
         <div
           style={{
             padding: '1.5rem',

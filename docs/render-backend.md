@@ -92,6 +92,22 @@ pnpm --filter @gorkh/api prisma:generate && pnpm --filter @gorkh/api migrate:dep
 
 - `GITHUB_TOKEN`
   - Only required if the GitHub repo is private or you need higher API limits
+- DeFi read-only aggregator env:
+  - `DEFI_FEATURES_ENABLED=true`
+  - `DEFI_CACHE_TTL_MS=30000`
+  - `DEFI_REQUEST_TIMEOUT_MS=8000`
+  - `SOLANA_RPC_MAINNET_URL`
+  - `SOLANA_RPC_DEVNET_URL`
+  - `HELIUS_API_KEY`
+  - `SHYFT_API_KEY`
+  - `BIRDEYE_API_KEY`
+  - `JUPITER_API_BASE=https://quote-api.jup.ag`
+  - `KAMINO_API_BASE`
+  - `MARGINFI_API_BASE`
+  - `ORCA_API_BASE`
+  - `RAYDIUM_API_BASE`
+  - `METEORA_API_BASE`
+  - These are for public/read-only protocol, indexer, and RPC data only. Never put wallet private keys, seed phrases, wallet JSON, Cloak viewing keys, Zerion tokens, or signing material in Render env.
 - `LOG_LEVEL`
   - Default `info`
 - `STRIPE_SECRET_KEY`

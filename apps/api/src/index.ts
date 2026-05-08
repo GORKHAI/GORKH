@@ -58,6 +58,7 @@ import { setupSignalHandlers } from './lib/shutdown.js';
 import { closeAllConnections as closeWsConnections } from './lib/ws-handler.js';
 import { initErrorTracking, reportError } from './lib/error-tracking.js';
 import { registerFreeTierRoutes } from './routes/free.js';
+import { registerDeFiRoutes } from './routes/defi.js';
 import {
   counterLabelsFromRateLimitKey,
   incCounter,
@@ -2379,6 +2380,7 @@ fastify.get('/devices/:deviceId/tools', async (request, reply) => {
 
 // Register free tier routes
 await registerFreeTierRoutes(fastify);
+await registerDeFiRoutes(fastify);
 
 fastify.get('/events', async (request, reply) => {
   if (!(await enforceHttpRateLimit(reply, `ip:${request.ip}:sse`, config.SSE_CONNECT_PER_MIN, 60_000))) {

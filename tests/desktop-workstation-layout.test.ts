@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   WORKSTATION_NAV_ITEMS,
@@ -12,15 +13,16 @@ import {
 // Navigation model
 // ---------------------------------------------------------------------------
 
-test('WORKSTATION_NAV_ITEMS includes all 6 modules', () => {
+test('WORKSTATION_NAV_ITEMS includes all 7 modules', () => {
   const ids = WORKSTATION_NAV_ITEMS.map((i) => i.id);
   assert.ok(ids.includes('wallet'));
   assert.ok(ids.includes('markets'));
   assert.ok(ids.includes('agent'));
   assert.ok(ids.includes('builder'));
   assert.ok(ids.includes('shield'));
+  assert.ok(ids.includes('transaction-studio'));
   assert.ok(ids.includes('context'));
-  assert.equal(WORKSTATION_NAV_ITEMS.length, 6);
+  assert.equal(WORKSTATION_NAV_ITEMS.length, 7);
 });
 
 test('Wallet module is planner_only and draft_only', () => {
@@ -43,6 +45,15 @@ test('Shield module is read_only and safe_read_only', () => {
   assert.ok(shield);
   assert.equal(shield!.status, 'read_only');
   assert.equal(shield!.safetyLevel, 'safe_read_only');
+});
+
+test('Transaction Studio module is read_only and safe_read_only', () => {
+  const studio = getNavItemById('transaction-studio');
+  assert.ok(studio);
+  assert.equal(studio!.status, 'read_only');
+  assert.equal(studio!.safetyLevel, 'safe_read_only');
+  assert.equal(studio!.badge, 'v0.1');
+  assert.match(studio!.description, /Decode, simulate, and explain/);
 });
 
 test('Agent module is preview_only and local_only', () => {
@@ -145,4 +156,39 @@ test('Safety badges cover all expected levels', () => {
     assert.ok(c.text.startsWith('#'));
     assert.ok(c.border.startsWith('#'));
   }
+});
+
+test('Premium workstation shell uses fixed workspace overflow and shared UI tokens', () => {
+  const css = readFileSync('apps/desktop/src/features/solana-workstation/layout/workstation-shell.css', 'utf8');
+  assert.match(css, /\.gorkh-workstation-workspace[\s\S]*overflow:\s*hidden/);
+  assert.match(css, /\.gorkh-premium-workbench/);
+  assert.match(css, /\.gorkh-premium-status-chip/);
+  assert.match(css, /\.gorkh-premium-safety-strip/);
+});
+
+test('Rougher workstation modules opt into the premium fixed-shell frame', () => {
+  const moduleFiles = [
+    'apps/desktop/src/features/solana-workstation/markets/MarketsWorkbench.tsx',
+    'apps/desktop/src/features/solana-workstation/shield/components/ShieldWorkbench.tsx',
+    'apps/desktop/src/features/solana-workstation/agent/components/AgentWorkbench.tsx',
+    'apps/desktop/src/features/solana-workstation/context-bridge/components/ContextBridgePanel.tsx',
+    'apps/desktop/src/features/solana-workstation/builder/components/BuilderWorkbench.tsx',
+    'apps/desktop/src/features/solana-workstation/wallet/components/WalletWorkbench.tsx',
+  ];
+
+  for (const file of moduleFiles) {
+    const source = readFileSync(file, 'utf8');
+    assert.match(source, /gorkh-premium-workbench/, `${file} should use the shared premium frame`);
+    assert.match(source, /overflow:\s*'hidden'/, `${file} should not introduce module-level page scrolling`);
+  }
+});
+
+test('Global status copy separates shell safety from module data sources', () => {
+  const topbar = readFileSync('apps/desktop/src/features/solana-workstation/layout/WorkstationTopBar.tsx', 'utf8');
+  const statusbar = readFileSync('apps/desktop/src/features/solana-workstation/layout/WorkstationStatusBar.tsx', 'utf8');
+  assert.match(topbar, /Global Safety: Read-only shell/);
+  assert.match(topbar, /Module Data: local \/ backend \/ RPC/);
+  assert.match(statusbar, /Global Safety:/);
+  assert.match(statusbar, /Module data source shown locally/);
+  assert.doesNotMatch(statusbar, />devnet</);
 });

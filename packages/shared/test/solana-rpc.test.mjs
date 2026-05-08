@@ -45,7 +45,7 @@ test('assertAllowedSolanaRpcMethod throws for denied methods', () => {
 });
 
 test('assertAllowedSolanaRpcMethod throws for unknown methods', () => {
-  assert.throws(() => assertAllowedSolanaRpcMethod('getProgramAccounts'), /not in the allowed list/);
+  assert.throws(() => assertAllowedSolanaRpcMethod('arbitraryRpcMethod'), /not in the allowed list/);
 });
 
 test('isAllowedSolanaRpcMethod matches allowed list', () => {

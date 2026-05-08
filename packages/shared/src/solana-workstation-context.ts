@@ -14,6 +14,7 @@ import { z } from 'zod';
 export const SolanaWorkstationContextSource = {
   AGENT: 'agent',
   SHIELD: 'shield',
+  TRANSACTION_STUDIO: 'transaction_studio',
   BUILDER: 'builder',
   MARKETS: 'markets',
   PRIVATE: 'private',
@@ -66,6 +67,7 @@ export const SolanaWorkstationContextReferenceKind = {
   SHIELD_INPUT: 'shield_input',
   SHIELD_DECODED_TRANSACTION: 'shield_decoded_transaction',
   SHIELD_RPC_ANALYSIS: 'shield_rpc_analysis',
+  TRANSACTION_STUDIO_CONTEXT: 'transaction_studio_context',
 } as const;
 export type SolanaWorkstationContextReferenceKind =
   (typeof SolanaWorkstationContextReferenceKind)[keyof typeof SolanaWorkstationContextReferenceKind];
@@ -89,6 +91,7 @@ export type SolanaWorkstationBridgeActionKind =
 export const SolanaWorkstationContextSourceSchema = z.enum([
   SolanaWorkstationContextSource.AGENT,
   SolanaWorkstationContextSource.SHIELD,
+  SolanaWorkstationContextSource.TRANSACTION_STUDIO,
   SolanaWorkstationContextSource.BUILDER,
   SolanaWorkstationContextSource.MARKETS,
   SolanaWorkstationContextSource.PRIVATE,
@@ -135,6 +138,7 @@ export const SolanaWorkstationContextReferenceKindSchema = z.enum([
   SolanaWorkstationContextReferenceKind.SHIELD_INPUT,
   SolanaWorkstationContextReferenceKind.SHIELD_DECODED_TRANSACTION,
   SolanaWorkstationContextReferenceKind.SHIELD_RPC_ANALYSIS,
+  SolanaWorkstationContextReferenceKind.TRANSACTION_STUDIO_CONTEXT,
 ]);
 
 export const SolanaWorkstationContextReferenceSchema = z.object({
@@ -211,6 +215,22 @@ export type SolanaWorkstationLastShieldContext = z.infer<
   typeof SolanaWorkstationLastShieldContextSchema
 >;
 
+export const SolanaWorkstationLastTransactionStudioContextSchema = z.object({
+  source: z.literal(SolanaWorkstationContextSource.TRANSACTION_STUDIO),
+  inputKind: z.string().max(64),
+  decodedSummary: z.string().max(1000),
+  riskSummary: z.string().max(1000),
+  simulationSummary: z.string().max(1000),
+  balanceDiffSummary: z.string().max(1000),
+  explanationSummary: z.string().max(1000),
+  redactionsApplied: z.array(z.string().max(96)).default([]),
+  updatedAt: z.number().int(),
+  localOnly: z.literal(true),
+});
+export type SolanaWorkstationLastTransactionStudioContext = z.infer<
+  typeof SolanaWorkstationLastTransactionStudioContextSchema
+>;
+
 export const SolanaWorkstationLastBuilderContextSchema = z.object({
   source: z.literal(SolanaWorkstationContextSource.BUILDER),
   projectKind: z.string().max(64),
@@ -234,6 +254,7 @@ export type SolanaWorkstationLastBuilderContext = z.infer<
 
 export const SolanaWorkstationLastModuleContextSchema = z.object({
   shield: SolanaWorkstationLastShieldContextSchema.optional(),
+  transactionStudio: SolanaWorkstationLastTransactionStudioContextSchema.optional(),
   builder: SolanaWorkstationLastBuilderContextSchema.optional(),
   updatedAt: z.number().int(),
   localOnly: z.literal(true),

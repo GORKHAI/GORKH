@@ -1,7 +1,7 @@
 # GORKH Workstation QA Checklist
 
 > Version: 0.0.49  
-> Last updated: 2026-05-06 (Phase 21 pre-stable cleanup)
+> Last updated: 2026-05-08 (v0.0.49+ RC visual hardening)
 
 ## How to use this checklist
 
@@ -15,7 +15,7 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 - [ ] Verify the app opens directly into the GORKH Workstation shell, not the assistant/chat screen.
 - [ ] Verify no macOS Screen Recording, audio recording, Accessibility, or Automation prompt appears on launch.
 - [ ] Verify the Workstation shell shows left sidebar navigation, top command/search bar, main workspace, right inspector/safety panel, and bottom status bar.
-- [ ] Verify the sidebar includes Wallet, Markets, Agent, Builder, Shield, and Context.
+- [ ] Verify the sidebar includes Wallet, Markets, Agent, Builder, Shield, Transaction Studio, and Context.
 - [ ] Verify the app does not page-scroll as a website; only internal tables, logs, previews, inspector content, and chat history may scroll.
 - [ ] Verify the assistant is reachable only as a secondary utility from compact chrome/sidebar controls.
 - [ ] From Assistant, click any Workstation module in the sidebar and verify the Workstation shell returns.
@@ -25,6 +25,7 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 - [ ] Verify Assistant copy says screen context is optional and disabled until explicitly enabled.
 - [ ] Verify Desktop Vision shows explanatory copy before any Screen Recording request.
 - [ ] Verify the visual style matches the GORKH dark Apple-level branding: graphite background, compact density, subtle borders/glow, no generic SaaS hero or large CTA header.
+- [ ] Confirm `v0.0.48` is not moved, deleted, or reused; the next release tag must be `v0.0.49` or later after final validation.
 
 ## Desktop UI QA
 
@@ -38,10 +39,26 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 - [ ] Internal lists/logs may scroll inside panels only.
 - [ ] Visual style matches GORKH dark Apple-level branding.
 - [ ] No old assistant-first surface dominates startup.
+- [ ] Premium Workstation Unification is visible across Wallet, Markets, Shield, Builder, Agent, Context, Transaction Studio, and Assistant.
+- [ ] Older Markets, Shield, Agent, Context, Wallet, Builder, and Private surfaces use dark graphite panels, compact controls, thin borders, and native workstation density.
+- [ ] The main workspace is fixed-shell bounded; long tables, logs, JSON, message lists, and previews scroll internally only.
+- [ ] Topbar/status distinguish `Global Safety: Read-only shell` from module-local data source labels.
+- [ ] No signing, broadcast, swap, lending, LP, staking, deploy, upgrade, Jito, Squads, hardware signing, Drift, or autonomous execution controls were added by the visual pass.
 
 ---
 
 ## Wallet Module
+
+### Wallet Hub + Portfolio
+- [ ] Open Wallet > Hub and verify the fixed desktop workbench fits without page-level scrolling.
+- [ ] Add, label, tag, select, and remove a watch-only wallet.
+- [ ] Verify watch-only wallets have no signing, send, swap, stake, bridge, or execution controls.
+- [ ] Refresh Portfolio and verify SOL balances plus SPL token rows appear when read-only RPC returns them.
+- [ ] Verify USD values are labeled estimates and missing prices show a graceful unavailable state.
+- [ ] Verify recent portfolio snapshots and `gorkh.solana.walletHub.lastContext.v1` contain only safe metadata.
+- [ ] Verify locked roadmap items are disabled: hardware wallets, Squads v4, NFT gallery, DeFi positions, stake accounts, PnL, advanced history.
+- [ ] Verify no Drift integration appears.
+- [ ] Capture manual screenshots for zero wallets, one wallet, 10+ wallets, watch-only selected, locked local vault selected, portfolio loading/error/price-unavailable, and locked roadmap states.
 
 ### Local Wallet Vault
 - [ ] Create a local wallet and verify only wallet id, label, public address, source, network, and lock/security metadata appear in browser storage.
@@ -169,9 +186,50 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 - [ ] Confirm there is NO "Submit" button.
 - [ ] Confirm there is NO "Execute" button.
 
+## Transaction Studio Module
+
+### Decode / Simulate / Explain
+- [ ] Open Transaction Studio from the sidebar.
+- [ ] Verify the workbench uses fixed source, decode, risk inspector, and bottom review panels with internal scroll only.
+- [ ] Paste a Solana transaction signature and verify it is detected as a signature.
+- [ ] Click Fetch Transaction and verify only read-only RPC metadata is shown.
+- [ ] Paste a base64 serialized transaction and click Decode.
+- [ ] Verify instruction timeline, program badges, account list, signer count, writable count, and unknown program warnings appear.
+- [ ] Click Simulate and verify the disclaimer says simulation uses current RPC state and is not a guarantee.
+- [ ] Verify signature verification disabled for preview is shown when simulation uses `sigVerify: false`.
+- [ ] Verify Balance Diffs honestly says no data is available when metadata lacks diffs.
+- [ ] Verify Explanation is deterministic plain English, not an LLM execution.
+
+### Handoffs / Locked Features
+- [ ] Verify Agent can prepare a review-only Transaction Studio handoff.
+- [ ] Verify Cloak draft handoff says summary only when no raw transaction is available.
+- [ ] Verify Zerion proposal handoff says summary only when no raw transaction is available.
+- [ ] Verify Coming Soon shows Visual Transaction Builder, Batch Transaction Builder, Priority Fee Advisor, and Replay Against Current State.
+- [ ] Verify Locked Advanced shows Jito Bundle Composer and Raw Transaction Broadcast as disabled.
+- [ ] Capture manual screenshots for empty state, signature detected, decoded transaction, base58 detection-only, simulation loading/success/failure, balance no-data/post-state snapshot, and locked roadmap states.
+
+### Safety Checks
+- [ ] Confirm there is NO "Sign" button.
+- [ ] Confirm there is NO "Send" button.
+- [ ] Confirm there is NO "Broadcast" button.
+- [ ] Confirm there is NO Jito submit action.
+- [ ] Confirm there is NO wallet execution path.
+
 ---
 
 ## Builder Module
+
+### Developer Toolbox + RPC & Nodes
+- [ ] Open Builder > Developer Toolbox and verify the fixed three-panel developer console fits without page-level scrolling.
+- [ ] Paste a valid Anchor IDL and verify IDL Browser renders instructions, accounts, types, events, and errors locally.
+- [ ] Paste invalid IDL and verify the invalid state is honest.
+- [ ] Paste account data in base64, hex, and base58 and verify Account Decoder shows decoded or unsupported states without fake output.
+- [ ] Start, pause, resume, clear, and stop Program Logs using a read-only websocket subscription.
+- [ ] Add a public/local RPC endpoint, verify URL redaction, and confirm URLs with `api-key=` or `token=` are not stored in localStorage.
+- [ ] Run endpoint benchmark and Network Monitor; verify only read-only RPC methods are used.
+- [ ] Run Compute Estimator by explicit click only and confirm no signing or broadcasting controls appear.
+- [ ] Confirm locked actions remain disabled: deploy, upgrade, close program, authority changes, arbitrary RPC, offline signing, hardware developer signing, local validator manager, and dev faucet.
+- [ ] Confirm `gorkh.solana.builderToolbox.lastContext.v1` contains redacted summaries only.
 
 ### Workspace Inspector
 - [ ] Select an Anchor/Solana workspace directory.
@@ -301,6 +359,25 @@ Perform each step manually in the GORKH desktop app. Mark `[x]` only when verifi
 ### Safety Checks
 - [ ] Confirm there is NO "Send to LLM" auto-submit button.
 - [ ] Confirm the user must manually copy/paste or save the context.
+
+---
+
+## DeFi Command Center
+
+- [ ] Open Wallet -> DeFi.
+- [ ] Confirm DeFi Command Center is inside Wallet, not a top-level Workstation module.
+- [ ] Confirm wallet scope supports all wallets, active wallet, watch-only wallets, and local vault wallets.
+- [ ] Confirm DeFi value is displayed separately to avoid double-counting wallet token balances.
+- [ ] Confirm DeFi data loads from the GORKH read-only backend where configured, or falls back to honest backend unavailable/adapter unavailable states.
+- [ ] Confirm `GET /api/defi/health` redacts env-derived URLs and does not expose API keys or full private RPC URLs.
+- [ ] Confirm `GET /api/defi/jupiter/quote` returns a quote summary only and no executable transaction payload fields.
+- [ ] Confirm Raydium, Orca, Meteora, Kamino, MarginFi, JitoSOL, mSOL, bSOL, and bbSOL adapters show honest unavailable states when no safe public adapter is connected.
+- [ ] Confirm no positions, APY, TVL, lending health, or impermanent loss values are faked.
+- [ ] Confirm Jupiter quote is quote-only and does not create, store, sign, or broadcast an executable transaction.
+- [ ] Confirm Execute Swap, limit orders, lending actions, LP actions, Stake / Unstake LST, and Auto Yield Optimize are locked.
+- [ ] Confirm no Drift integration appears.
+- [ ] Confirm `gorkh.solana.defiCommandCenter.lastContext.v1` contains only summaries and redaction metadata.
+- [ ] Confirm no executable swap transaction, private key, seed phrase, wallet JSON, API key, auth header, Cloak note, viewing key, Zerion credential, or token is stored or exported.
 
 ---
 

@@ -189,7 +189,7 @@ export function ContextBridgePanel({
   }, [selectedAgent, savedBuilderContext, shieldAnalysis, privateMarkdown, zerionMarkdown, agentMarkdown, builderMarkdown, shieldMarkdown]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="gorkh-premium-workbench gorkh-context-workbench" style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', height: '100%', minHeight: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b' }} />
         <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>

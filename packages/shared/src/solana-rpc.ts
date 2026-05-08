@@ -49,6 +49,16 @@ export const ALLOWED_SOLANA_RPC_METHODS = [
   'simulateTransaction',
   'getTokenSupply',
   'getTokenLargestAccounts',
+  'getHealth',
+  'getVersion',
+  'getSlot',
+  'getBlockHeight',
+  'getEpochInfo',
+  'getLeaderSchedule',
+  'getProgramAccounts',
+  'getParsedAccountInfo',
+  'getParsedTokenAccountsByOwner',
+  'getSignatureStatuses',
 ] as const;
 
 export const DENIED_SOLANA_RPC_METHODS = [
@@ -93,6 +103,16 @@ export const SolanaRpcMethodSchema = z.enum([
   'simulateTransaction',
   'getTokenSupply',
   'getTokenLargestAccounts',
+  'getHealth',
+  'getVersion',
+  'getSlot',
+  'getBlockHeight',
+  'getEpochInfo',
+  'getLeaderSchedule',
+  'getProgramAccounts',
+  'getParsedAccountInfo',
+  'getParsedTokenAccountsByOwner',
+  'getSignatureStatuses',
 ]);
 
 export const SolanaAccountLookupResultSchema = z.object({
